@@ -630,12 +630,78 @@ def _alert_color(severity: str) -> str:
     return YELLOW
 
 
+def fetch_alerts(cfg: dict) -> None:
+    """Fetch NWS active alerts and write the alerts cache section.
+
+    Endpoint: GET /alerts/active?point={lat:.4f},{lon:.4f}
+    Accept: application/ld+json  (NWS CAP payload in JSON-LD format)
+
+    Flow:
+      1. If CLAUDE_STATUSLINE_FAKE_ALERTS env var is set, load the named JSON file
+         as the alerts payload instead of issuing an HTTP request (UAT/offline testing —
+         mirrors WxDesktopPy's WXD_FAKE_ALERTS_FILE; T-02-15).
+      2. Otherwise: GET the NWS alerts/active endpoint (with User-Agent + Accept header).
+      3. Pull the feature @graph list, run dedup_alerts on the raw feature dicts.
+      4. Write the alerts cache section ({fetched_at, active: [survivor_dicts]}) atomically.
+
+    Wrapped in try/except — never raises (D-10). A failed fetch leaves the alerts
+    section unchanged; the render falls back to the last good cached value.
+
+    RUNS ONLY IN THE DETACHED CHILD (--refresh mode). Never called on the render path.
+    """
+    try:
+        location = cfg.get("location", {})
+        lat = float(location.get("lat", 0.0))
+        lon = float(location.get("lon", 0.0))
+        weather_cfg = cfg.get("weather", {})
+        contact_email = weather_cfg.get("contact_email", "")
+
+        ua = make_user_agent(_APP_VERSION, contact_email)
+        import time as _time
+        now = _time.time()
+
+        # UAT/offline fixture override: honor CLAUDE_STATUSLINE_FAKE_ALERTS env var
+        # (mirrors WxDesktopPy active_alerts.py WXD_FAKE_ALERTS_FILE pattern — T-02-15)
+        fake_path = os.environ.get("CLAUDE_STATUSLINE_FAKE_ALERTS")
+        if fake_path:
+            try:
+                with open(fake_path, encoding="utf-8") as fh:
+                    payload = json.load(fh)
+            except Exception:
+                return  # bad fake file: leave cache unchanged
+            graph = payload.get("@graph", payload.get("features", []))
+        else:
+            # Live fetch: GET /alerts/active?point=lat,lon with ld+json Accept header
+            url = (
+                f"https://api.weather.gov/alerts/active"
+                f"?point={lat:.4f},{lon:.4f}"
+            )
+            payload = _nws_get(url, ua, accept="application/ld+json")
+            # NWS CAP JSON-LD uses "@graph"; GeoJSON uses "features"
+            graph = payload.get("@graph", payload.get("features", []))
+
+        # Dedup via references-chain algorithm (T-02-12)
+        from datetime import timezone as _tz
+        now_dt = datetime.now(tz=_tz.utc)
+        survivors = dedup_alerts(graph, now=now_dt)
+
+        # Write the alerts cache section atomically
+        write_cache_section(_CACHE_PATH, "alerts", {"active": survivors}, now)
+
+    except Exception:
+        # Any network / parse / OS error is swallowed (D-10).
+        pass
+
+
 def run_refresh(cfg: dict) -> None:
     """Entry point for the detached background fetch child (--refresh mode).
 
     Acquires an exclusive lockfile using O_CREAT|O_EXCL (atomic create — fails
     if the file already exists).  If the lock is already held by another fetch,
     exits immediately (no stampede — T-02-09, D2-05).
+
+    Refreshes both weather and alerts under the single lock (D2-16 — no separate
+    fetch process for alerts; both run in the same detached child).
 
     On any error: swallows and exits cleanly (never crashes the render bar via stderr).
     The lock file is always removed in the finally block so a crashed child
@@ -652,8 +718,9 @@ def run_refresh(cfg: dict) -> None:
         except (FileExistsError, OSError):
             # Lock already held by another fetch — exit immediately (no stampede)
             return
-        # Lock acquired — run the fetch
+        # Lock acquired — run both fetches under the single lock (D2-16)
         fetch_weather(cfg)
+        fetch_alerts(cfg)
     except Exception:
         pass
     finally:
@@ -670,11 +737,13 @@ def run_refresh(cfg: dict) -> None:
 
 
 def maybe_spawn_refresh(cfg: dict, cache: dict) -> None:
-    """Spawn a detached background child to refresh the weather cache if stale.
+    """Spawn a detached background child to refresh the weather and/or alerts cache if stale.
 
-    Checks whether the weather section needs refreshing (past its TTL or absent).
-    If so, spawns a new process under the current interpreter with --refresh,
+    Checks whether the weather OR alerts section needs refreshing (past its TTL or absent).
+    If either is stale, spawns a new process under the current interpreter with --refresh,
     detached (start_new_session=True, stdio=DEVNULL) so it never blocks the render.
+
+    The detached child refreshes both weather and alerts under the single lock (D2-16).
 
     This is a fire-and-forget call on the RENDER PATH — it must return instantly.
     The parent render continues with the current (possibly stale) cached value.
@@ -683,12 +752,15 @@ def maybe_spawn_refresh(cfg: dict, cache: dict) -> None:
     try:
         cache_cfg = cfg.get("cache", {})
         weather_ttl = float(cache_cfg.get("weather_ttl", 600))
+        alerts_ttl = float(cache_cfg.get("alerts_ttl", 300))
         import time as _time
         now = _time.time()
         weather_section = cache.get("weather", {})
-        # Trigger refresh when: weather section is absent OR stale past its TTL
-        needs_refresh = not section_is_fresh(weather_section, ttl=weather_ttl, now=now)
-        if not needs_refresh:
+        alerts_section = cache.get("alerts", {})
+        # Trigger refresh when: weather OR alerts section is absent OR stale past its TTL
+        weather_stale = not section_is_fresh(weather_section, ttl=weather_ttl, now=now)
+        alerts_stale = not section_is_fresh(alerts_section, ttl=alerts_ttl, now=now)
+        if not (weather_stale or alerts_stale):
             return
         # Spawn detached child — fixed argv, no shell interpolation (T-02-08)
         subprocess.Popen(
@@ -915,15 +987,22 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
 
     Render path (D2-05):
       1. Read cache.json (instant, no network).
-      2. If weather section is stale (past TTL), fire-and-forget maybe_spawn_refresh.
-      3. Build internals from cached values + local sun computation:
+      2. If weather OR alerts section is stale (past TTL), fire-and-forget spawn.
+      3. Build internals from cached values + local sun/alert computation:
          - conditions chunk: icon + temp — only when section_within_ceiling passes
          - precip chunk: 🌧️<pop>% — only when PoP is present and non-zero (WX-02, D2-09)
-         - sun chunk: _sun_segment() — always (offline, computed from lat/lon)
+         - trailing detail: alert override when within-ceiling active alert exists (D2-11),
+           else the sun event (always computed offline, D2-12)
       4. Pipe-delimit present chunks and return bracketed string.
+
+    Alert override (D2-11, WX-04):
+      - Read alerts cache section; if within alerts_max_stale and non-empty survivors:
+        run select_alert → render "⚠ <event>", severity-colored via _alert_color, + " +N".
+      - Otherwise: fall back to _sun_segment(cfg).
 
     Degradation (D2-12):
       - Weather section beyond max-stale ceiling → conditions dropped, sun-only
+      - Alerts beyond alerts_max_stale or absent → sun event detail (no marker)
       - Sun segment absent (no lat/lon) → omit entire segment (return None)
       - _WEATHER_OK False or show_weather False → return None immediately
 
@@ -941,15 +1020,15 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
         now = _time.time()
         cache_cfg = cfg.get("cache", {})
         weather_max_stale = float(cache_cfg.get("weather_max_stale", 3600))
+        alerts_max_stale = float(cache_cfg.get("alerts_max_stale", 900))
 
         # Step 1: Read cache (render path — instant, never fetches inline)
         cache = read_cache(_CACHE_PATH)
         weather_section = cache.get("weather", {})
+        alerts_section = cache.get("alerts", {})
 
-        # Step 2: Trigger background refresh if stale (fire-and-forget, D2-05)
-        weather_ttl = float(cache_cfg.get("weather_ttl", 600))
-        if not section_is_fresh(weather_section, ttl=weather_ttl, now=now):
-            maybe_spawn_refresh(cfg, cache)
+        # Step 2: Trigger background refresh if weather OR alerts is stale (D2-05)
+        maybe_spawn_refresh(cfg, cache)
 
         # Step 3a: Conditions chunk — only when within the max-stale ceiling (D2-12)
         conditions_chunk = None
@@ -968,14 +1047,39 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
             if pop is not None and pop != 0:
                 precip_chunk = f"\U0001f327️{int(pop)}%"  # 🌧️
 
-        # Step 3c: Sun chunk — always computed locally (offline, D2-12)
-        sun_detail = _sun_segment(cfg)
+        # Step 3c: Trailing detail — alert override or sun event (D2-11, D2-12, WX-04)
+        trailing_detail = None
+        # Attempt alert override: only when alerts section is within ceiling + non-empty
+        try:
+            if section_within_ceiling(alerts_section, max_stale=alerts_max_stale, now=now):
+                active = alerts_section.get("active") or []
+                if active:
+                    best, remaining = select_alert(active)
+                    if best is not None:
+                        try:
+                            props = best.get("properties") or best
+                            event = props.get("event", "Unknown Alert")
+                            severity = props.get("severity", "Unknown")
+                        except Exception:
+                            event = "Unknown Alert"
+                            severity = "Unknown"
+                        color = _alert_color(severity)
+                        detail = f"⚠ {event}"
+                        if remaining > 0:
+                            detail += f" +{remaining}"
+                        trailing_detail = f"{color}{detail}{RESET}"
+        except Exception:
+            pass  # alert override failed: fall through to sun event
+
+        # Fall back to sun event if no valid alert override
+        if trailing_detail is None:
+            trailing_detail = _sun_segment(cfg)
 
         # Assemble pipe-delimited internals (omit None pieces)
-        pieces = [p for p in [conditions_chunk, precip_chunk, sun_detail] if p is not None]
+        pieces = [p for p in [conditions_chunk, precip_chunk, trailing_detail] if p is not None]
 
         if not pieces:
-            # No sun detail and no conditions: omit the whole segment
+            # No trailing detail and no conditions: omit the whole segment
             return None
 
         internals = " | ".join(pieces)

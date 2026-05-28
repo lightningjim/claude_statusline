@@ -459,10 +459,13 @@ class TestMaybeSpawnRefresh(unittest.TestCase):
         self.assertGreater(len(popen_calls), 0, "Popen should have been called on stale cache")
 
     def test_does_not_spawn_on_fresh_cache(self):
-        """maybe_spawn_refresh does NOT call Popen when weather section is fresh."""
+        """maybe_spawn_refresh does NOT call Popen when weather AND alerts sections are fresh."""
         now = time.time()
         cache = {
-            "weather": {"fetched_at": now - 60, "icon": "☀️", "temp": 72, "pop": 0}
+            "weather": {"fetched_at": now - 60, "icon": "☀️", "temp": 72, "pop": 0},
+            # alerts section also fresh (within 300s alerts_ttl) — Plan 02-03 extends
+            # maybe_spawn_refresh to also check alerts staleness (D2-16)
+            "alerts": {"fetched_at": now - 60, "active": []},
         }
         popen_calls = []
 
@@ -473,7 +476,7 @@ class TestMaybeSpawnRefresh(unittest.TestCase):
         with patch("subprocess.Popen", FakePopen):
             self.mod.maybe_spawn_refresh(self.cfg, cache)
 
-        self.assertEqual(len(popen_calls), 0, "Popen should NOT be called on fresh cache")
+        self.assertEqual(len(popen_calls), 0, "Popen should NOT be called when both sections are fresh")
 
     def test_spawn_uses_start_new_session(self):
         """The Popen call uses start_new_session=True for detachment."""
