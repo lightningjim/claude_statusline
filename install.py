@@ -6,10 +6,9 @@ Usage:
     python3 install.py
 
 Steps:
-  1. Ensures ~/.claude/claude-statusline.py exists and is executable (mode 0o755).
-     The script is expected to have been written to ~/.claude/claude-statusline.py
-     already (either by running this installer from a repo that includes it, or
-     by the walking-skeleton setup in Plan 01-01).
+  1. Copies the repo's canonical claude-statusline.py to ~/.claude/claude-statusline.py
+     and marks it executable (mode 0o755). The repo is the source of truth; the
+     installed copy at ~/.claude/ is what Claude Code runs (D-12, D-14).
   2. Parse-merge-backup ~/.claude/settings.json:
      - Read existing settings (treats missing/empty as {})
      - Back up to ~/.claude/settings.json.bak BEFORE writing
@@ -36,6 +35,8 @@ SETTINGS_NAME = "settings.json"
 BACKUP_SUFFIX = ".bak"
 
 CLAUDE_DIR = os.path.expanduser("~/.claude")
+REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_SCRIPT_PATH = os.path.join(REPO_DIR, SCRIPT_NAME)
 SCRIPT_PATH = os.path.join(CLAUDE_DIR, SCRIPT_NAME)
 SETTINGS_PATH = os.path.join(CLAUDE_DIR, SETTINGS_NAME)
 BACKUP_PATH = SETTINGS_PATH + BACKUP_SUFFIX
@@ -82,12 +83,15 @@ def main() -> int:
     print("claude-statusline installer")
     print("=" * 40)
 
-    # ---- Step 1: Verify script exists and is executable ----
-    if not os.path.exists(SCRIPT_PATH):
-        print(f"ERROR: Script not found at {SCRIPT_PATH}")
-        print("  Ensure ~/.claude/claude-statusline.py was created before running install.py.")
+    # ---- Step 1: Copy the repo's canonical script into ~/.claude and chmod ----
+    if not os.path.exists(REPO_SCRIPT_PATH):
+        print(f"ERROR: Canonical script not found at {REPO_SCRIPT_PATH}")
+        print("  Run install.py from the claude-statusline repo (it ships claude-statusline.py).")
         return 1
 
+    os.makedirs(CLAUDE_DIR, exist_ok=True)
+    shutil.copy2(REPO_SCRIPT_PATH, SCRIPT_PATH)
+    print(f"  Installed script: {REPO_SCRIPT_PATH} -> {SCRIPT_PATH}")
     ensure_executable(SCRIPT_PATH)
 
     # ---- Step 2: Parse existing settings.json ----

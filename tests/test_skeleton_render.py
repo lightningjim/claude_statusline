@@ -15,7 +15,7 @@ import subprocess
 import sys
 import unittest
 
-SCRIPT = os.path.expanduser("~/.claude/claude-statusline.py")
+SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "claude-statusline.py")
 FIXTURE = os.path.join(
     os.path.dirname(__file__), "..", ".examples", "claude_stdin.json"
 )
