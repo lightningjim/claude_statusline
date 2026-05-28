@@ -28,7 +28,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Second line shows a 20-wide `▓░` context bar with percentage, plus 5h and weekly usage — each colored green/yellow/red by threshold — and the reset time for any non-green indicator in `5:15pm` or `Mon 5:15pm` shorthand
   4. All settings (lat/lon, thresholds, units, feature toggles) live in a single TOML config file and the command reads it on startup
   5. Missing or malformed stdin fields produce a valid (possibly partial) bar — the command never crashes or hangs
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 01-01-PLAN.md — Walking Skeleton: executable script reads stdin, renders top line `[project] [model 🧠]`, graceful degradation, install helper wires settings.json (RUN-01/02, TOP-01/02/03)
+- [ ] 01-02-PLAN.md — Bottom line: 20-wide context bar + %, 5h/weekly with threshold colors and non-green reset times (CTX-01/02, LIM-01/02/03/04, FMT-01)
+- [ ] 01-03-PLAN.md — TOML config at ~/.claude/claude-statusline.toml via tomllib: silent defaults, per-segment toggles, thresholds, units (CFG-01)
 
 ### Phase 2: Weather Layer
 **Goal**: The top line gains live NWS weather that never blocks rendering
@@ -50,5 +54,5 @@ Phases execute in numeric order: 1 → 2
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Statusline | 0/TBD | Not started | - |
+| 1. Core Statusline | 0/3 | Not started | - |
 | 2. Weather Layer | 0/TBD | Not started | - |
