@@ -128,6 +128,44 @@ class TestCToUnit(unittest.TestCase):
         self.assertIsNotNone(result)
 
 
+class TestIconMapping(unittest.TestCase):
+    """_icon_to_emoji must distinguish sun-dominant from cloud-dominant sky states.
+
+    Regression: the broad 'cloudy'/'sunny' substring rules used to precede the
+    specific partly/mostly rules, so 'Partly Cloudy' matched 'cloudy' → ☁️ and
+    'Mostly Sunny' matched 'sunny' → ☀️. First-match-wins requires the specific
+    sky states to be checked first.
+    """
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_partly_cloudy_is_partly_glyph(self):
+        self.assertEqual(self.mod._icon_to_emoji("Partly Cloudy", ""), "⛅")
+
+    def test_mostly_sunny_is_partly_glyph(self):
+        self.assertEqual(self.mod._icon_to_emoji("Mostly Sunny", ""), "⛅")
+
+    def test_partly_sunny_is_partly_glyph(self):
+        self.assertEqual(self.mod._icon_to_emoji("Partly Sunny", ""), "⛅")
+
+    def test_mostly_cloudy_is_cloud_glyph(self):
+        self.assertEqual(self.mod._icon_to_emoji("Mostly Cloudy", ""), "☁️")
+
+    def test_broken_icon_url_is_cloud_glyph(self):
+        # NWS observation icon path 'bkn' = broken clouds → cloud-dominant
+        self.assertEqual(self.mod._icon_to_emoji("", "https://api.weather.gov/icons/land/day/bkn?size=medium"), "☁️")
+
+    def test_overcast_is_cloud_glyph(self):
+        self.assertEqual(self.mod._icon_to_emoji("Overcast", ""), "☁️")
+
+    def test_clear_is_sun_glyph(self):
+        self.assertEqual(self.mod._icon_to_emoji("Clear", ""), "☀️")
+
+    def test_sunny_is_sun_glyph(self):
+        self.assertEqual(self.mod._icon_to_emoji("Sunny", ""), "☀️")
+
+
 # ---------------------------------------------------------------------------
 # Task 2: NWS source contains api.weather.gov + User-Agent
 # ---------------------------------------------------------------------------

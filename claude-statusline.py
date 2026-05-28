@@ -298,11 +298,13 @@ _NWS_ICON_MAP: list[tuple[tuple[str, ...], str]] = [
     (("fog", "haze", "smoke", "dust", "sand", "ash"), "🌫️"),
     # Windy / blustery
     (("wind", "breezy", "blustery"), "💨"),
-    # Cloudy
-    (("overcast", "cloudy"), "☁️"),
-    # Mostly / partly cloudy
-    (("mostly cloudy", "bkn", "broken", "few", "scattered", "partly cloudy",
-      "mostly clear", "partly sunny"), "⛅"),
+    # Partly/mostly sunny (sun-dominant). MUST precede the broad "cloudy"/"sunny"
+    # rules below — "Partly Cloudy" contains "cloudy" and "Mostly Sunny" contains
+    # "sunny", so the specific sky states have to match first (first-match wins).
+    (("partly cloudy", "partly sunny", "mostly sunny", "mostly clear",
+      "few", "scattered"), "⛅"),
+    # Cloudy / overcast / mostly cloudy / broken (cloud-dominant)
+    (("mostly cloudy", "broken", "bkn", "overcast", "cloudy"), "☁️"),
     # Clear / sunny
     (("clear", "fair", "sunny", "skc", "hot"), "☀️"),
     # Cold / frost
