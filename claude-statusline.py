@@ -320,10 +320,16 @@ def _icon_to_emoji(text_description: str, icon_url: str) -> str:
     """
     desc = (text_description or "").lower()
     icon_path = (icon_url or "").lower()
+    # NWS icon URLs encode day/night, e.g. /icons/land/night/skc. A clear sky at
+    # night is the moon, not the sun. (Cloud/rain/storm glyphs read fine at night,
+    # and emoji has no clean moon-behind-cloud, so only the sun glyph is swapped.)
+    is_night = "/night/" in icon_path
 
     for keywords, emoji in _NWS_ICON_MAP:
         for kw in keywords:
             if kw in desc or kw in icon_path:
+                if is_night and emoji == "☀️":
+                    return "🌙"
                 return emoji
     return "🌡️"  # fallback: thermometer
 

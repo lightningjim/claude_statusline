@@ -165,6 +165,27 @@ class TestIconMapping(unittest.TestCase):
     def test_sunny_is_sun_glyph(self):
         self.assertEqual(self.mod._icon_to_emoji("Sunny", ""), "☀️")
 
+    def test_clear_night_is_moon_glyph(self):
+        """Clear sky at night (icon URL /night/) → 🌙, not ☀️."""
+        self.assertEqual(
+            self.mod._icon_to_emoji("Clear", "https://api.weather.gov/icons/land/night/skc?size=medium"),
+            "🌙",
+        )
+
+    def test_clear_day_stays_sun_glyph(self):
+        """Clear sky during the day (icon URL /day/) stays ☀️."""
+        self.assertEqual(
+            self.mod._icon_to_emoji("Clear", "https://api.weather.gov/icons/land/day/skc?size=medium"),
+            "☀️",
+        )
+
+    def test_night_cloud_unchanged(self):
+        """Cloud-dominant states are night-neutral — ☁️ at night too."""
+        self.assertEqual(
+            self.mod._icon_to_emoji("Mostly Cloudy", "https://api.weather.gov/icons/land/night/bkn"),
+            "☁️",
+        )
+
 
 # ---------------------------------------------------------------------------
 # Task 2: NWS source contains api.weather.gov + User-Agent
