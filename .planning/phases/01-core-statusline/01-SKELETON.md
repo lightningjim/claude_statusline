@@ -5,7 +5,7 @@
 
 ## Capability Proven End-to-End
 
-A user installs the command and sees a real top line — `[claude_statusline] [Opus 4.8 (1M context) 🧠]` — driven entirely from the JSON Claude Code pipes to the script's stdin, with no network, no crash, and exit 0.
+A user installs the command and sees a real top line — `[claude_statusline] [Opus 4.8 (1M context) 💭]` — driven entirely from the JSON Claude Code pipes to the script's stdin, with no network, no crash, and exit 0.
 
 This exercises the tool's full "stack": **stdin → JSON parse → segment render → stdout → installed into settings.json**. There is no DB, no HTTP routing, and no browser UI — this is a single-file Python CLI, so the skeleton's end-to-end path is the read/parse/render/print/install pipeline.
 
