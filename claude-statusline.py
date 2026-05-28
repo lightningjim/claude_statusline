@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-claude-statusline — Plan 02-01 (weather layer: sun event + venv bootstrap)
+claude-statusline — Plan 02-02 (weather layer: NWS cache + fetch)
 
 Reads one JSON object from stdin (Claude Code's session data), renders a
 two-line status bar to stdout, and exits 0.  Never emits a Python traceback.
 
 Top line   (Plan 01):  [project] [model 💭]
-Top line   (Plan 02):  [project] [model 💭] [<icon> <temp> | <sun-or-alert>]
+Top line   (Plan 02):  [project] [model 💭] [<icon> <temp> | 🌧️<pop>% | <sun-or-alert>]
 Bottom line (Plan 02): [<20-wide ▓░ bar>] <pct>%   ⏳ <5h%>[ <reset>]   🗓 <wk%>[ <reset>]
 Plan 03:   Reads TOML config at ~/.claude/claude-statusline/claude-statusline.toml;
            silent defaults on any error; per-segment toggles; configurable thresholds.
@@ -154,6 +154,100 @@ def load_config(path: str | None = None) -> dict:
         # FileNotFoundError, tomllib.TOMLDecodeError, OSError, PermissionError,
         # or any other error — always fall back silently to built-in defaults.
         return copy.deepcopy(DEFAULTS)
+
+
+# ---------------------------------------------------------------------------
+# Sectioned cache.json helpers (D2-05, D2-06, D2-07, D2-12)
+#
+# Cache path: ~/.claude/claude-statusline/cache.json
+# Structure (three independently-timestamped sections — D2-06):
+#   {
+#     "geo":     { "fetched_at": <epoch>, "cwa": ..., "gridX": ..., "gridY": ..., "station_id": ... },
+#     "weather": { "fetched_at": <epoch>, "icon": ..., "temp": ..., "pop": ... },
+#     "alerts":  { "fetched_at": <epoch>, "active": [...] }
+#   }
+#
+# All helpers return safe defaults / swallow errors so a corrupt cache can never
+# crash the render (D-10 never-crash discipline).
+# ---------------------------------------------------------------------------
+
+_CACHE_PATH = os.path.expanduser("~/.claude/claude-statusline/cache.json")
+
+
+def read_cache(path: str | None = None) -> dict:
+    """Load cache.json; return {} on any error (cold cache, malformed JSON, etc.).
+
+    Mirrors load_config's read-with-silent-fallback discipline (D-07).
+    """
+    if path is None:
+        path = _CACHE_PATH
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            return {}
+        return data
+    except Exception:
+        return {}
+
+
+def write_cache_section(path: str | None, section_name: str, payload: dict, now: float) -> None:
+    """Atomically write one section of cache.json (temp file then os.replace — D2-10/T-02-10).
+
+    Reads the existing cache (or {} on any read error), sets cache[section_name]
+    to a dict of { "fetched_at": now, **payload }, then writes the WHOLE cache.json
+    atomically via a temp file in the same directory followed by os.replace.
+
+    The temp-then-replace approach ensures the render path never reads a half-written
+    file (mirrors install.py write_settings shape).
+
+    Any error during write is swallowed so a failing cache write can never crash the render.
+    """
+    if path is None:
+        path = _CACHE_PATH
+    try:
+        # Load existing cache (or start fresh)
+        cache = read_cache(path)
+        # Merge section
+        section_data = {"fetched_at": now}
+        section_data.update(payload)
+        cache[section_name] = section_data
+        # Atomic write: temp file in same dir, then os.replace
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(cache, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, path)
+    except Exception:
+        # Any OS/JSON error is swallowed — cache miss on next render, not a crash
+        pass
+
+
+def section_is_fresh(section: dict, ttl: float, now: float) -> bool:
+    """Return True when the section's fetched_at is within the given TTL.
+
+    False when fetched_at is missing, non-numeric, or older than ttl seconds
+    from now.  A False result triggers a background refresh (D2-05).
+    """
+    try:
+        fetched_at = float(section["fetched_at"])
+        return (now - fetched_at) < ttl
+    except Exception:
+        return False
+
+
+def section_within_ceiling(section: dict, max_stale: float, now: float) -> bool:
+    """Return True when the section's fetched_at is within the max-stale ceiling.
+
+    False when fetched_at is missing, non-numeric, or older than max_stale seconds
+    from now.  A False result means the data is too stale to display — drop to
+    the degraded (sun-only) fallback (D2-12).
+    """
+    try:
+        fetched_at = float(section["fetched_at"])
+        return (now - fetched_at) <= max_stale
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
