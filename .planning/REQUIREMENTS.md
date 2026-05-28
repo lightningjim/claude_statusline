@@ -20,12 +20,12 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Weather
 
-- [ ] **WX-01**: Weather shows `<condition icon> <temperature>` for the configured location, sourced from NWS
-- [ ] **WX-02**: When precipitation is present, append `|🌧️<precip>` to the weather block
-- [ ] **WX-03**: Weather details show the next sun event — 🌅 sunrise or 🌇 sunset, whichever comes next — computed locally from configured lat/lon
-- [ ] **WX-04**: When an active NWS alert exists for the location, it replaces the sun-event detail
-- [ ] **WX-05**: Weather (~15min) and alerts (~5min) are cached to a temp file; rendering reads cache and never blocks on the network
-- [ ] **WX-06**: When weather/alerts are unavailable (no network, cold cache), the line still renders (omit or show stale gracefully)
+- [x] **WX-01**: Weather shows `<condition icon> <temperature>` for the configured location, sourced from NWS
+- [x] **WX-02**: When precipitation is present, append `|🌧️<precip>` to the weather block
+- [x] **WX-03**: Weather details show the next sun event — 🌅 sunrise or 🌇 sunset, whichever comes next — computed locally from configured lat/lon
+- [x] **WX-04**: When an active NWS alert exists for the location, it replaces the sun-event detail
+- [x] **WX-05**: Weather (~15min) and alerts (~5min) are cached to a temp file; rendering reads cache and never blocks on the network
+- [x] **WX-06**: When weather/alerts are unavailable (no network, cold cache), the line still renders (omit or show stale gracefully)
 
 ### Context Usage
 
@@ -77,12 +77,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TOP-01 | Phase 1 | Done (01-01) |
 | TOP-02 | Phase 1 | Done (01-01) |
 | TOP-03 | Phase 1 | Done (01-01) |
-| WX-01 | Phase 2 | Pending |
-| WX-02 | Phase 2 | Pending |
-| WX-03 | Phase 2 | Pending |
-| WX-04 | Phase 2 | Pending |
-| WX-05 | Phase 2 | Pending |
-| WX-06 | Phase 2 | Pending |
+| WX-01 | Phase 2 | Complete |
+| WX-02 | Phase 2 | Complete |
+| WX-03 | Phase 2 | Complete |
+| WX-04 | Phase 2 | Complete |
+| WX-05 | Phase 2 | Complete |
+| WX-06 | Phase 2 | Complete |
 | CTX-01 | Phase 1 | Done (01-02) |
 | CTX-02 | Phase 1 | Done (01-02) |
 | LIM-01 | Phase 1 | Done (01-02) |
