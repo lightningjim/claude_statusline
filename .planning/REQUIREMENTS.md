@@ -71,31 +71,31 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RUN-01 | — | Pending |
-| RUN-02 | — | Pending |
-| TOP-01 | — | Pending |
-| TOP-02 | — | Pending |
-| TOP-03 | — | Pending |
-| WX-01 | — | Pending |
-| WX-02 | — | Pending |
-| WX-03 | — | Pending |
-| WX-04 | — | Pending |
-| WX-05 | — | Pending |
-| WX-06 | — | Pending |
-| CTX-01 | — | Pending |
-| CTX-02 | — | Pending |
-| LIM-01 | — | Pending |
-| LIM-02 | — | Pending |
-| LIM-03 | — | Pending |
-| LIM-04 | — | Pending |
-| FMT-01 | — | Pending |
-| CFG-01 | — | Pending |
+| RUN-01 | Phase 1 | Pending |
+| RUN-02 | Phase 1 | Pending |
+| TOP-01 | Phase 1 | Pending |
+| TOP-02 | Phase 1 | Pending |
+| TOP-03 | Phase 1 | Pending |
+| WX-01 | Phase 2 | Pending |
+| WX-02 | Phase 2 | Pending |
+| WX-03 | Phase 2 | Pending |
+| WX-04 | Phase 2 | Pending |
+| WX-05 | Phase 2 | Pending |
+| WX-06 | Phase 2 | Pending |
+| CTX-01 | Phase 1 | Pending |
+| CTX-02 | Phase 1 | Pending |
+| LIM-01 | Phase 1 | Pending |
+| LIM-02 | Phase 1 | Pending |
+| LIM-03 | Phase 1 | Pending |
+| LIM-04 | Phase 1 | Pending |
+| FMT-01 | Phase 1 | Pending |
+| CFG-01 | Phase 1 | Pending |
 
 **Coverage:**
 - v1 requirements: 19 total
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 19 ⚠️
+- Mapped to phases: 19
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-05-28*
-*Last updated: 2026-05-28 after initial definition*
+*Last updated: 2026-05-28 after roadmap creation*
