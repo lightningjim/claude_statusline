@@ -659,6 +659,48 @@ class TestWeatherSegmentRender(unittest.TestCase):
         inner = result[1:-1]
         self.assertNotIn("🌧", inner)
 
+    def test_pop_below_threshold_omits_precip_chunk(self):
+        """PoP below pop_min (default 30) is hidden as noise; conditions still shown."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False — astral/requests not installed")
+        cache = self._make_fresh_cache(pop=29)
+        result, _ = self._run_segment_with_cache(cache)
+        self.assertIsNotNone(result)
+        inner = result[1:-1]
+        self.assertNotIn("🌧", inner)   # 29 < 30 → precip chunk hidden
+        self.assertNotIn("29", inner)
+        self.assertIn("72", inner)      # conditions still present
+
+    def test_pop_at_threshold_shows_precip_chunk(self):
+        """PoP at/above pop_min (default 30) shows the precip chunk."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False — astral/requests not installed")
+        cache = self._make_fresh_cache(pop=30)
+        result, _ = self._run_segment_with_cache(cache)
+        self.assertIsNotNone(result)
+        inner = result[1:-1]
+        self.assertIn("🌧", inner)
+        self.assertIn("30", inner)
+
+    def test_pop_min_configurable(self):
+        """A custom [weather] pop_min overrides the default 30 threshold."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False — astral/requests not installed")
+        cache = self._make_fresh_cache(pop=15)
+        cfg = dict(self.cfg)
+        cfg["weather"] = dict(cfg.get("weather", {}))
+        cfg["weather"]["pop_min"] = 10   # lower bar so 15% now qualifies
+        cache_path = os.path.join(self.tmpdir, "cache.json")
+        import json as _json
+        with open(cache_path, "w") as f:
+            _json.dump(cache, f)
+        with patch.object(self.mod, "_CACHE_PATH", cache_path):
+            with patch.object(self.mod, "maybe_spawn_refresh", side_effect=lambda *a: None):
+                result = self.mod._weather_segment(None, cfg)
+        self.assertIsNotNone(result)
+        self.assertIn("🌧", result[1:-1])
+        self.assertIn("15", result[1:-1])
+
     def test_stale_within_ceiling_shows_conditions(self):
         """Stale-but-within-ceiling cache: conditions (icon+temp) still shown (D2-12)."""
         if not self.mod._WEATHER_OK:

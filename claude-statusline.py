@@ -23,8 +23,19 @@ import os
 import sys
 
 _VENV_PY = os.path.expanduser("~/.claude/claude-statusline/.venv/bin/python")
-if sys.executable != _VENV_PY and os.path.exists(_VENV_PY):
-    os.execv(_VENV_PY, [_VENV_PY, __file__, *sys.argv[1:]])
+
+
+def _reexec_into_venv() -> None:
+    """Re-exec under the install's venv interpreter so requests/astral import (D2-03).
+
+    MUST be called only from the __main__ entrypoint — NEVER at module top level.
+    Running it on import would let any `import` of this module (e.g. pytest collecting
+    the test suite) trigger a process-replacing exec and silently hijack the importing
+    process once the venv exists. Guard: skip when already under the venv, or when the
+    venv is absent (then weather degrades but the bar still renders).
+    """
+    if sys.executable != _VENV_PY and os.path.exists(_VENV_PY):
+        os.execv(_VENV_PY, [_VENV_PY, __file__, *sys.argv[1:]])
 
 # ---------------------------------------------------------------------------
 # Third-party dep guards (D2-12 layered degradation)
@@ -108,6 +119,7 @@ DEFAULTS: dict = {
     "weather": {
         "contact_email": "your-email@example.com",  # required by NWS ToS for User-Agent
         "show_weather":  True,
+        "pop_min":       30,    # hide precip chunk below this PoP% (sub-threshold = noise)
     },
 }
 
@@ -946,19 +958,28 @@ def _sun_segment(cfg: dict | None, now: datetime | None = None) -> str | None:
         lon = location.get("lon")
         if lat is None or lon is None:
             return None
+        # 0.0/0.0 is the unconfigured placeholder (null island) — treat as not set.
+        if float(lat) == 0.0 and float(lon) == 0.0:
+            return None
 
         if now is None:
             now = datetime.now()
+        # Treat `now` as local wall-clock time, made timezone-aware in the system
+        # local zone. CRITICAL: pass that same local tzinfo to astral's sun() so it
+        # computes events for the LOCAL calendar date. With the default (UTC) tzinfo,
+        # sun(date=D) returns the events occurring on UTC-date D — for a western
+        # (UTC-offset-negative) location that puts "today's sunset" on the *previous*
+        # local evening, so both today's events read as past and selection breaks.
+        now = now.astimezone()
+        local_tz = now.tzinfo
 
-        # astral LocationInfo: name/region unused; timezone="" triggers local-time computation
         loc = LocationInfo(name="", region="", timezone="UTC", latitude=lat, longitude=lon)
 
-        # Compute sun times for today in UTC, then convert to local naive time
-        today_utc = now.date()
-        s_today = sun(loc.observer, date=today_utc)
-        # astral returns timezone-aware datetimes; strip tz for local comparison
-        sunrise_today = s_today["sunrise"].replace(tzinfo=None)
-        sunset_today  = s_today["sunset"].replace(tzinfo=None)
+        # Events come back tz-aware in local_tz — no further conversion needed.
+        today = now.date()
+        s_today = sun(loc.observer, date=today, tzinfo=local_tz)
+        sunrise_today = s_today["sunrise"]
+        sunset_today  = s_today["sunset"]
 
         if now < sunrise_today:
             event_time = sunrise_today
@@ -968,12 +989,11 @@ def _sun_segment(cfg: dict | None, now: datetime | None = None) -> str | None:
             glyph = "\U0001f307"  # 🌇
         else:
             # Past today's sunset — next event is tomorrow's sunrise
-            tomorrow_utc = today_utc + timedelta(days=1)
-            s_tomorrow = sun(loc.observer, date=tomorrow_utc)
-            event_time = s_tomorrow["sunrise"].replace(tzinfo=None)
+            s_tomorrow = sun(loc.observer, date=today + timedelta(days=1), tzinfo=local_tz)
+            event_time = s_tomorrow["sunrise"]
             glyph = "\U0001f305"  # 🌅
 
-        # Format: "6:14am" — matches fmt_reset() format (LIM-04 / D2-10)
+        # Format in LOCAL time: "6:14am" — matches fmt_reset() format (LIM-04 / D2-10)
         time_str = event_time.strftime("%-I:%M%p").lower()
         return f"{glyph} {time_str}"
     except Exception:
@@ -1016,6 +1036,15 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
         if not weather_cfg.get("show_weather", True):
             return None
 
+        # No configured location → weather isn't set up; omit the whole segment.
+        # lat/lon both 0.0 is the install placeholder meaning "unconfigured" (null
+        # island, no inhabitants), so out-of-the-box the bar matches Phase 1 until
+        # the user sets a real [location] in claude-statusline.toml.
+        _loc = cfg.get("location", {})
+        _lat, _lon = _loc.get("lat"), _loc.get("lon")
+        if _lat is None or _lon is None or (float(_lat) == 0.0 and float(_lon) == 0.0):
+            return None
+
         import time as _time
         now = _time.time()
         cache_cfg = cfg.get("cache", {})
@@ -1040,11 +1069,17 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
                 unit_symbol = "°C" if temp_unit == "C" else "°F"
                 conditions_chunk = f"{icon} {temp}{unit_symbol}"
 
-        # Step 3b: Precip chunk — only when PoP is present and non-zero (WX-02, D2-09)
+        # Step 3b: Precip chunk — only when PoP meets the minimum threshold (WX-02, D2-09).
+        # Sub-threshold PoP is noise to a forecaster; hide it. Default floor 30%,
+        # configurable via [weather] pop_min.
         precip_chunk = None
         if section_within_ceiling(weather_section, max_stale=weather_max_stale, now=now):
             pop = weather_section.get("pop")
-            if pop is not None and pop != 0:
+            try:
+                pop_min = float(weather_cfg.get("pop_min", 30))
+            except (TypeError, ValueError):
+                pop_min = 30.0
+            if pop is not None and float(pop) >= pop_min:
                 precip_chunk = f"\U0001f327️{int(pop)}%"  # 🌧️
 
         # Step 3c: Trailing detail — alert override or sun event (D2-11, D2-12, WX-04)
@@ -1182,6 +1217,10 @@ def render_bottom_line(data: dict, cfg: dict) -> str | None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # FIRST: switch to the venv interpreter (D2-03). Done here (not at import) so
+    # importing this module never hijacks the importer via os.execv.
+    _reexec_into_venv()
+
     # --refresh mode: invoked by the detached background child (D2-05).
     # Loads config, runs the NWS fetch, writes cache, exits.
     # Never reads stdin; never writes to stdout (only the render path does that).

@@ -227,6 +227,31 @@ class TestBootstrapDegradationSubprocess(unittest.TestCase):
         self.assertLess(exists_pos, execv_pos,
                         "os.path.exists must appear before os.execv in source")
 
+    def test_reexec_not_at_module_top_level(self):
+        """The venv re-exec must live inside a function, never at module top level.
+
+        Regression: a top-level os.execv runs on *import*, so importing the module
+        (e.g. pytest collecting the suite) hijacks the importing process via execv
+        once the venv exists. Every os.execv line must be indented (inside a def).
+        """
+        with open(SCRIPT) as f:
+            lines = f.readlines()
+        top_level = [
+            (i + 1, ln.rstrip())
+            for i, ln in enumerate(lines)
+            if "os.execv" in ln and not ln[:1].isspace()  # column-0 = module scope
+        ]
+        self.assertEqual(
+            top_level, [],
+            f"os.execv must not appear at module top level (runs on import): {top_level}",
+        )
+
+    def test_reexec_is_a_callable_function(self):
+        """_reexec_into_venv is a function (called from main), not import-time code."""
+        mod = _load_script_module()
+        self.assertTrue(callable(getattr(mod, "_reexec_into_venv", None)),
+                        "_reexec_into_venv must be a callable invoked from main(), not at import")
+
 
 if __name__ == "__main__":
     unittest.main()

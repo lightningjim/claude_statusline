@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
 SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "claude-statusline.py")
@@ -20,13 +21,22 @@ FIXTURE = os.path.join(
     os.path.dirname(__file__), "..", ".examples", "claude_stdin.json"
 )
 
+# Isolate from the host's real ~/.claude/claude-statusline/ install (config + cache)
+# so these Phase-1 render contracts stay deterministic even on a machine where weather
+# is configured. Empty HOME → no config → default location 0.0/0.0 → weather segment
+# omitted, leaving exactly the Phase-1 top/bottom lines.
+_ISOLATED_HOME = tempfile.mkdtemp(prefix="gsd-statusline-test-home-")
+
 
 def run_script(stdin_bytes: bytes) -> subprocess.CompletedProcess:
-    """Run the script with given stdin bytes, return CompletedProcess."""
+    """Run the script with given stdin bytes under an isolated HOME."""
+    env = dict(os.environ)
+    env["HOME"] = _ISOLATED_HOME
     return subprocess.run(
         [sys.executable, SCRIPT],
         input=stdin_bytes,
         capture_output=True,
+        env=env,
     )
 
 

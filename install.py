@@ -62,31 +62,36 @@ REPO_CONFIG_PATH = os.path.join(REPO_DIR, CONFIG_NAME)
 # Default config content (written when no user config exists)
 DEFAULT_CONFIG_CONTENT = """\
 # claude-statusline configuration
-# Edit this file to enable weather: set [location] lat/lon and [weather] contact_email.
-# All values have built-in defaults; this file only needs the keys you want to override.
+# To enable weather, set lat/lon under [location] and contact_email under [weather].
+#
+# IMPORTANT: the section headers ([location], [weather], ...) are intentionally left
+# UNCOMMENTED so that any key you uncomment nests under the correct table. Only
+# uncomment/edit the individual key lines below — do NOT re-comment the headers, or
+# the keys become top-level and are ignored (the loader reads them nested).
 
-# [location]
+[location]
 # lat = 39.7392     # your latitude  (decimal degrees, positive = North)
 # lon = -104.9903   # your longitude (decimal degrees, negative = West)
 
-# [weather]
+[weather]
 # contact_email = "your-email@example.com"  # required by NWS ToS (never emitted to stdout)
 # show_weather = true
+# pop_min = 30      # hide the precip chunk below this probability-of-precipitation %
 
-# [units]
+[units]
 # temp_unit = "F"   # or "C"
 
-# [cache]
+[cache]
 # weather_ttl = 600        # seconds to cache conditions (default 10 min)
 # alerts_ttl = 300         # seconds to cache alerts (default 5 min)
 # weather_max_stale = 3600 # max age (seconds) before dropping stale conditions (default 1 h)
 # alerts_max_stale = 900   # max age (seconds) before dropping stale alerts (default 15 min)
 
-# [thresholds]
+[thresholds]
 # warn = 70
 # crit = 90
 
-# [toggles]
+[toggles]
 # show_context_bar = true
 # show_five_hour = true
 # show_weekly = true
