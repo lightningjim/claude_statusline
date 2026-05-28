@@ -63,7 +63,20 @@ Plans:
   4. Weather (~10 min) and alerts (~5 min) are written to a temp-file cache; subsequent renders read the cache and return instantly
   5. When the network is unavailable or the cache is cold, the bar still renders — weather block is omitted or shows stale data gracefully
 
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Packaging (subfolder + venv + self-re-exec) + extended config + sun-only weather segment with degradation (WX-03, WX-06)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02-02-PLAN.md — Sectioned cache + fire-and-forget detached NWS fetch + condition icon/temp/precip (WX-01, WX-02, WX-05)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02-03-PLAN.md — Active-alert override: references-chain dedup, severity color, highest-severity +N, sun fallback (WX-04)
 
 ### Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)
 
@@ -103,7 +116,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
-| 2. Weather Layer | 0/TBD | Not started | - |
+| 2. Weather Layer | 0/3 | Not started | - |
 | 3. Presets for block fill | 0/TBD | Not started | - |
 | 4. git info incl. active worktree | 0/TBD | Not started | - |
 | 5. GSD status info | 0/TBD | Not started | - |
