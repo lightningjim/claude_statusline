@@ -53,6 +53,7 @@ Deferred to future release. Tracked but not in current roadmap.
 - **ENH-01**: Show session cost (`cost.total_cost_usd`)
 - **ENH-02**: Show effort level / fast-mode indicator
 - **ENH-03**: Multi-location or auto-geolocation for weather
+- **ENH-04**: Config-driven richer icon set (`icon_set = "emoji" | "nerd-weather"`) using the [Weather Icons](https://erikflowers.github.io/weather-icons/) glyphs bundled in Nerd Fonts — far more granular (day/night variants, fog/sleet/gusts, moon phases), monochrome + ANSI-colorable, consistent single-cell width. Maps the NWS observation icon-URL token (skc/few/sct/bkn/ovc/ra/tsra/sn/fg + day|night) → `wi-*` PUA codepoints. Requires the user's terminal to use a Nerd Font (or Weather Icons font); default stays emoji for portability. (Considered during Phase 2 — user open to installing a Nerd Font.)
 
 ## Out of Scope
 
