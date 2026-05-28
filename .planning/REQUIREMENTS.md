@@ -9,14 +9,14 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Runtime
 
-- [ ] **RUN-01**: Statusline reads one JSON object from stdin, writes the status line(s) to stdout, and exits fast
-- [ ] **RUN-02**: Missing or malformed stdin fields never crash the command or corrupt the bar (graceful degradation)
+- [x] **RUN-01**: Statusline reads one JSON object from stdin, writes the status line(s) to stdout, and exits fast
+- [x] **RUN-02**: Missing or malformed stdin fields never crash the command or corrupt the bar (graceful degradation)
 
 ### Top Line
 
-- [ ] **TOP-01**: Top line shows the running project (basename of `workspace.project_dir`)
-- [ ] **TOP-02**: Top line shows the model (`model.display_name`)
-- [ ] **TOP-03**: A thinking glyph (🧠) is appended to the model when `thinking.enabled` is true
+- [x] **TOP-01**: Top line shows the running project (basename of `workspace.project_dir`)
+- [x] **TOP-02**: Top line shows the model (`model.display_name`)
+- [x] **TOP-03**: A thinking glyph (💭) is appended to the model when `thinking.enabled` is true
 
 ### Weather
 
@@ -24,7 +24,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **WX-02**: When precipitation is present, append `|🌧️<precip>` to the weather block
 - [ ] **WX-03**: Weather details show the next sun event — 🌅 sunrise or 🌇 sunset, whichever comes next — computed locally from configured lat/lon
 - [ ] **WX-04**: When an active NWS alert exists for the location, it replaces the sun-event detail
-- [ ] **WX-05**: Weather (~10min) and alerts (~5min) are cached to a temp file; rendering reads cache and never blocks on the network
+- [ ] **WX-05**: Weather (~15min) and alerts (~5min) are cached to a temp file; rendering reads cache and never blocks on the network
 - [ ] **WX-06**: When weather/alerts are unavailable (no network, cold cache), the line still renders (omit or show stale gracefully)
 
 ### Context Usage
@@ -71,11 +71,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RUN-01 | Phase 1 | Pending |
-| RUN-02 | Phase 1 | Pending |
-| TOP-01 | Phase 1 | Pending |
-| TOP-02 | Phase 1 | Pending |
-| TOP-03 | Phase 1 | Pending |
+| RUN-01 | Phase 1 | Done (01-01) |
+| RUN-02 | Phase 1 | Done (01-01) |
+| TOP-01 | Phase 1 | Done (01-01) |
+| TOP-02 | Phase 1 | Done (01-01) |
+| TOP-03 | Phase 1 | Done (01-01) |
 | WX-01 | Phase 2 | Pending |
 | WX-02 | Phase 2 | Pending |
 | WX-03 | Phase 2 | Pending |
@@ -98,4 +98,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-05-28*
-*Last updated: 2026-05-28 after roadmap creation*
+*Last updated: 2026-05-28 after Plan 01-01 completion (RUN-01/02, TOP-01/02/03 marked done)*
