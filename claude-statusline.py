@@ -50,8 +50,10 @@ except Exception:
 _WEATHER_OK = _ASTRAL_OK and _REQUESTS_OK
 
 import copy
+import fcntl
 import json
 import math
+import subprocess
 import tomllib
 from datetime import datetime, timedelta
 
@@ -248,6 +250,272 @@ def section_within_ceiling(section: dict, max_stale: float, now: float) -> bool:
         return (now - fetched_at) <= max_stale
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------------------
+# NWS fetch layer (D2-05, D2-08, D2-09)
+#
+# ALL network I/O runs ONLY in the detached background child (--refresh mode).
+# The render path reads cache.json and returns instantly — it never calls
+# any function in this section directly (D2-05 / critical reminder).
+#
+# NWS User-Agent is required by api.weather.gov ToS; a 403 is returned
+# without it.  contact_email is read from cfg and placed ONLY in the
+# User-Agent header — never printed to stdout (T-02-06).
+# ---------------------------------------------------------------------------
+
+# Version constant — embedded in the User-Agent.
+# Keep in sync with pyproject.toml.
+_APP_VERSION = "0.2.0"
+
+# Lockfile path — created with exclusive mode to prevent concurrent fetches (T-02-09).
+_LOCK_PATH = os.path.expanduser("~/.claude/claude-statusline/refresh.lock")
+
+# NWS textDescription / icon-path → emoji mapping (Claude's discretion per CONTEXT).
+# The icon URL path encodes the condition code (e.g. /icons/land/day/skc).
+# We match against textDescription first (case-insensitive) then fall back to
+# scanning the icon URL path segment.
+_NWS_ICON_MAP: list[tuple[tuple[str, ...], str]] = [
+    # Thunderstorm conditions
+    (("thunderstorm", "tstm", "thunder"), "⛈️"),
+    # Rain / shower conditions
+    (("rain_showers", "rain shower", "showers", "drizzle", "rain", "sleet"), "🌧️"),
+    # Snow conditions
+    (("snow", "blizzard", "wintry mix", "winter mix", "freezing rain"), "🌨️"),
+    # Fog / low visibility
+    (("fog", "haze", "smoke", "dust", "sand", "ash"), "🌫️"),
+    # Windy / blustery
+    (("wind", "breezy", "blustery"), "💨"),
+    # Cloudy
+    (("overcast", "cloudy"), "☁️"),
+    # Mostly / partly cloudy
+    (("mostly cloudy", "bkn", "broken", "few", "scattered", "partly cloudy",
+      "mostly clear", "partly sunny"), "⛅"),
+    # Clear / sunny
+    (("clear", "fair", "sunny", "skc", "hot"), "☀️"),
+    # Cold / frost
+    (("cold", "frost"), "🥶"),
+]
+
+
+def _icon_to_emoji(text_description: str, icon_url: str) -> str:
+    """Map NWS textDescription and/or icon URL to an emoji condition icon.
+
+    Tries text_description first (lowercase contains-match), then icon URL path.
+    Falls back to "🌡️" if no match found.
+    """
+    desc = (text_description or "").lower()
+    icon_path = (icon_url or "").lower()
+
+    for keywords, emoji in _NWS_ICON_MAP:
+        for kw in keywords:
+            if kw in desc or kw in icon_path:
+                return emoji
+    return "🌡️"  # fallback: thermometer
+
+
+def make_user_agent(version: str, contact_email: str) -> str:
+    """Return the NWS-ToS-compliant User-Agent string.
+
+    Format: 'claude-statusline/<version> (<contact_email>)'
+    contact_email is placed ONLY in this header — never logged or printed (T-02-06).
+    """
+    return f"claude-statusline/{version} ({contact_email})"
+
+
+def c_to_unit(celsius, unit: str) -> int | None:
+    """Convert NWS Celsius temperature to the configured unit, rounded to a whole number.
+
+    Returns None when celsius is None (sensor value missing).
+    unit: "F" → Fahrenheit (default); "C" → Celsius; anything else → Fahrenheit.
+    """
+    if celsius is None:
+        return None
+    try:
+        c = float(celsius)
+        if unit == "C":
+            return round(c)
+        # Default: convert to Fahrenheit
+        return round(c * 9 / 5 + 32)
+    except Exception:
+        return None
+
+
+def _nws_get(url: str, ua: str, accept: str | None = None) -> dict:
+    """Perform a single synchronous NWS GET request.
+
+    Sends the mandatory User-Agent header (NWS ToS / T-02-11).
+    Raises on any non-2xx or parse error — caller is responsible for try/except.
+
+    Runs ONLY in the detached background child — never on the render path (D2-05).
+    """
+    headers = {"User-Agent": ua}
+    if accept:
+        headers["Accept"] = accept
+    resp = requests.get(url, headers=headers, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_weather(cfg: dict) -> None:
+    """Fetch NWS conditions + PoP and write geo + weather cache sections.
+
+    Flow (D2-08):
+      1. Resolve gridpoint via /points/{lat:.4f},{lon:.4f} (cache geo permanently).
+      2. Resolve nearest observation station via observationStations URL.
+      3. Fetch latest observation (icon + temperature).
+      4. Fetch hourly forecast first period (PoP).
+      5. Write geo and weather sections atomically.
+
+    All network/parse errors are swallowed — the cache is simply left unchanged
+    and the render falls back to its current cached state (T-02-07).
+
+    RUNS ONLY IN THE DETACHED CHILD (--refresh mode). Never called on the render path.
+    """
+    try:
+        location = cfg.get("location", {})
+        lat = float(location.get("lat", 0.0))
+        lon = float(location.get("lon", 0.0))
+        weather_cfg = cfg.get("weather", {})
+        contact_email = weather_cfg.get("contact_email", "")
+        units_cfg = cfg.get("units", {})
+        temp_unit = units_cfg.get("temp_unit", "F")
+
+        ua = make_user_agent(_APP_VERSION, contact_email)
+        import time as _time
+        now = _time.time()
+
+        # Step 1: /points — resolve gridpoint + observationStations URL
+        points_url = f"https://api.weather.gov/points/{lat:.4f},{lon:.4f}"
+        points_data = _nws_get(points_url, ua)
+        props = points_data["properties"]
+        cwa = props["gridId"]          # NWS office code, e.g. "OUN"
+        grid_x = props["gridX"]
+        grid_y = props["gridY"]
+        stations_url = props["observationStations"]
+
+        # Step 2: observationStations — get nearest station identifier
+        stations_data = _nws_get(stations_url, ua)
+        features = stations_data.get("features") or []
+        if not features:
+            return  # no stations found — leave cache unchanged
+        station_id = features[0]["properties"]["stationIdentifier"]
+
+        # Write geo section (near-permanent — only re-fetched when absent, D2-06)
+        write_cache_section(_CACHE_PATH, "geo", {
+            "cwa": cwa,
+            "gridX": grid_x,
+            "gridY": grid_y,
+            "station_id": station_id,
+        }, now)
+
+        # Step 3: /stations/{id}/observations/latest — current conditions
+        obs_url = f"https://api.weather.gov/stations/{station_id}/observations/latest"
+        obs_data = _nws_get(obs_url, ua)
+        obs_props = obs_data["properties"]
+        temp_c = obs_props.get("temperature", {}).get("value")  # Celsius, may be null
+        text_desc = obs_props.get("textDescription", "")
+        icon_url = obs_props.get("icon", "")
+        icon_emoji = _icon_to_emoji(text_desc, icon_url)
+        temp_converted = c_to_unit(temp_c, temp_unit)
+
+        # Step 4: /gridpoints/{cwa}/{x},{y}/forecast/hourly — PoP for current period
+        hourly_url = f"https://api.weather.gov/gridpoints/{cwa}/{grid_x},{grid_y}/forecast/hourly"
+        hourly_data = _nws_get(hourly_url, ua)
+        periods = hourly_data.get("properties", {}).get("periods", [])
+        pop = None
+        if periods:
+            pop_field = periods[0].get("probabilityOfPrecipitation", {})
+            pop = pop_field.get("value")  # percent, may be null
+
+        # Step 5: write weather section atomically
+        weather_payload = {
+            "icon": icon_emoji,
+        }
+        if temp_converted is not None:
+            weather_payload["temp"] = temp_converted
+        if pop is not None:
+            weather_payload["pop"] = pop
+
+        write_cache_section(_CACHE_PATH, "weather", weather_payload, now)
+
+    except Exception:
+        # Any network / parse / OS error is swallowed (T-02-07 / D-10).
+        # The cache is simply left as-is; the render will use the last good value.
+        pass
+
+
+def run_refresh(cfg: dict) -> None:
+    """Entry point for the detached background fetch child (--refresh mode).
+
+    Acquires an exclusive lockfile using O_CREAT|O_EXCL (atomic create — fails
+    if the file already exists).  If the lock is already held by another fetch,
+    exits immediately (no stampede — T-02-09, D2-05).
+
+    On any error: swallows and exits cleanly (never crashes the render bar via stderr).
+    The lock file is always removed in the finally block so a crashed child
+    doesn't leave a stale lock.
+    """
+    lock_path = _LOCK_PATH
+    lock_fd = None
+    try:
+        # Ensure the lock directory exists
+        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+        # O_CREAT|O_EXCL: atomic exclusive create — raises FileExistsError if held
+        try:
+            lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except (FileExistsError, OSError):
+            # Lock already held by another fetch — exit immediately (no stampede)
+            return
+        # Lock acquired — run the fetch
+        fetch_weather(cfg)
+    except Exception:
+        pass
+    finally:
+        # Release: close the fd and remove the lock file
+        if lock_fd is not None:
+            try:
+                os.close(lock_fd)
+            except Exception:
+                pass
+        try:
+            os.unlink(lock_path)
+        except Exception:
+            pass
+
+
+def maybe_spawn_refresh(cfg: dict, cache: dict) -> None:
+    """Spawn a detached background child to refresh the weather cache if stale.
+
+    Checks whether the weather section needs refreshing (past its TTL or absent).
+    If so, spawns a new process under the current interpreter with --refresh,
+    detached (start_new_session=True, stdio=DEVNULL) so it never blocks the render.
+
+    This is a fire-and-forget call on the RENDER PATH — it must return instantly.
+    The parent render continues with the current (possibly stale) cached value.
+    (D2-05 / T-02-08)
+    """
+    try:
+        cache_cfg = cfg.get("cache", {})
+        weather_ttl = float(cache_cfg.get("weather_ttl", 600))
+        import time as _time
+        now = _time.time()
+        weather_section = cache.get("weather", {})
+        # Trigger refresh when: weather section is absent OR stale past its TTL
+        needs_refresh = not section_is_fresh(weather_section, ttl=weather_ttl, now=now)
+        if not needs_refresh:
+            return
+        # Spawn detached child — fixed argv, no shell interpolation (T-02-08)
+        subprocess.Popen(
+            [sys.executable, __file__, "--refresh"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        # Never .wait() or .communicate() — the render path returns immediately.
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -585,6 +853,14 @@ def render_bottom_line(data: dict, cfg: dict) -> str | None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # --refresh mode: invoked by the detached background child (D2-05).
+    # Loads config, runs the NWS fetch, writes cache, exits.
+    # Never reads stdin; never writes to stdout (only the render path does that).
+    if "--refresh" in sys.argv:
+        cfg = load_config()
+        run_refresh(cfg)
+        sys.exit(0)
+
     cfg = load_config()
     data = _load_stdin()
     top = render_top_line(data, cfg)
