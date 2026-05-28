@@ -101,12 +101,20 @@ class TestSkeletonRender(unittest.TestCase):
             first_line = f.readline().rstrip("\n")
         self.assertEqual(first_line, "#!/usr/bin/env python3")
 
-    def test_imports_tomllib_not_requests(self):
-        """Script imports tomllib and does NOT import requests"""
+    def test_imports_tomllib_and_requests_is_guarded(self):
+        """Script imports tomllib; requests is guarded in try/except (Phase 2 D2-12).
+
+        Phase 1 D-12 (zero deps) is superseded by Phase 2 D2-01; requests is now
+        a guarded import that sets _REQUESTS_OK=False on ImportError, so the weather
+        segment omits cleanly without breaking the Phase-1 bar.
+        """
         with open(SCRIPT) as f:
             source = f.read()
         self.assertIn("import tomllib", source)
-        self.assertNotIn("import requests", source)
+        # requests must be guarded (in a try/except), not a bare top-level import
+        self.assertIn("import requests", source)
+        self.assertIn("_REQUESTS_OK = True", source)
+        self.assertIn("_REQUESTS_OK = False", source)
 
 
 if __name__ == "__main__":

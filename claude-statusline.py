@@ -361,6 +361,42 @@ def _sun_segment(cfg: dict | None, now: datetime | None = None) -> str | None:
         return None
 
 
+def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
+    """Return the bracketed weather segment or None to omit (D2-10, D2-12).
+
+    Format (D2-10):  [<icon> <temp> | 🌧️<pop>% | <sun-or-alert>]
+    For this plan (Plan 02-01), only the trailing sun detail is implemented
+    (the first two chunks require NWS network fetch added in Plan 02-02).
+
+    Returns None immediately when:
+      - _WEATHER_OK is False (astral or requests import failed, D2-12)
+      - cfg weather.show_weather is False
+      - _sun_segment returns None and there is no other data
+
+    Wraps entire body in try/except — never raises to caller (D-10).
+    """
+    try:
+        if not _WEATHER_OK:
+            return None
+        cfg = cfg or {}
+        weather_cfg = cfg.get("weather", {})
+        if not weather_cfg.get("show_weather", True):
+            return None
+
+        # For Plan 02-01: build internals from sun detail only.
+        # (Conditions + PoP chunks will be added in Plan 02-02 from cache.json.)
+        sun_detail = _sun_segment(cfg)
+        if sun_detail is None:
+            # No sun detail (missing lat/lon or astral failure): omit entire segment.
+            return None
+
+        # Internals are pipe-delimited (D2-10); only one chunk for now.
+        internals = sun_detail
+        return f"[{internals}]"
+    except Exception:
+        return None
+
+
 def _rate_segment(
     block: dict,
     glyph: str,
@@ -392,12 +428,17 @@ def _rate_segment(
 # ---------------------------------------------------------------------------
 
 def render_top_line(data: dict, cfg: dict) -> str:
-    """Assemble the top line from present segments, joined by a single space."""
+    """Assemble the top line from present segments, joined by a single space.
+
+    Phase 1: [project] [model 💭]
+    Phase 2: [project] [model 💭] [<weather segment>]  (weather omitted when deps unavailable)
+    """
     toggles = cfg.get("toggles", {})
     show_thinking_glyph = toggles.get("show_thinking_glyph", True)
     segments = [
         _project_segment(data),
         _model_segment(data, show_thinking_glyph=show_thinking_glyph),
+        _weather_segment(data, cfg),   # None-filtered by the existing space-join (D2-10)
     ]
     present = [s for s in segments if s is not None]
     return " ".join(present)
