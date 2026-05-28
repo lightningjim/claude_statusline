@@ -445,6 +445,191 @@ def fetch_weather(cfg: dict) -> None:
         pass
 
 
+# ---------------------------------------------------------------------------
+# Alert dedup + severity selection (D2-11, T-02-12)
+#
+# Port of WxDesktopPy dedup.py algorithm to plain NWS feature.properties dicts.
+# No Alert dataclass, no pint, no logging framework — pure dict operations.
+#
+# ALL functions tolerate missing/malformed fields without raising (Rule 2 safety).
+# ---------------------------------------------------------------------------
+
+# CAP messageType values that indicate an alert is superseded / terminal.
+_TERMINAL_MSG_TYPES: frozenset = frozenset({"Cancel", "Ack", "Error"})
+
+# Severity rank: Extreme > Severe > Moderate > Minor > Unknown (D2-11).
+_SEVERITY_RANK: dict = {
+    "Extreme":  4,
+    "Severe":   3,
+    "Moderate": 2,
+    "Minor":    1,
+    "Unknown":  0,
+}
+
+
+def dedup_alerts(alerts: list, now=None) -> list:
+    """Dedup a CAP alert list via the references-chain algorithm.
+
+    Algorithm (ported from WxDesktopPy dedup.py L70-88, simplified):
+      1. Build a superseded set:
+         a. Every identifier appearing in any alert's 'references' list.
+         b. Every alert whose messageType is in {Cancel, Ack, Error}.
+      2. Drop alerts whose 'expires' < now.
+      3. Return survivors sorted by 'sent' descending (newest first).
+
+    Parameters
+    ----------
+    alerts : list of NWS feature dicts (each has a 'properties' sub-dict).
+    now    : datetime (tz-aware or naive) for the expires comparison.
+             Defaults to datetime.now(tz=timezone.utc) when None.
+
+    Tolerates missing/malformed fields by skipping that alert (never raises).
+    (T-02-12 / STRIDE T-02-12 load-bearing safety logic.)
+    """
+    from datetime import timezone as _tz
+    if not alerts:
+        return []
+
+    if now is None:
+        now = datetime.now(tz=_tz.utc)
+
+    # Helper: parse an ISO-8601 string, tolerating trailing 'Z'
+    def _parse_dt(s):
+        if not s:
+            return None
+        try:
+            # Python ≥3.11: fromisoformat handles 'Z'; older: replace manually
+            s2 = s
+            if s2.endswith("Z"):
+                s2 = s2[:-1] + "+00:00"
+            return datetime.fromisoformat(s2)
+        except Exception:
+            return None
+
+    # Step 1: Build the superseded identifier set.
+    superseded: set = set()
+    for alert in alerts:
+        try:
+            props = alert.get("properties") or alert
+            # 1a. Each identifier in this alert's references list is superseded.
+            for ref in (props.get("references") or []):
+                try:
+                    ref_id = ref.get("identifier") or ref.get("id") or str(ref)
+                    if ref_id:
+                        superseded.add(ref_id)
+                except Exception:
+                    pass
+            # 1b. Cancel/Ack/Error alerts are themselves superseded.
+            msg_type = props.get("messageType", "")
+            if msg_type in _TERMINAL_MSG_TYPES:
+                alert_id = props.get("id") or alert.get("id")
+                if alert_id:
+                    superseded.add(alert_id)
+        except Exception:
+            pass
+
+    # Step 2 + 3: Filter out superseded + expired; sort by sent descending.
+    survivors = []
+    for alert in alerts:
+        try:
+            props = alert.get("properties") or alert
+            alert_id = props.get("id") or alert.get("id")
+            if alert_id in superseded:
+                continue
+
+            # Parse expires — skip alerts with missing/unparseable expires
+            expires_str = props.get("expires")
+            if not expires_str:
+                continue  # missing expires: skip (cannot verify it's still active)
+            expires_dt = _parse_dt(expires_str)
+            if expires_dt is None:
+                continue  # unparseable: skip
+
+            # Make both now and expires comparable (strip tz if mixed)
+            try:
+                if expires_dt.tzinfo is not None and now.tzinfo is None:
+                    expires_cmp = expires_dt.replace(tzinfo=None)
+                elif expires_dt.tzinfo is None and now.tzinfo is not None:
+                    expires_cmp = expires_dt.replace(tzinfo=_tz.utc)
+                else:
+                    expires_cmp = expires_dt
+                if expires_cmp <= now:
+                    continue  # expired
+            except Exception:
+                continue
+
+            survivors.append(alert)
+        except Exception:
+            pass  # skip malformed alerts
+
+    # Sort by sent descending (newest first)
+    def _sent_key(alert):
+        try:
+            props = alert.get("properties") or alert
+            dt = _parse_dt(props.get("sent"))
+            if dt is None:
+                return datetime.min.replace(tzinfo=_tz.utc)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=_tz.utc)
+            return dt
+        except Exception:
+            return datetime.min.replace(tzinfo=_tz.utc)
+
+    try:
+        survivors.sort(key=_sent_key, reverse=True)
+    except Exception:
+        pass
+
+    return survivors
+
+
+def select_alert(survivors: list) -> tuple:
+    """Select the highest-severity alert from the survivor list.
+
+    Severity rank: Extreme > Severe > Moderate > Minor > Unknown (D2-11).
+
+    Returns
+    -------
+    (best_alert, remaining_count) where:
+      - best_alert is the alert dict with the highest severity (or None if empty).
+      - remaining_count is len(survivors) - 1 (others after the best).
+
+    Tolerates missing/malformed fields (no raise).
+    """
+    if not survivors:
+        return (None, 0)
+    try:
+        def _severity_rank(alert):
+            try:
+                props = alert.get("properties") or alert
+                sev = props.get("severity", "Unknown")
+                return _SEVERITY_RANK.get(sev, 0)
+            except Exception:
+                return 0
+
+        best = max(survivors, key=_severity_rank)
+        remaining = len(survivors) - 1
+        return (best, remaining)
+    except Exception:
+        return (None, 0)
+
+
+def _alert_color(severity: str) -> str:
+    """Return the ANSI color for a CAP severity level (D2-11).
+
+    Mirrors color_for's shape but maps severity strings instead of percentages.
+      Extreme / Severe  → RED
+      Moderate / Minor  → YELLOW
+      Unknown or other  → YELLOW (visible but not alarming; per plan discretion)
+    """
+    if severity in ("Extreme", "Severe"):
+        return RED
+    if severity in ("Moderate", "Minor"):
+        return YELLOW
+    # Unknown or any unrecognized severity: YELLOW (safe visible default)
+    return YELLOW
+
+
 def run_refresh(cfg: dict) -> None:
     """Entry point for the detached background fetch child (--refresh mode).
 
