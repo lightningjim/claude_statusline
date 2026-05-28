@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 2 Plan 1 complete
-last_updated: "2026-05-28T23:00:00.000Z"
-last_activity: 2026-05-28 -- Phase 2 Plan 1 executed (venv bootstrap + sun segment + subfolder install)
+stopped_at: Phase 2 Plan 2 complete
+last_updated: "2026-05-28T23:45:00.000Z"
+last_activity: 2026-05-28 -- Phase 2 Plan 2 executed (NWS cache + fetch + conditions render)
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
-  percent: 27
+  completed_plans: 5
+  percent: 33
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-28)
 ## Current Position
 
 Phase: 2 (weather-layer) — EXECUTING
-Plan: 2 of 3
-Status: Phase 2 Plan 1 complete; Plan 2 (NWS cache + fetch) next
-Last activity: 2026-05-28 -- Phase 2 Plan 1 executed (venv bootstrap + sun segment + subfolder install)
+Plan: 3 of 3
+Status: Phase 2 Plan 2 complete; Plan 3 (alert override) next
+Last activity: 2026-05-28 -- Phase 2 Plan 2 executed (NWS cache + fetch + conditions render)
 
-Progress: [██████████] 100% (Phase 1) | [███░░░░░░░] 33% (Phase 2)
+Progress: [██████████] 100% (Phase 1) | [██████░░░░] 66% (Phase 2)
 
 ## Performance Metrics
 
@@ -45,11 +45,11 @@ Progress: [██████████] 100% (Phase 1) | [███░░░�
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-core-statusline | 3/3 | 32 min | 10.7 min |
-| 02-weather-layer | 1/3 | 25 min | 25 min |
+| 02-weather-layer | 2/3 | 60 min | 30 min |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01 (12 min), 01-02 (15 min), 01-03 (5 min), 02-01 (25 min)
+- Last 5 plans: 01-01 (12 min), 01-02 (15 min), 01-03 (5 min), 02-01 (25 min), 02-02 (35 min)
 - Trend: On track
 
 *Updated after each plan completion*
@@ -80,6 +80,11 @@ Recent decisions affecting current work:
 - _deep_merge for nested TOML tables — partial overrides keep remaining defaults
 - color_for/is_green refactored with warn/crit default params; backward-compatible with all prior call sites
 - cfg threaded as explicit parameter through render functions (not a global) for testability
+- Lockfile uses O_CREAT|O_EXCL (atomic create) — fails immediately if file exists; removed in finally to prevent stale lock after crash (T-02-09)
+- c_to_unit uses round() not floor for temperatures — rounding reads better at human-scale
+- _icon_to_emoji: textDescription match first, then NWS icon URL path; falls back to thermometer glyph
+- section_within_ceiling uses <= at max-stale boundary; section_is_fresh uses < at TTL boundary
+- maybe_spawn_refresh: fixed argv [sys.executable, __file__, "--refresh"], start_new_session=True; never .wait()/.communicate() (T-02-08)
 
 ### Roadmap Evolution
 
@@ -105,6 +110,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-05-28T23:00:00.000Z
-Stopped at: Phase 2 Plan 1 complete — 02-01-PLAN.md
-Resume file: .planning/phases/02-weather-layer/02-02-PLAN.md (Plan 2: NWS cache + fire-and-forget fetch)
+Last session: 2026-05-28T23:45:00.000Z
+Stopped at: Phase 2 Plan 2 complete — 02-02-PLAN.md
+Resume file: .planning/phases/02-weather-layer/02-03-PLAN.md (Plan 3: active-alert override)
