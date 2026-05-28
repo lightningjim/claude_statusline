@@ -14,7 +14,7 @@ Two vertical slices deliver a complete working statusline. Phase 1 wires up ever
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Statusline** - Colored two-line bar from stdin — project, model+thinking, context bar, rate limits with reset times, TOML config, graceful degradation — DONE 2026-05-28
-- [ ] **Phase 2: Weather Layer** - NWS conditions/temp/precip, cached alerts, local sunrise/sunset via astral, weather degradation
+- [x] **Phase 2: Weather Layer** - NWS conditions/temp/precip, cached alerts, local sunrise/sunset via astral, weather degradation (completed 2026-05-28)
 - [ ] **Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)**
 - [ ] **Phase 4: git info including active worktree**
 - [ ] **Phase 5: GSD status info especially the active Plan(s) being run**
@@ -76,7 +76,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 02-03-PLAN.md — Active-alert override: references-chain dedup, severity color, highest-severity +N, sun fallback (WX-04)
+- [x] 02-03-PLAN.md — Active-alert override: references-chain dedup, severity color, highest-severity +N, sun fallback (WX-04)
 
 ### Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)
 
@@ -116,7 +116,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
-| 2. Weather Layer | 2/3 | In progress | - |
+| 2. Weather Layer | 3/3 | Complete   | 2026-05-28 |
 | 3. Presets for block fill | 0/TBD | Not started | - |
 | 4. git info incl. active worktree | 0/TBD | Not started | - |
 | 5. GSD status info | 0/TBD | Not started | - |
