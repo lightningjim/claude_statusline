@@ -151,9 +151,12 @@ def pct_int(value) -> int | None:
     if value is None:
         return None
     try:
-        return math.floor(float(value))
+        f = float(value)
     except (TypeError, ValueError):
         return None
+    if not math.isfinite(f):  # reject NaN / ±inf (e.g. JSON 1e309) — WR-01
+        return None
+    return math.floor(f)
 
 
 def fmt_reset(epoch) -> str | None:
@@ -242,7 +245,9 @@ def _context_segment(
         pct = pct_int(ctx.get("used_percentage"))
         if pct is None:
             return None
-        filled = math.floor(pct * _BAR_WIDTH / 100)
+        # Clamp to [0, _BAR_WIDTH] so out-of-range pct (e.g. >104, or negative)
+        # can never overflow/underflow the 20-char bar (CR-01).
+        filled = max(0, min(_BAR_WIDTH, math.floor(pct * _BAR_WIDTH / 100)))
         empty = _BAR_WIDTH - filled
         bar_chars = _FILLED * filled + _EMPTY * empty
         color = color_for(pct, warn, crit)

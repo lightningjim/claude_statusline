@@ -65,10 +65,16 @@ def load_settings(path: str) -> dict:
 
 
 def write_settings(path: str, data: dict) -> None:
-    """Write settings dict to path as pretty-printed JSON."""
-    with open(path, "w", encoding="utf-8") as f:
+    """Write settings dict to path as pretty-printed JSON, atomically (WR-02).
+
+    Write to a temp file in the same directory, then os.replace() so a crash
+    mid-write can never leave a truncated/corrupt settings.json.
+    """
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
+    os.replace(tmp, path)
 
 
 def build_status_line_entry(script_path: str) -> dict:

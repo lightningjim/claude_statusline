@@ -229,6 +229,7 @@ class TestFallbackRegressionSubprocess(unittest.TestCase):
 
     def test_malformed_config_renders_two_lines(self):
         """With malformed config, the fixture still renders 2 lines and exits 0."""
+        os.makedirs(os.path.expanduser("~/.claude"), exist_ok=True)  # WR-05: clean CI
         with tempfile.NamedTemporaryFile(
             suffix=".toml", mode="w", delete=False,
             dir=os.path.expanduser("~/.claude")
