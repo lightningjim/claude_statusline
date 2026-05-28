@@ -22,10 +22,10 @@ Deliver a complete, colored **two-line** status bar driven **entirely from stdin
 
 ### Line layout & separators
 - **D-01:** Two-line, **bracketed-segments** layout. Each top-line segment is wrapped in its own brackets.
-- **D-02:** Top line: `[<project>] [<model> 🧠]`
+- **D-02:** Top line: `[<project>] [<model> 💭]`
   - `<project>` = basename of `workspace.project_dir`
   - `<model>` = `model.display_name` (full string, e.g. `Opus 4.8 (1M context)`)
-  - 🧠 appended inside the model brackets only when `thinking.enabled` is true
+  - 💭 appended inside the model brackets only when `thinking.enabled` is true
 - **D-03:** Bottom line: `[<20-wide ▓░ bar>] <pct>%   ⏳ <5h%>[ <reset>]   🗓 <wk%>[ <reset>]`
   - Context bar is bracketed; explicit percentage follows the bar.
   - Rate-limit indicators use **glyph-only** labels — ⏳ for 5-hour, 🗓 for weekly. No "5h"/"wk" text labels.
@@ -62,7 +62,7 @@ Deliver a complete, colored **two-line** status bar driven **entirely from stdin
 
 - The selected layout, concretely (5h non-green example):
   ```
-  [claude_statusline] [Opus 4.8 (1M context) 🧠]
+  [claude_statusline] [Opus 4.8 (1M context) 💭]
   [▓▓▓▓▓▓▓▓▓░░░░░░░░░░░] 47%   ⏳ 78% 5:15pm   🗓 3%
   ```
   (where `5:15pm` is dim, and 78% is yellow.)

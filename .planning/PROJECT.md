@@ -16,11 +16,11 @@ At a glance, the bottom of the terminal tells the truth about the current sessio
 
 ### Active
 
-**Top line — `[project] [model 🧠] [weather]`**
+**Top line — `[project] [model 💭] [weather]`**
 
 - [ ] Show the running project (basename of `workspace.project_dir`)
 - [ ] Show the model (`model.display_name`)
-- [ ] Append a thinking glyph (🧠) when `thinking.enabled` is true
+- [ ] Append a thinking glyph (💭) when `thinking.enabled` is true
 - [ ] Show weather as `<icon> <temp>[|🌧️<precip>]|<details>`
 - [ ] `<details>` = the next sun event: 🌅 sunrise or 🌇 sunset, whichever comes next
 - [ ] Replace `<details>` with an active NWS weather alert when one exists for the configured location

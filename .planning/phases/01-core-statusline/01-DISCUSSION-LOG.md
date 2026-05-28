@@ -40,7 +40,7 @@
 
 **User's choice:** Dim / neutral.
 
-**Notes:** Final layout — `[project] [model 🧠]` on top; `[‹20-wide ▓░ bar›] <pct>%   ⏳ <5h%>[ <reset>]   🗓 <wk%>[ <reset>]` on bottom. Reset shown only for non-green indicators.
+**Notes:** Final layout — `[project] [model 💭]` on top; `[‹20-wide ▓░ bar›] <pct>%   ⏳ <5h%>[ <reset>]   🗓 <wk%>[ <reset>]` on bottom. Reset shown only for non-green indicators.
 
 ---
 

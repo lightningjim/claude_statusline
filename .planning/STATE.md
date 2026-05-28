@@ -77,6 +77,10 @@ Recent decisions affecting current work:
 - color_for/is_green refactored with warn/crit default params; backward-compatible with all prior call sites
 - cfg threaded as explicit parameter through render functions (not a global) for testability
 
+### Roadmap Evolution
+
+- Phase 3 added: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)
+
 ### Pending Todos
 
 None yet.
