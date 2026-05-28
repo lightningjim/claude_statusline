@@ -42,7 +42,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Formatting & Config
 
 - [x] **FMT-01**: Color bands are green <70%, yellow 70–90%, red >90%, applied consistently to context, 5h, and weekly indicators
-- [ ] **CFG-01**: A single TOML config file holds location (lat/lon), color thresholds, units, feature toggles, and cache TTLs
+- [x] **CFG-01**: A single TOML config file holds location (lat/lon), color thresholds, units, feature toggles, and cache TTLs
 
 ## v2 Requirements
 
@@ -89,7 +89,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LIM-03 | Phase 1 | Done (01-02) |
 | LIM-04 | Phase 1 | Done (01-02) |
 | FMT-01 | Phase 1 | Done (01-02) |
-| CFG-01 | Phase 1 | Pending |
+| CFG-01 | Phase 1 | Complete |
 
 **Coverage:**
 - v1 requirements: 19 total
