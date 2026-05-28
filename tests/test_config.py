@@ -229,16 +229,18 @@ class TestFallbackRegressionSubprocess(unittest.TestCase):
 
     def test_malformed_config_renders_two_lines(self):
         """With malformed config, the fixture still renders 2 lines and exits 0."""
-        os.makedirs(os.path.expanduser("~/.claude"), exist_ok=True)  # WR-05: clean CI
+        # Config path moved to subfolder in Phase 2 (D2-02)
+        config_dir = os.path.expanduser("~/.claude/claude-statusline")
+        os.makedirs(config_dir, exist_ok=True)  # WR-05: clean CI
         with tempfile.NamedTemporaryFile(
             suffix=".toml", mode="w", delete=False,
-            dir=os.path.expanduser("~/.claude")
+            dir=config_dir
         ) as f:
             f.write("[broken toml\n")
             bad_config_path = f.name
 
         # Backup real config if it exists
-        real_config = os.path.expanduser("~/.claude/claude-statusline.toml")
+        real_config = os.path.join(config_dir, "claude-statusline.toml")
         backup_path = real_config + ".testbak"
         had_real = os.path.exists(real_config)
         if had_real:
@@ -275,8 +277,11 @@ class TestPerSegmentToggles(unittest.TestCase):
 
     def _run_with_toml(self, toml_bytes: bytes) -> tuple[int, list[str], str]:
         """Write a temp TOML config, run fixture through script, return (rc, lines, stderr)."""
-        real_config = os.path.expanduser("~/.claude/claude-statusline.toml")
+        # Config path moved to subfolder in Phase 2 (D2-02)
+        config_dir = os.path.expanduser("~/.claude/claude-statusline")
+        real_config = os.path.join(config_dir, "claude-statusline.toml")
         backup_path = real_config + ".toggletestbak"
+        os.makedirs(config_dir, exist_ok=True)
         had_real = os.path.exists(real_config)
         if had_real:
             os.rename(real_config, backup_path)

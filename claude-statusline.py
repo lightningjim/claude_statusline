@@ -1,23 +1,59 @@
 #!/usr/bin/env python3
 """
-claude-statusline — Plan 01-03 (TOML config)
+claude-statusline — Plan 02-01 (weather layer: sun event + venv bootstrap)
 
 Reads one JSON object from stdin (Claude Code's session data), renders a
 two-line status bar to stdout, and exits 0.  Never emits a Python traceback.
 
 Top line   (Plan 01):  [project] [model 💭]
+Top line   (Plan 02):  [project] [model 💭] [<icon> <temp> | <sun-or-alert>]
 Bottom line (Plan 02): [<20-wide ▓░ bar>] <pct>%   ⏳ <5h%>[ <reset>]   🗓 <wk%>[ <reset>]
-Plan 03:   Reads TOML config at ~/.claude/claude-statusline.toml; silent defaults
-           on any error; per-segment toggles; configurable thresholds.
+Plan 03:   Reads TOML config at ~/.claude/claude-statusline/claude-statusline.toml;
+           silent defaults on any error; per-segment toggles; configurable thresholds.
 """
+
+# ---------------------------------------------------------------------------
+# Venv self-re-exec bootstrap (D2-03)
+# Must appear before heavy imports so the re-exec is cheap.
+# Guard with os.path.exists() so a missing venv NEVER hard-fails the bar.
+# The sys.executable comparison prevents infinite loops if already in the venv.
+# ---------------------------------------------------------------------------
+
+import os
+import sys
+
+_VENV_PY = os.path.expanduser("~/.claude/claude-statusline/.venv/bin/python")
+if sys.executable != _VENV_PY and os.path.exists(_VENV_PY):
+    os.execv(_VENV_PY, [_VENV_PY, __file__, *sys.argv[1:]])
+
+# ---------------------------------------------------------------------------
+# Third-party dep guards (D2-12 layered degradation)
+# If astral or requests are unavailable, the weather segment is omitted;
+# the Phase-1 bar (project, model, bottom line) renders completely untouched.
+# ---------------------------------------------------------------------------
+
+try:
+    import astral  # noqa: F401
+    from astral import LocationInfo
+    from astral.sun import sun
+    _ASTRAL_OK = True
+except Exception:
+    _ASTRAL_OK = False
+
+try:
+    import requests  # noqa: F401
+    _REQUESTS_OK = True
+except Exception:
+    _REQUESTS_OK = False
+
+# _WEATHER_OK: True only when BOTH astral AND requests are importable.
+_WEATHER_OK = _ASTRAL_OK and _REQUESTS_OK
 
 import copy
 import json
 import math
-import os
-import sys
 import tomllib
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 # ---------------------------------------------------------------------------
@@ -52,15 +88,25 @@ DEFAULTS: dict = {
         "show_thinking_glyph": True,
     },
     "units": {
-        # Phase-2 only: temp_unit = "F"  # or "C"
+        "temp_unit": "F",  # or "C"
     },
-    # Phase-2 only — NOT consumed in Phase 1 (D-09)
-    # [location]
-    # lat = 0.0
-    # lon = 0.0
-    # [cache]
-    # weather_ttl = 600
-    # alerts_ttl  = 300
+    # Phase-2 location — set lat/lon in claude-statusline.toml for weather/sun (D-09)
+    "location": {
+        "lat": 0.0,
+        "lon": 0.0,
+    },
+    # Phase-2 cache — TTL (seconds) for weather and alert caching (D2-07)
+    "cache": {
+        "weather_ttl":        600,    # 10 min
+        "alerts_ttl":         300,    # 5 min
+        "weather_max_stale":  3600,   # 1 hour ceiling before dropping stale obs
+        "alerts_max_stale":   900,    # 15 min ceiling before dropping stale alerts
+    },
+    # Phase-2 weather settings (D2-12)
+    "weather": {
+        "contact_email": "your-email@example.com",  # required by NWS ToS for User-Agent
+        "show_weather":  True,
+    },
 }
 
 
@@ -86,7 +132,7 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 def load_config(path: str | None = None) -> dict:
-    """Load TOML config at *path* (default: ~/.claude/claude-statusline.toml).
+    """Load TOML config at *path* (default: ~/.claude/claude-statusline/claude-statusline.toml).
 
     On ANY error (file missing, unreadable, malformed TOML) the function
     returns a deep copy of DEFAULTS silently — no exception, no traceback
@@ -95,9 +141,11 @@ def load_config(path: str | None = None) -> dict:
     On success, the parsed values are deep-merged over DEFAULTS so absent
     keys keep their defaults and extra Phase-2 keys (location.lat/lon, cache
     TTLs) are silently retained/ignored in Phase 1 (D-09).
+
+    Config path supersedes Phase 1 D-06: now inside the subfolder (D2-02).
     """
     if path is None:
-        path = os.path.expanduser("~/.claude/claude-statusline.toml")
+        path = os.path.expanduser("~/.claude/claude-statusline/claude-statusline.toml")
     try:
         with open(path, "rb") as fh:
             parsed = tomllib.load(fh)
@@ -254,6 +302,61 @@ def _context_segment(
         bar = f"[{color}{bar_chars}{RESET}]"
         pct_str = f"{color}{pct}%{RESET}"
         return f"{bar} {pct_str}"
+    except Exception:
+        return None
+
+
+def _sun_segment(cfg: dict | None, now: datetime | None = None) -> str | None:
+    """Return the next sun event as a glyph + local time string, or None on failure.
+
+    Selection logic (matches bash predecessor's sunriseset(), D2-10):
+      - now < today's sunrise  → "🌅 <sunrise>"  (sunrise glyph + sunrise time)
+      - now < today's sunset   → "🌇 <sunset>"   (sunset glyph + sunset time)
+      - otherwise              → "🌅 <tomorrow's sunrise>"  (next day wraps)
+
+    Time formatted with strftime("%-I:%M%p").lower() — matches fmt_reset() e.g. "6:14am".
+    Returns None immediately when _ASTRAL_OK is False (import-level guard, D2-12).
+    Returns None on any error (missing lat/lon, astral failure, bad cfg) — silent omit.
+    Never raises to the caller.
+    """
+    if not _ASTRAL_OK:
+        return None
+    try:
+        location = (cfg or {}).get("location", {})
+        lat = location.get("lat")
+        lon = location.get("lon")
+        if lat is None or lon is None:
+            return None
+
+        if now is None:
+            now = datetime.now()
+
+        # astral LocationInfo: name/region unused; timezone="" triggers local-time computation
+        loc = LocationInfo(name="", region="", timezone="UTC", latitude=lat, longitude=lon)
+
+        # Compute sun times for today in UTC, then convert to local naive time
+        today_utc = now.date()
+        s_today = sun(loc.observer, date=today_utc)
+        # astral returns timezone-aware datetimes; strip tz for local comparison
+        sunrise_today = s_today["sunrise"].replace(tzinfo=None)
+        sunset_today  = s_today["sunset"].replace(tzinfo=None)
+
+        if now < sunrise_today:
+            event_time = sunrise_today
+            glyph = "\U0001f305"  # 🌅
+        elif now < sunset_today:
+            event_time = sunset_today
+            glyph = "\U0001f307"  # 🌇
+        else:
+            # Past today's sunset — next event is tomorrow's sunrise
+            tomorrow_utc = today_utc + timedelta(days=1)
+            s_tomorrow = sun(loc.observer, date=tomorrow_utc)
+            event_time = s_tomorrow["sunrise"].replace(tzinfo=None)
+            glyph = "\U0001f305"  # 🌅
+
+        # Format: "6:14am" — matches fmt_reset() format (LIM-04 / D2-10)
+        time_str = event_time.strftime("%-I:%M%p").lower()
+        return f"{glyph} {time_str}"
     except Exception:
         return None
 
