@@ -1,0 +1,40 @@
+{
+  "@graph": [
+    {
+      "id": "urn:oid:2.49.0.1.840.0.abc123",
+      "properties": {
+        "id": "urn:oid:2.49.0.1.840.0.abc123",
+        "event": "Tornado Warning",
+        "severity": "Extreme",
+        "messageType": "Alert",
+        "references": [],
+        "sent": "2026-05-28T20:00:00Z",
+        "expires": "2099-12-31T23:59:59Z"
+      }
+    },
+    {
+      "id": "urn:oid:2.49.0.1.840.0.def456",
+      "properties": {
+        "id": "urn:oid:2.49.0.1.840.0.def456",
+        "event": "Severe Thunderstorm Warning",
+        "severity": "Severe",
+        "messageType": "Alert",
+        "references": [],
+        "sent": "2026-05-28T19:45:00Z",
+        "expires": "2099-12-31T23:59:59Z"
+      }
+    },
+    {
+      "id": "urn:oid:2.49.0.1.840.0.ghi789",
+      "properties": {
+        "id": "urn:oid:2.49.0.1.840.0.ghi789",
+        "event": "Flash Flood Watch",
+        "severity": "Moderate",
+        "messageType": "Alert",
+        "references": [],
+        "sent": "2026-05-28T18:00:00Z",
+        "expires": "2099-12-31T23:59:59Z"
+      }
+    }
+  ]
+}

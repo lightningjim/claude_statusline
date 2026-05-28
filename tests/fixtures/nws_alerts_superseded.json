@@ -1,0 +1,54 @@
+{
+  "@graph": [
+    {
+      "id": "urn:oid:2.49.0.1.840.0.old001",
+      "properties": {
+        "id": "urn:oid:2.49.0.1.840.0.old001",
+        "event": "Tornado Watch",
+        "severity": "Severe",
+        "messageType": "Alert",
+        "references": [],
+        "sent": "2026-05-28T17:00:00Z",
+        "expires": "2099-12-31T23:59:59Z"
+      }
+    },
+    {
+      "id": "urn:oid:2.49.0.1.840.0.new002",
+      "properties": {
+        "id": "urn:oid:2.49.0.1.840.0.new002",
+        "event": "Tornado Warning",
+        "severity": "Extreme",
+        "messageType": "Update",
+        "references": [
+          {"identifier": "urn:oid:2.49.0.1.840.0.old001"}
+        ],
+        "sent": "2026-05-28T18:00:00Z",
+        "expires": "2099-12-31T23:59:59Z"
+      }
+    },
+    {
+      "id": "urn:oid:2.49.0.1.840.0.cancel003",
+      "properties": {
+        "id": "urn:oid:2.49.0.1.840.0.cancel003",
+        "event": "Special Weather Statement",
+        "severity": "Minor",
+        "messageType": "Cancel",
+        "references": [],
+        "sent": "2026-05-28T16:00:00Z",
+        "expires": "2099-12-31T23:59:59Z"
+      }
+    },
+    {
+      "id": "urn:oid:2.49.0.1.840.0.expired004",
+      "properties": {
+        "id": "urn:oid:2.49.0.1.840.0.expired004",
+        "event": "Winter Storm Warning",
+        "severity": "Severe",
+        "messageType": "Alert",
+        "references": [],
+        "sent": "2026-05-28T10:00:00Z",
+        "expires": "2026-01-01T00:00:00Z"
+      }
+    }
+  ]
+}
