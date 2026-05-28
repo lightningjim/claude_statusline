@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed Plan 01-02; advancing to Plan 01-03
-last_updated: "2026-05-28T21:00:00Z"
-last_activity: 2026-05-28 -- Completed Plan 01-02 Bottom Line (context bar + rate limits)
+status: phase-complete
+stopped_at: Completed Plan 01-03 (TOML config); Phase 1 complete
+last_updated: "2026-05-28T20:25:57Z"
+last_activity: 2026-05-28 -- Completed Plan 01-03 TOML Config (tomllib, silent defaults, per-segment toggles, thresholds)
 progress:
   total_phases: 2
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 67
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-28)
 
 ## Current Position
 
-Phase: 01 (core-statusline) — EXECUTING
-Plan: 3 of 3
-Status: Plan 01-02 complete; advancing to Plan 01-03 (TOML config)
-Last activity: 2026-05-28 -- Completed Plan 01-02 Bottom Line
+Phase: 01 (core-statusline) — COMPLETE
+Plan: 3 of 3 (all done)
+Status: Phase 1 complete; advancing to Phase 2 (Weather Layer)
+Last activity: 2026-05-28 -- Completed Plan 01-03 TOML Config
 
-Progress: [███████░░░] 67%
+Progress: [██████████] 100% (Phase 1)
 
 ## Performance Metrics
 
@@ -44,7 +44,7 @@ Progress: [███████░░░] 67%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-core-statusline | 2/3 | 27 min | 13.5 min |
+| 01-core-statusline | 3/3 | 32 min | 10.7 min |
 
 **Recent Trend:**
 
@@ -72,6 +72,10 @@ Recent decisions affecting current work:
 - color_for uses strictly >90 for red (90 is yellow); is_green uses <70 (exactly mirrors D-04 >=70)
 - fmt_reset wraps fromtimestamp in try/except — out-of-range epoch omits reset suffix (T-01-05)
 - Three spaces between bottom-line segments per D-03 layout
+- load_config wraps ALL errors in bare except so no config failure ever crashes the bar (D-07, T-01-07/T-01-08)
+- _deep_merge for nested TOML tables — partial overrides keep remaining defaults
+- color_for/is_green refactored with warn/crit default params; backward-compatible with all prior call sites
+- cfg threaded as explicit parameter through render functions (not a global) for testability
 
 ### Pending Todos
 
@@ -91,6 +95,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-05-28T21:00:00Z
-Stopped at: Completed Plan 01-02; advancing to Plan 01-03 (TOML config)
-Resume file: .planning/phases/01-core-statusline/01-02-SUMMARY.md
+Last session: 2026-05-28T20:25:57Z
+Stopped at: Completed Phase 1 (Plan 01-03 TOML config)
+Resume file: .planning/phases/01-core-statusline/01-03-SUMMARY.md
