@@ -15,6 +15,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Statusline** - Colored two-line bar from stdin — project, model+thinking, context bar, rate limits with reset times, TOML config, graceful degradation — DONE 2026-05-28
 - [ ] **Phase 2: Weather Layer** - NWS conditions/temp/precip, cached alerts, local sunrise/sunset via astral, weather degradation
+- [ ] **Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)**
+- [ ] **Phase 4: git info including active worktree**
 
 ## Phase Details
 
@@ -62,16 +64,6 @@ Plans:
 
 **Plans**: TBD
 
-## Progress
-
-**Execution Order:**
-Phases execute in numeric order: 1 → 2
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
-| 2. Weather Layer | 0/TBD | Not started | - |
-
 ### Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)
 
 **Goal:** [To be planned]
@@ -81,3 +73,25 @@ Phases execute in numeric order: 1 → 2
 
 Plans:
 - [ ] TBD (run /gsd-plan-phase 3 to break down)
+
+### Phase 4: git info including active worktree
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 3
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 4 to break down)
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 1 → 2 → 3 → 4
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
+| 2. Weather Layer | 0/TBD | Not started | - |
+| 3. Presets for block fill | 0/TBD | Not started | - |
+| 4. git info incl. active worktree | 0/TBD | Not started | - |
