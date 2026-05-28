@@ -726,14 +726,21 @@ def _sun_segment(cfg: dict | None, now: datetime | None = None) -> str | None:
 def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
     """Return the bracketed weather segment or None to omit (D2-10, D2-12).
 
-    Format (D2-10):  [<icon> <temp> | 🌧️<pop>% | <sun-or-alert>]
-    For this plan (Plan 02-01), only the trailing sun detail is implemented
-    (the first two chunks require NWS network fetch added in Plan 02-02).
+    Format (D2-10):  [<icon> <temp>°F | 🌧️<pop>% | <sun-or-alert>]
 
-    Returns None immediately when:
-      - _WEATHER_OK is False (astral or requests import failed, D2-12)
-      - cfg weather.show_weather is False
-      - _sun_segment returns None and there is no other data
+    Render path (D2-05):
+      1. Read cache.json (instant, no network).
+      2. If weather section is stale (past TTL), fire-and-forget maybe_spawn_refresh.
+      3. Build internals from cached values + local sun computation:
+         - conditions chunk: icon + temp — only when section_within_ceiling passes
+         - precip chunk: 🌧️<pop>% — only when PoP is present and non-zero (WX-02, D2-09)
+         - sun chunk: _sun_segment() — always (offline, computed from lat/lon)
+      4. Pipe-delimit present chunks and return bracketed string.
+
+    Degradation (D2-12):
+      - Weather section beyond max-stale ceiling → conditions dropped, sun-only
+      - Sun segment absent (no lat/lon) → omit entire segment (return None)
+      - _WEATHER_OK False or show_weather False → return None immediately
 
     Wraps entire body in try/except — never raises to caller (D-10).
     """
@@ -745,15 +752,48 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
         if not weather_cfg.get("show_weather", True):
             return None
 
-        # For Plan 02-01: build internals from sun detail only.
-        # (Conditions + PoP chunks will be added in Plan 02-02 from cache.json.)
+        import time as _time
+        now = _time.time()
+        cache_cfg = cfg.get("cache", {})
+        weather_max_stale = float(cache_cfg.get("weather_max_stale", 3600))
+
+        # Step 1: Read cache (render path — instant, never fetches inline)
+        cache = read_cache(_CACHE_PATH)
+        weather_section = cache.get("weather", {})
+
+        # Step 2: Trigger background refresh if stale (fire-and-forget, D2-05)
+        weather_ttl = float(cache_cfg.get("weather_ttl", 600))
+        if not section_is_fresh(weather_section, ttl=weather_ttl, now=now):
+            maybe_spawn_refresh(cfg, cache)
+
+        # Step 3a: Conditions chunk — only when within the max-stale ceiling (D2-12)
+        conditions_chunk = None
+        if section_within_ceiling(weather_section, max_stale=weather_max_stale, now=now):
+            icon = weather_section.get("icon")
+            temp = weather_section.get("temp")
+            if icon and temp is not None:
+                temp_unit = cfg.get("units", {}).get("temp_unit", "F")
+                unit_symbol = "°C" if temp_unit == "C" else "°F"
+                conditions_chunk = f"{icon} {temp}{unit_symbol}"
+
+        # Step 3b: Precip chunk — only when PoP is present and non-zero (WX-02, D2-09)
+        precip_chunk = None
+        if section_within_ceiling(weather_section, max_stale=weather_max_stale, now=now):
+            pop = weather_section.get("pop")
+            if pop is not None and pop != 0:
+                precip_chunk = f"\U0001f327️{int(pop)}%"  # 🌧️
+
+        # Step 3c: Sun chunk — always computed locally (offline, D2-12)
         sun_detail = _sun_segment(cfg)
-        if sun_detail is None:
-            # No sun detail (missing lat/lon or astral failure): omit entire segment.
+
+        # Assemble pipe-delimited internals (omit None pieces)
+        pieces = [p for p in [conditions_chunk, precip_chunk, sun_detail] if p is not None]
+
+        if not pieces:
+            # No sun detail and no conditions: omit the whole segment
             return None
 
-        # Internals are pipe-delimited (D2-10); only one chunk for now.
-        internals = sun_detail
+        internals = " | ".join(pieces)
         return f"[{internals}]"
     except Exception:
         return None
