@@ -29,19 +29,19 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Context Usage
 
-- [ ] **CTX-01**: Context usage renders as a 20-wide filled/empty bar (`▓░`), colored by threshold
-- [ ] **CTX-02**: Context usage also shows an explicit percentage number alongside the bar
+- [x] **CTX-01**: Context usage renders as a 20-wide filled/empty bar (`▓░`), colored by threshold
+- [x] **CTX-02**: Context usage also shows an explicit percentage number alongside the bar
 
 ### Rate Limits
 
-- [ ] **LIM-01**: Show 5-hour rate-limit usage percentage (`rate_limits.five_hour`), colored by threshold
-- [ ] **LIM-02**: Show weekly rate-limit usage percentage (`rate_limits.seven_day`), colored by threshold
-- [ ] **LIM-03**: For whichever rate-limit indicator is not green (≥70%), append its reset time
-- [ ] **LIM-04**: Reset time uses shorthand — same-day → `5:15pm`; otherwise `Mon 5:15pm` (abbreviated weekday)
+- [x] **LIM-01**: Show 5-hour rate-limit usage percentage (`rate_limits.five_hour`), colored by threshold
+- [x] **LIM-02**: Show weekly rate-limit usage percentage (`rate_limits.seven_day`), colored by threshold
+- [x] **LIM-03**: For whichever rate-limit indicator is not green (≥70%), append its reset time
+- [x] **LIM-04**: Reset time uses shorthand — same-day → `5:15pm`; otherwise `Mon 5:15pm` (abbreviated weekday)
 
 ### Formatting & Config
 
-- [ ] **FMT-01**: Color bands are green <70%, yellow 70–90%, red >90%, applied consistently to context, 5h, and weekly indicators
+- [x] **FMT-01**: Color bands are green <70%, yellow 70–90%, red >90%, applied consistently to context, 5h, and weekly indicators
 - [ ] **CFG-01**: A single TOML config file holds location (lat/lon), color thresholds, units, feature toggles, and cache TTLs
 
 ## v2 Requirements
@@ -82,13 +82,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WX-04 | Phase 2 | Pending |
 | WX-05 | Phase 2 | Pending |
 | WX-06 | Phase 2 | Pending |
-| CTX-01 | Phase 1 | Pending |
-| CTX-02 | Phase 1 | Pending |
-| LIM-01 | Phase 1 | Pending |
-| LIM-02 | Phase 1 | Pending |
-| LIM-03 | Phase 1 | Pending |
-| LIM-04 | Phase 1 | Pending |
-| FMT-01 | Phase 1 | Pending |
+| CTX-01 | Phase 1 | Done (01-02) |
+| CTX-02 | Phase 1 | Done (01-02) |
+| LIM-01 | Phase 1 | Done (01-02) |
+| LIM-02 | Phase 1 | Done (01-02) |
+| LIM-03 | Phase 1 | Done (01-02) |
+| LIM-04 | Phase 1 | Done (01-02) |
+| FMT-01 | Phase 1 | Done (01-02) |
 | CFG-01 | Phase 1 | Pending |
 
 **Coverage:**

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: 01-01 checkpoint:human-verify (Task 3 — visual confirmation pending)
-last_updated: "2026-05-28T20:17:00Z"
-last_activity: 2026-05-28 -- Completed Plan 01-01 Walking Skeleton (checkpoint pending)
+stopped_at: Completed Plan 01-02; advancing to Plan 01-03
+last_updated: "2026-05-28T21:00:00Z"
+last_activity: 2026-05-28 -- Completed Plan 01-02 Bottom Line (context bar + rate limits)
 progress:
   total_phases: 2
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
-  percent: 33
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-28)
 ## Current Position
 
 Phase: 01 (core-statusline) — EXECUTING
-Plan: 2 of 3
-Status: Plan 01-01 complete (checkpoint pending human-verify); advancing to Plan 01-02
-Last activity: 2026-05-28 -- Completed Plan 01-01 Walking Skeleton
+Plan: 3 of 3
+Status: Plan 01-02 complete; advancing to Plan 01-03 (TOML config)
+Last activity: 2026-05-28 -- Completed Plan 01-02 Bottom Line
 
-Progress: [███░░░░░░░] 33%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -44,11 +44,11 @@ Progress: [███░░░░░░░] 33%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-core-statusline | 1/3 | 12 min | 12 min |
+| 01-core-statusline | 2/3 | 27 min | 13.5 min |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01 (12 min)
+- Last 5 plans: 01-01 (12 min), 01-02 (15 min)
 - Trend: On track
 
 *Updated after each plan completion*
@@ -69,6 +69,9 @@ Recent decisions affecting current work:
 - tomllib imported in skeleton so import surface is final for Phase 1 before Plan 03 consumes it
 - Per-segment builders return None to omit silently, no placeholders (D-10)
 - Minimal safe line for bad/empty stdin is blank line — exits 0, no misleading content (D-11)
+- color_for uses strictly >90 for red (90 is yellow); is_green uses <70 (exactly mirrors D-04 >=70)
+- fmt_reset wraps fromtimestamp in try/except — out-of-range epoch omits reset suffix (T-01-05)
+- Three spaces between bottom-line segments per D-03 layout
 
 ### Pending Todos
 
@@ -88,6 +91,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-05-28T20:17:00Z
-Stopped at: 01-01 checkpoint:human-verify (Task 3 — visual live confirmation)
-Resume file: .planning/phases/01-core-statusline/01-01-SUMMARY.md
+Last session: 2026-05-28T21:00:00Z
+Stopped at: Completed Plan 01-02; advancing to Plan 01-03 (TOML config)
+Resume file: .planning/phases/01-core-statusline/01-02-SUMMARY.md
