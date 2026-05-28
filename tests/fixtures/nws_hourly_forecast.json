@@ -1,0 +1,78 @@
+{
+  "@context": [
+    "https://geojson.org/geojson-ld/geojson-context.jsonld",
+    {
+      "@version": "1.1",
+      "wx": "https://api.weather.gov/ontology#",
+      "s": "https://schema.org/",
+      "geo": "http://www.opengis.net/ont/geosparql#",
+      "unit": "http://codes.wmo.int/common/unit/",
+      "@vocab": "https://api.weather.gov/ontology#"
+    }
+  ],
+  "type": "Feature",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [-97.6014, 35.4099],
+        [-97.6014, 35.4100],
+        [-97.5500, 35.4100],
+        [-97.5500, 35.4099],
+        [-97.6014, 35.4099]
+      ]
+    ]
+  },
+  "properties": {
+    "updated": "2026-05-28T18:22:38+00:00",
+    "units": "us",
+    "forecastGenerator": "HourlyForecastGenerator",
+    "generatedAt": "2026-05-28T19:00:00+00:00",
+    "updateTime": "2026-05-28T18:22:38+00:00",
+    "validTimes": "2026-05-28T12:00:00+00:00/P7DT13H",
+    "elevation": {
+      "unitCode": "wmoUnit:m",
+      "value": 397.764
+    },
+    "periods": [
+      {
+        "number": 1,
+        "name": "",
+        "startTime": "2026-05-28T14:00:00-05:00",
+        "endTime": "2026-05-28T15:00:00-05:00",
+        "isDaytime": true,
+        "temperature": 72,
+        "temperatureUnit": "F",
+        "temperatureTrend": "",
+        "probabilityOfPrecipitation": {
+          "unitCode": "wmoUnit:percent",
+          "value": 40
+        },
+        "windSpeed": "9 mph",
+        "windDirection": "SE",
+        "icon": "https://api.weather.gov/icons/land/day/rain_showers,40?size=small",
+        "shortForecast": "Chance Rain Showers",
+        "detailedForecast": ""
+      },
+      {
+        "number": 2,
+        "name": "",
+        "startTime": "2026-05-28T15:00:00-05:00",
+        "endTime": "2026-05-28T16:00:00-05:00",
+        "isDaytime": true,
+        "temperature": 73,
+        "temperatureUnit": "F",
+        "temperatureTrend": "",
+        "probabilityOfPrecipitation": {
+          "unitCode": "wmoUnit:percent",
+          "value": 50
+        },
+        "windSpeed": "10 mph",
+        "windDirection": "SE",
+        "icon": "https://api.weather.gov/icons/land/day/rain_showers,50?size=small",
+        "shortForecast": "Chance Rain Showers",
+        "detailedForecast": ""
+      }
+    ]
+  }
+}
