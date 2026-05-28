@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Phase 2 context gathered
-last_updated: "2026-05-28T21:56:41.188Z"
-last_activity: 2026-05-28 -- Completed Plan 01-03 TOML Config
+status: executing
+stopped_at: Phase 2 Plan 1 complete
+last_updated: "2026-05-28T23:00:00.000Z"
+last_activity: 2026-05-28 -- Phase 2 Plan 1 executed (venv bootstrap + sun segment + subfolder install)
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 6
-  completed_plans: 3
-  percent: 20
+  completed_plans: 4
+  percent: 27
 ---
 
 # Project State
@@ -21,34 +21,35 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Phase 01 — core-statusline
+**Current focus:** Phase 2 — weather-layer
 
 ## Current Position
 
-Phase: 01 (core-statusline) — COMPLETE
-Plan: 3 of 3 (all done)
-Status: Phase 1 complete; advancing to Phase 2 (Weather Layer)
-Last activity: 2026-05-28 -- Completed Plan 01-03 TOML Config
+Phase: 2 (weather-layer) — EXECUTING
+Plan: 2 of 3
+Status: Phase 2 Plan 1 complete; Plan 2 (NWS cache + fetch) next
+Last activity: 2026-05-28 -- Phase 2 Plan 1 executed (venv bootstrap + sun segment + subfolder install)
 
-Progress: [██████████] 100% (Phase 1)
+Progress: [██████████] 100% (Phase 1) | [███░░░░░░░] 33% (Phase 2)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 1
-- Average duration: 12 min
-- Total execution time: 0.2 hours
+- Total plans completed: 4
+- Average duration: 14 min
+- Total execution time: 0.6 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-core-statusline | 3/3 | 32 min | 10.7 min |
+| 02-weather-layer | 1/3 | 25 min | 25 min |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-01 (12 min), 01-02 (15 min)
+- Last 5 plans: 01-01 (12 min), 01-02 (15 min), 01-03 (5 min), 02-01 (25 min)
 - Trend: On track
 
 *Updated after each plan completion*
@@ -65,7 +66,10 @@ Recent decisions affecting current work:
 - NWS + local astral sun times (not wttr.in)
 - Cache weather (~10min) / alerts (~5min) to temp file
 - Reuse NWS HTTP client from WxDesktopPy at `/home/kcreasey/Documents/Projects/WxDesktopPy`
-- Script delivered directly to ~/.claude/claude-statusline.py (D-12) — not git-tracked, intentional
+- Script delivered directly to ~/.claude/claude-statusline.py (D-12) — superseded in Phase 2 by D2-02 subfolder install
+- Phase 2 install root: ~/.claude/claude-statusline/ (script + .venv + config) (D2-02)
+- Script self-re-execs into .venv/bin/python at startup; settings.json uses python3 (D2-03)
+- _WEATHER_OK = _ASTRAL_OK and _REQUESTS_OK — both must import for weather; missing venv/deps omit only weather segment (D2-12)
 - tomllib imported in skeleton so import surface is final for Phase 1 before Plan 03 consumes it
 - Per-segment builders return None to omit silently, no placeholders (D-10)
 - Minimal safe line for bad/empty stdin is blank line — exits 0, no misleading content (D-11)
@@ -101,6 +105,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-05-28T21:37:33.635Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-weather-layer/02-CONTEXT.md
+Last session: 2026-05-28T23:00:00.000Z
+Stopped at: Phase 2 Plan 1 complete — 02-01-PLAN.md
+Resume file: .planning/phases/02-weather-layer/02-02-PLAN.md (Plan 2: NWS cache + fire-and-forget fetch)

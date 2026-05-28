@@ -68,7 +68,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Packaging (subfolder + venv + self-re-exec) + extended config + sun-only weather segment with degradation (WX-03, WX-06)
+- [x] 02-01-PLAN.md — Packaging (subfolder + venv + self-re-exec) + extended config + sun-only weather segment with degradation (WX-03, WX-06) — DONE 2026-05-28
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -116,7 +116,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
-| 2. Weather Layer | 0/3 | Not started | - |
+| 2. Weather Layer | 1/3 | In progress | - |
 | 3. Presets for block fill | 0/TBD | Not started | - |
 | 4. git info incl. active worktree | 0/TBD | Not started | - |
 | 5. GSD status info | 0/TBD | Not started | - |
