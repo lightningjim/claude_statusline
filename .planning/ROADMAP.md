@@ -17,6 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2: Weather Layer** - NWS conditions/temp/precip, cached alerts, local sunrise/sunset via astral, weather degradation
 - [ ] **Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)**
 - [ ] **Phase 4: git info including active worktree**
+- [ ] **Phase 5: GSD status info especially the active Plan(s) being run**
 
 ## Phase Details
 
@@ -84,10 +85,20 @@ Plans:
 Plans:
 - [ ] TBD (run /gsd-plan-phase 4 to break down)
 
+### Phase 5: GSD status info especially the active Plan(s) being run
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 4
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 5 to break down)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -95,3 +106,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 2. Weather Layer | 0/TBD | Not started | - |
 | 3. Presets for block fill | 0/TBD | Not started | - |
 | 4. git info incl. active worktree | 0/TBD | Not started | - |
+| 5. GSD status info | 0/TBD | Not started | - |

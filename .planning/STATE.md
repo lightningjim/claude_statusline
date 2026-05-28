@@ -81,6 +81,7 @@ Recent decisions affecting current work:
 
 - Phase 3 added: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)
 - Phase 4 added: git info including active worktree
+- Phase 5 added: GSD status info especially the active Plan(s) being run
 
 ### Pending Todos
 
