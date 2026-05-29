@@ -1186,5 +1186,191 @@ class TestSingleSwitchAllSegmentsTogether(unittest.TestCase):
         self.assertNotIn(self.mod._NF_THINKING, result)
 
 
+# ---------------------------------------------------------------------------
+# Regression guard: installed Nerd Font cmap validation
+# ---------------------------------------------------------------------------
+
+import subprocess
+
+
+def _find_nerd_font_path():
+    """Return the path to a JetBrains Nerd Font Mono Regular TTF, or None."""
+    # Try fc-list first
+    try:
+        result = subprocess.run(
+            ["fc-list", "--format=%{file}\n"],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.splitlines():
+            fname = line.strip()
+            if "JetBrainsMonoNerdFontMono-Regular.ttf" in fname:
+                return fname
+            if "NerdFont" in fname and "Regular" in fname and fname.endswith(".ttf"):
+                return fname
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # Glob fallback
+    import glob
+    patterns = [
+        "/usr/share/fonts/**/JetBrainsMono*NerdFont*Regular*.ttf",
+        "/usr/local/share/fonts/**/JetBrainsMono*NerdFont*Regular*.ttf",
+        os.path.expanduser("~/.local/share/fonts/**/JetBrainsMono*NerdFont*Regular*.ttf"),
+        os.path.expanduser("~/.fonts/**/JetBrainsMono*NerdFont*Regular*.ttf"),
+    ]
+    for pattern in patterns:
+        matches = glob.glob(pattern, recursive=True)
+        if matches:
+            return matches[0]
+
+    return None
+
+
+class TestAllNerdGlyphConstantsInInstalledFont(unittest.TestCase):
+    """Regression guard: every _WI_*/_NF_* constant must exist in the installed Nerd Font cmap.
+
+    This test caught the clock-face bug: U+E380..E38C are
+    weather-direction/time-clock glyphs, not moons.  If any constant points
+    at a codepoint absent from the font the user will see tofu.
+
+    The test skips cleanly when fontTools or the font file is absent so it
+    never fails in CI or on machines without the font installed.
+    """
+
+    # All single-glyph _WI_*/_NF_* constant names to validate.
+    GLYPH_CONSTANTS = [
+        "_WI_DAY_CLEAR",
+        "_WI_DAY_PARTLY",
+        "_WI_NIGHT_CLEAR",
+        "_WI_NIGHT_PARTLY",
+        "_WI_CLOUDY",
+        "_WI_RAIN",
+        "_WI_RAIN_SHOWERS",
+        "_WI_SNOW",
+        "_WI_SLEET",
+        "_WI_FREEZING_RAIN",
+        "_WI_RAIN_SNOW",
+        "_WI_THUNDERSTORM",
+        "_WI_THUNDERSTORM_RAIN",
+        "_WI_FOG",
+        "_WI_WINDY",
+        "_WI_SUNRISE",
+        "_WI_SUNSET",
+        "_NF_THINKING",
+        "_NF_HOURGLASS",
+        "_NF_CALENDAR",
+        "_WI_FALLBACK",
+    ]
+
+    def setUp(self):
+        # Skip if fontTools not importable
+        try:
+            from fontTools.ttLib import TTFont  # noqa: F401
+        except ImportError:
+            self.skipTest("fontTools not installed — skipping cmap guard")
+
+        # Skip if no Nerd Font found
+        self.font_path = _find_nerd_font_path()
+        if self.font_path is None:
+            self.skipTest("No JetBrains Nerd Font file found — skipping cmap guard")
+
+        from fontTools.ttLib import TTFont
+        font = TTFont(self.font_path)
+        self.cmap = font.getBestCmap()
+        self.mod = _load_script_module()
+
+    def test_all_glyph_constants_exist_in_installed_font(self):
+        """Every _WI_*/_NF_* single-glyph constant has its codepoint in the installed font cmap."""
+        for name in self.GLYPH_CONSTANTS:
+            with self.subTest(constant=name):
+                val = getattr(self.mod, name, None)
+                self.assertIsNotNone(val, f"{name} is not defined on the module")
+                cp = ord(val)
+                self.assertIn(
+                    cp, self.cmap,
+                    f"{name} (U+{cp:04X}) is NOT in the installed font cmap — "
+                    f"would render as tofu. Font: {self.font_path}"
+                )
+
+
+class TestMoonPhaseGlyphsAreMoonGlyphs(unittest.TestCase):
+    """Regression guard: _MOON_PHASE_GLYPHS entries must map to moon-named glyphs in the font.
+
+    This is the specific check that would have caught the original bug where
+    the table started at U+E380 (weather-direction_down_right / clock faces)
+    instead of U+E38D (weather-moon_new).
+    """
+
+    def setUp(self):
+        try:
+            from fontTools.ttLib import TTFont  # noqa: F401
+        except ImportError:
+            self.skipTest("fontTools not installed — skipping moon cmap guard")
+
+        self.font_path = _find_nerd_font_path()
+        if self.font_path is None:
+            self.skipTest("No JetBrains Nerd Font file found — skipping moon cmap guard")
+
+        from fontTools.ttLib import TTFont
+        font = TTFont(self.font_path)
+        self.cmap = font.getBestCmap()
+        self.mod = _load_script_module()
+
+    def test_moon_table_length_is_28(self):
+        """_MOON_PHASE_GLYPHS has exactly 28 slots."""
+        table = self.mod._MOON_PHASE_GLYPHS
+        self.assertEqual(len(table), 28,
+                         f"Expected 28 moon phase slots, got {len(table)}")
+
+    def test_all_moon_entries_exist_in_font(self):
+        """Every moon-phase glyph codepoint is present in the installed font cmap."""
+        table = self.mod._MOON_PHASE_GLYPHS
+        for i, glyph in enumerate(table):
+            with self.subTest(index=i):
+                cp = ord(glyph)
+                self.assertIn(
+                    cp, self.cmap,
+                    f"Moon slot [{i}] U+{cp:04X} is NOT in the installed font cmap"
+                )
+
+    def test_all_moon_entries_have_moon_in_glyph_name(self):
+        """Every moon-phase table entry's font glyph name contains 'moon'.
+
+        This is the key guard against the clock-face bug: the wrong codepoints
+        (U+E380-E38C) map to 'weather-direction_*' and 'weather-time_*' names,
+        not 'weather-moon_*'.
+        """
+        table = self.mod._MOON_PHASE_GLYPHS
+        for i, glyph in enumerate(table):
+            with self.subTest(index=i):
+                cp = ord(glyph)
+                glyph_name = self.cmap.get(cp, "")
+                self.assertIn(
+                    "moon", glyph_name.lower(),
+                    f"Moon slot [{i}] U+{cp:04X} maps to glyph name {glyph_name!r} "
+                    f"which does not contain 'moon' — wrong codepoint (clock-face bug)"
+                )
+
+    def test_index_0_is_moon_new(self):
+        """Slot 0 (new moon) glyph name contains 'moon_new'."""
+        glyph = self.mod._MOON_PHASE_GLYPHS[0]
+        cp = ord(glyph)
+        glyph_name = self.cmap.get(cp, "")
+        self.assertIn(
+            "moon_new", glyph_name.lower(),
+            f"Slot [0] U+{cp:04X} glyph name {glyph_name!r} does not contain 'moon_new'"
+        )
+
+    def test_index_14_is_moon_full(self):
+        """Slot 14 (full moon) glyph name contains 'moon_full'."""
+        glyph = self.mod._MOON_PHASE_GLYPHS[14]
+        cp = ord(glyph)
+        glyph_name = self.cmap.get(cp, "")
+        self.assertIn(
+            "moon_full", glyph_name.lower(),
+            f"Slot [14] U+{cp:04X} glyph name {glyph_name!r} does not contain 'moon_full'"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
