@@ -193,6 +193,75 @@ Plans:
 """
 
 
+# ---------------------------------------------------------------------------
+# Real-ROADMAP.md-format fixtures (WR-04): incomplete work appears as phase
+# headers ("- [ ] **Phase 03.1: ...**") and "- [ ] TBD (run ...)" placeholders,
+# while completed plans are "- [x] NN-MM-PLAN.md".  There is NO unchecked
+# "- [ ] NN-MM-PLAN.md" line — the shape the synthetic fixtures used.  These
+# fixtures fail against the pre-CR-01 code (which falsely reported "done") and
+# pass after the fix (idle + next-incomplete identifier).
+# ---------------------------------------------------------------------------
+
+_ROADMAP_REAL_INCOMPLETE = """\
+- [x] **Phase 3: Presets** (completed 2026-05-29)
+- [ ] **Phase 03.1: Resolve default bar gradient vs shade test drift (INSERTED)**
+- [x] **Phase 4: git info** (completed 2026-05-29)
+- [x] **Phase 5: GSD status info** (completed 2026-05-29)
+
+### Phase 03.1: Resolve default bar gradient vs shade test drift (INSERTED)
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 03.1 to break down)
+
+### Phase 4: git info
+
+Plans:
+- [x] 04-01-PLAN.md — Git helper layer
+- [x] 04-02-PLAN.md — _git_segment builder
+
+### Phase 5: GSD status info
+
+Plans:
+- [x] 05-01-PLAN.md — GSD data-access layer
+- [x] 05-02-PLAN.md — _gsd_segment builder
+"""
+
+# STATE progress with completed_phases < total_phases → milestone NOT complete.
+_STATE_PROGRESS_INCOMPLETE = {
+    "total_phases": 7,
+    "completed_phases": 6,
+    "total_plans": 15,
+    "completed_plans": 15,
+    "percent": 86,
+}
+
+# Real-format roadmap where every phase header is checked (nothing incomplete).
+_ROADMAP_REAL_ALL_COMPLETE = """\
+- [x] **Phase 3: Presets** (completed 2026-05-29)
+- [x] **Phase 03.1: Resolve default bar gradient vs shade test drift (INSERTED)** (done)
+- [x] **Phase 4: git info** (completed 2026-05-29)
+- [x] **Phase 5: GSD status info** (completed 2026-05-29)
+
+### Phase 5: GSD status info
+
+Plans:
+- [x] 05-01-PLAN.md — GSD data-access layer
+- [x] 05-02-PLAN.md — _gsd_segment builder
+"""
+
+# STATE progress with completed_phases == total_phases AND plans complete →
+# milestone IS complete.
+_STATE_PROGRESS_COMPLETE = {
+    "total_phases": 7,
+    "completed_phases": 7,
+    "total_plans": 15,
+    "completed_plans": 15,
+    "percent": 100,
+}
+
+
 def _write_planning_dir(tmpdir, handoff=None, state_md=None, roadmap=None):
     """Write fixture files to tmpdir and return it as a planning_dir path."""
     if handoff is not None:
@@ -439,7 +508,97 @@ class TestInferGsdLifecycle(unittest.TestCase):
         self.assertEqual(result.get("plan_id"), "05-01")
 
     def test_all_complete_roadmap_done_state(self):
-        """All ROADMAP plans complete (no [ ] plan checkbox) → state == 'done' with milestone."""
+        """All complete (STATE progress confirms) → state == 'done' with milestone.
+
+        Updated for CR-01: "done" is now positively confirmed from STATE.md
+        progress (completed_phases == total_phases and plans complete), not
+        inferred from the absence of an unchecked PLAN.md line.  The all-complete
+        roadmap is supplied too, but the progress block is the authoritative
+        signal.
+        """
+        state = {
+            "handoff": _NULL_HANDOFF,
+            "state": {"milestone": "v1.0", "progress": dict(_STATE_PROGRESS_COMPLETE)},
+            "roadmap": _ROADMAP_ALL_COMPLETE,
+        }
+        result = self.mod._infer_gsd_lifecycle(state)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("state"), "done")
+        self.assertEqual(result.get("milestone"), "v1.0")
+
+    # --- CR-01 / WR-02 / WR-04 regression: real ROADMAP.md format ---
+
+    def test_real_format_incomplete_resolves_idle_not_done(self):
+        """WR-04/CR-01: real-roadmap format + STATE progress incomplete → idle, NOT done.
+
+        Mirrors the production .planning/: incomplete work is a phase header
+        ("- [ ] **Phase 03.1: ...**") + a "- [ ] TBD" placeholder, completed plans
+        are "- [x] NN-MM-PLAN.md", and STATE progress has completed_phases (6) <
+        total_phases (7).  A stale/null HANDOFF must NOT report milestone-complete.
+        Fails against pre-CR-01 code (returned done/v1.0); passes after the fix.
+        """
+        state = {
+            "handoff": _NULL_HANDOFF,
+            "state": {"milestone": "v1.0", "progress": dict(_STATE_PROGRESS_INCOMPLETE)},
+            "roadmap": _ROADMAP_REAL_INCOMPLETE,
+        }
+        result = self.mod._infer_gsd_lifecycle(state)
+        self.assertIsNotNone(result)
+        self.assertNotEqual(result.get("state"), "done",
+                            "Incomplete milestone must not resolve to 'done' (CR-01)")
+        self.assertEqual(result.get("state"), "idle")
+        self.assertIsNone(result.get("milestone"),
+                          "Milestone label must not be set in a non-done state")
+
+    def test_real_format_incomplete_surfaces_next_phase_id(self):
+        """WR-04/D-06: real-roadmap fallback surfaces the next incomplete phase id.
+
+        No unchecked PLAN.md row exists, so the next incomplete marker is the
+        phase header "- [ ] **Phase 03.1: ...**"; the segment must surface 03.1
+        (via phase_id) so the user knows where they'll resume.
+        """
+        state = {
+            "handoff": _NULL_HANDOFF,
+            "state": {"milestone": "v1.0", "progress": dict(_STATE_PROGRESS_INCOMPLETE)},
+            "roadmap": _ROADMAP_REAL_INCOMPLETE,
+        }
+        result = self.mod._infer_gsd_lifecycle(state)
+        self.assertIsNotNone(result)
+        # No plan-row id in the real-format incomplete roadmap.
+        self.assertIsNone(result.get("plan_id"))
+        self.assertEqual(result.get("phase_id"), "03.1",
+                         "Next incomplete phase header (03.1) must be surfaced")
+
+    def test_real_format_all_complete_resolves_done(self):
+        """WR-04/D-07: real format + STATE progress fully complete → done + milestone.
+
+        Second fixture where completed_phases == total_phases (7/7) and plans are
+        complete (15/15): positively confirms the milestone, so state == 'done'.
+        """
+        state = {
+            "handoff": _NULL_HANDOFF,
+            "state": {"milestone": "v1.0", "progress": dict(_STATE_PROGRESS_COMPLETE)},
+            "roadmap": _ROADMAP_REAL_ALL_COMPLETE,
+        }
+        result = self.mod._infer_gsd_lifecycle(state)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("state"), "done")
+        self.assertEqual(result.get("milestone"), "v1.0")
+
+    def test_empty_roadmap_resolves_idle_not_done(self):
+        """WR-02: an empty/unparseable roadmap must resolve to idle, never done."""
+        state = {
+            "handoff": _NULL_HANDOFF,
+            "state": {"milestone": "v1.0", "progress": dict(_STATE_PROGRESS_INCOMPLETE)},
+            "roadmap": "",
+        }
+        result = self.mod._infer_gsd_lifecycle(state)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("state"), "idle")
+        self.assertNotEqual(result.get("state"), "done")
+
+    def test_no_progress_block_resolves_idle_not_done(self):
+        """WR-02/CR-01: absent STATE progress can never positively confirm done."""
         state = {
             "handoff": _NULL_HANDOFF,
             "state": {"milestone": "v1.0", "progress": {}},
@@ -447,8 +606,100 @@ class TestInferGsdLifecycle(unittest.TestCase):
         }
         result = self.mod._infer_gsd_lifecycle(state)
         self.assertIsNotNone(result)
+        self.assertEqual(result.get("state"), "idle",
+                         "No progress data → cannot confirm completion → idle (not done)")
+
+    def test_plan_checkbox_path_still_works(self):
+        """WR-04: the synthetic plan-checkbox fallback path is preserved.
+
+        With an unchecked "- [ ] 05-01-PLAN.md" row and incomplete progress, the
+        plan-row id (preferred over phase id) is still surfaced, state idle.
+        """
+        state = {
+            "handoff": _NULL_HANDOFF,
+            "state": {"milestone": "v1.0", "progress": dict(_STATE_PROGRESS_INCOMPLETE)},
+            "roadmap": _ROADMAP_WITH_INCOMPLETE,
+        }
+        result = self.mod._infer_gsd_lifecycle(state)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("state"), "idle")
+        self.assertEqual(result.get("plan_id"), "05-01")
+
+    # --- WR-01 regression: ANSI-injection / unbounded width ---
+
+    def test_live_plan_field_is_sanitized(self):
+        """WR-01: an ESC + 200 'X' plan value must not emit \\x1b and must be width-bounded."""
+        from datetime import datetime, timezone
+        now_z = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        handoff = dict(_VALID_HANDOFF)
+        handoff["timestamp"] = now_z
+        handoff["plan"] = "\033[5;31mPWNED\033[0m" + ("X" * 200)
+        state = {
+            "handoff": handoff,
+            "state": {"milestone": "v1.0", "progress": {}},
+            "roadmap": _ROADMAP_WITH_INCOMPLETE,
+        }
+        result = self.mod._infer_gsd_lifecycle(state)
+        self.assertIsNotNone(result)
+        plan_id = result.get("plan_id") or ""
+        self.assertNotIn("\x1b", plan_id, "ESC must be stripped from untrusted plan field")
+        self.assertLessEqual(len(plan_id), 24, "plan_id must be width-bounded")
+
+    def test_milestone_label_is_sanitized(self):
+        """WR-01: a malicious milestone label must not emit \\x1b and must be width-bounded."""
+        state = {
+            "handoff": _NULL_HANDOFF,
+            "state": {
+                "milestone": "\033[5;31m" + ("Z" * 200),
+                "progress": dict(_STATE_PROGRESS_COMPLETE),
+            },
+            "roadmap": _ROADMAP_REAL_ALL_COMPLETE,
+        }
+        result = self.mod._infer_gsd_lifecycle(state)
+        self.assertIsNotNone(result)
         self.assertEqual(result.get("state"), "done")
-        self.assertEqual(result.get("milestone"), "v1.0")
+        milestone = result.get("milestone") or ""
+        self.assertNotIn("\x1b", milestone, "ESC must be stripped from untrusted milestone")
+        self.assertLessEqual(len(milestone), 24, "milestone must be width-bounded")
+
+    # --- WR-03 regression: non-positive total_tasks ---
+
+    def test_zero_total_tasks_dropped(self):
+        """WR-03: total_tasks == 0 is treated as 'no task count' (None)."""
+        from datetime import datetime, timezone
+        now_z = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        handoff = dict(_VALID_HANDOFF)
+        handoff["timestamp"] = now_z
+        handoff["total_tasks"] = 0
+        handoff["completed_tasks"] = []
+        state = {
+            "handoff": handoff,
+            "state": {"milestone": "v1.0", "progress": {}},
+            "roadmap": _ROADMAP_WITH_INCOMPLETE,
+        }
+        result = self.mod._infer_gsd_lifecycle(state)
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.get("total_tasks"),
+                          "Non-positive total_tasks must become None (no task count)")
+
+    def test_negative_total_tasks_dropped(self):
+        """WR-03: a negative total_tasks is treated as 'no task count' (None)."""
+        from datetime import datetime, timezone
+        now_z = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        handoff = dict(_VALID_HANDOFF)
+        handoff["timestamp"] = now_z
+        handoff["total_tasks"] = -3
+        handoff["completed_tasks"] = ["a", "b"]
+        state = {
+            "handoff": handoff,
+            "state": {"milestone": "v1.0", "progress": {}},
+            "roadmap": _ROADMAP_WITH_INCOMPLETE,
+        }
+        result = self.mod._infer_gsd_lifecycle(state)
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.get("total_tasks"))
+        self.assertGreaterEqual(result.get("tasks_done"), 0,
+                                "tasks_done must never be negative")
 
     def test_plans_done_total_from_state(self):
         """plans_done / plans_total derived from STATE progress block."""
@@ -689,8 +940,12 @@ class TestGsdSegmentBuilder(unittest.TestCase):
         self.assertIn("05-01", result)
 
     def test_milestone_complete_contains_done_glyph_and_green(self):
-        """Milestone-complete (done) state: milestone label + GREEN done glyph (D-07)."""
-        state_fm = {"milestone": "v1.0", "progress": {}}
+        """Milestone-complete (done) state: milestone label + GREEN done glyph (D-07).
+
+        Updated for CR-01: done is confirmed from STATE progress (7/7 phases,
+        15/15 plans), not from the absence of an unchecked PLAN.md line.
+        """
+        state_fm = {"milestone": "v1.0", "progress": dict(_STATE_PROGRESS_COMPLETE)}
         result = self._call(
             handoff=_NULL_HANDOFF,
             state_fm=state_fm,
@@ -701,6 +956,55 @@ class TestGsdSegmentBuilder(unittest.TestCase):
         self.assertIn("\033[32m", result)
         # Must contain the milestone label
         self.assertIn("v1.0", result)
+
+    def test_idle_phase_id_rendered_when_no_plan_id(self):
+        """CR-01/D-06: real-format roadmap (phase header, no plan row) renders phase id.
+
+        Null HANDOFF + incomplete STATE progress + a roadmap whose next incomplete
+        marker is "- [ ] **Phase 03.1: ...**" → idle segment surfacing 03.1
+        (NOT a done/milestone segment, NOT omitted).
+        """
+        state_fm = {"milestone": "v1.0", "progress": dict(_STATE_PROGRESS_INCOMPLETE)}
+        result = self._call(
+            handoff=_NULL_HANDOFF,
+            state_fm=state_fm,
+            roadmap=_ROADMAP_REAL_INCOMPLETE,
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("03.1", result)
+        self.assertIn("\033[2m", result)   # DIM idle glyph
+        self.assertNotIn("v1.0", result)   # not a done/milestone render
+
+    def test_zero_total_tasks_omits_progress_fragment(self):
+        """WR-03: total_tasks == 0 → no 'N/N' progress fragment is rendered."""
+        import re as _re
+        handoff = dict(_VALID_HANDOFF)
+        handoff["total_tasks"] = 0
+        handoff["completed_tasks"] = []
+        from datetime import datetime, timezone
+        handoff["timestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        result = self._call(handoff=handoff, roadmap=_ROADMAP_WITH_INCOMPLETE)
+        self.assertIsNotNone(result)
+        # No "<digits>/<digits>" task-progress fragment may appear.
+        self.assertIsNone(
+            _re.search(r"\b\d+/\d+\b", result),
+            f"Non-positive total_tasks must not render an N/N fragment: {result!r}",
+        )
+
+    def test_malicious_plan_field_not_in_rendered_segment(self):
+        """WR-01: an ESC + long plan value must not inject \\x1b nor blow segment width."""
+        handoff = dict(_VALID_HANDOFF)
+        handoff["plan"] = "\033[5;31mPWNED\033[0m" + ("X" * 200)
+        from datetime import datetime, timezone
+        handoff["timestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        result = self._call(handoff=handoff, roadmap=_ROADMAP_WITH_INCOMPLETE)
+        self.assertIsNotNone(result)
+        # The injected blink/color sequence "\033[5;31m" must not appear verbatim.
+        self.assertNotIn("\033[5;31m", result,
+                         "Untrusted plan ESC sequence leaked into rendered segment")
+        self.assertNotIn("PWNED\033", result)
+        # The 200 'X' run must be truncated — the segment stays width-bounded.
+        self.assertNotIn("X" * 30, result, "plan label must be truncated, not unbounded")
 
     def test_icon_set_emoji_uses_fallback_glyphs(self):
         """icon_set='emoji': output uses ascii/emoji fallbacks, no _NF_GSD_* codepoints."""
