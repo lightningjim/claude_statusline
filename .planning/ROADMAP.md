@@ -138,7 +138,7 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
-| 2. Weather Layer | 3/3 | Complete    | 2026-05-28 |
+| 2. Weather Layer | 3/3 | Complete   | 2026-05-29 |
 | 02.1. Nerd Font icon set | 1/3 | In Progress|  |
 | 3. Presets for block fill | 0/TBD | Not started | - |
 | 4. git info incl. active worktree | 0/TBD | Not started | - |

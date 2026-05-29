@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 02.1 context gathered
-last_updated: "2026-05-29T01:03:00.065Z"
+last_updated: "2026-05-29T01:16:02.951Z"
 last_activity: 2026-05-29 -- Phase 02.1 execution started
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
   percent: 33
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-28)
 ## Current Position
 
 Phase: 02.1 (nerd-font-icon-set) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3 (02.1-02 complete; 02.1-03 remaining)
 Status: Executing Phase 02.1
-Last activity: 2026-05-29 -- Phase 02.1 execution started
+Last activity: 2026-05-29 -- Phase 02.1 Plan 02 complete (dual tables + cache token migration)
 
-Progress: [████████░░] 78%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -54,7 +54,8 @@ Progress: [████████░░] 78%
 - Trend: On track
 
 *Updated after each plan completion*
-| Phase 02.1 P01 | 3 | 2 tasks | 2 files |
+| Phase 02.1 P01 | 3 min | 2 tasks | 2 files |
+| Phase 02.1 P02 | 35 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,10 @@ Recent decisions affecting current work:
 - _icon_to_emoji: textDescription match first, then NWS icon URL path; falls back to thermometer glyph
 - section_within_ceiling uses <= at max-stale boundary; section_is_fresh uses < at TTL boundary
 - maybe_spawn_refresh: fixed argv [sys.executable, __file__, "--refresh"], start_new_session=True; never .wait()/.communicate() (T-02-08)
+- fetch_weather stores raw NWS tokens (text_desc + icon_url) not a baked glyph; glyph resolved at render by _icon_to_glyph (D-04/D-07)
+- _condition_category() is a separate helper from _icon_to_glyph so the resolver stays pure and testable
+- fzra and rasn share wi-rain-mix glyph (U+E311) per Weather Icons spec — no distinct codepoint; test relaxed accordingly
+- _NWS_ICON_MAP_NERD uses 3-tuple (keywords, glyph, category) extending the 2-tuple emoji shape for semantic color lookup
 
 ### Roadmap Evolution
 
@@ -113,6 +118,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-05-29T01:03:00.056Z
-Stopped at: Phase 02.1 context gathered
-Resume file: .planning/phases/02.1-nerd-font-icon-set/02.1-CONTEXT.md
+Last session: 2026-05-29T01:45:00Z
+Stopped at: Completed 02.1-02-PLAN.md (dual tables + cache migration)
+Resume file: .planning/phases/02.1-nerd-font-icon-set/02.1-03-PLAN.md
