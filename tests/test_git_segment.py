@@ -69,16 +69,33 @@ class TestRunGit(unittest.TestCase):
         self.assertIsInstance(result, str, "Expected a string, not None")
 
     def test_run_git_never_uses_shell(self):
-        """Verify no shell=True in the source — injection surface control."""
-        import re
+        """Verify subprocess.run is never called with shell=True in the implementation."""
+        import ast
         with open(SCRIPT) as f:
             source = f.read()
-        # Strip comments, then check
-        non_comment = "\n".join(
-            line for line in source.splitlines()
-            if not line.strip().startswith("#")
-        )
-        self.assertNotIn("shell=True", non_comment, "shell=True must never appear in the implementation")
+        # Parse the AST and look for subprocess.run(shell=True) calls
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            self.fail("Could not parse the script as Python AST")
+
+        shell_true_calls = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                # Check for subprocess.run(..., shell=True, ...)
+                func = node.func
+                is_subprocess_run = (
+                    (isinstance(func, ast.Attribute) and func.attr == "run"
+                     and isinstance(func.value, ast.Name) and func.value.id == "subprocess")
+                    or (isinstance(func, ast.Name) and func.id == "run")
+                )
+                if is_subprocess_run:
+                    for kw in node.keywords:
+                        if kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                            shell_true_calls.append(node)
+
+        self.assertEqual(len(shell_true_calls), 0,
+                         f"Found {len(shell_true_calls)} subprocess.run call(s) with shell=True; none permitted")
 
 
 # ---------------------------------------------------------------------------

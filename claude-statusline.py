@@ -1261,6 +1261,154 @@ def _load_stdin() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Git helper layer (Phase 04, Plan 01)
+# Three pure / IO-isolated helpers consumed by _git_segment (Plan 02).
+# subprocess and os are already imported above — no new imports.
+# ---------------------------------------------------------------------------
+
+def _run_git(args: list[str], cwd: str, timeout: float = 0.15) -> str | None:
+    """Run ``git -C cwd <args>`` and return stdout text, or None on any failure.
+
+    Never raises (RUN-01/RUN-02).  On TimeoutExpired the subprocess is killed
+    by subprocess.run before the exception propagates, so the render path is
+    freed within *timeout* seconds.
+
+    Design notes (D-05/D-06, T-04-01/T-04-02/T-04-03):
+    - Fixed argv list — cwd is only ever an argument to ``-C``, NEVER shell-
+      interpolated.  ``shell=True`` is intentionally absent (V5 injection
+      control).
+    - Uses ``-C cwd`` rather than the ``cwd=`` kwarg so a non-existent
+      directory degrades through git's own rc!=0 (avoids os.chdir side-effects
+      on the parent process).
+    - Blanket ``except Exception`` catches TimeoutExpired, FileNotFoundError
+      (git absent), OSError, and anything else — segment omits silently.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", cwd, *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if proc.returncode != 0:
+            return None          # non-repo (rc=128), empty-repo HEAD failures, etc.
+        return proc.stdout
+    except Exception:
+        return None              # TimeoutExpired, FileNotFoundError (no git), OSError, …
+
+
+def _parse_git_status_v2(stdout: str) -> dict | None:
+    """Parse ``status --porcelain=v2 --branch`` stdout → state dict, or None.
+
+    Returns::
+
+        {
+            "branch":   str | None,   # branch name, or None when detached
+            "detached": bool,         # True when ``# branch.head (detached)``
+            "oid":      str | None,   # full OID, or None for unborn repos
+            "dirty":    bool,         # any modified/untracked/staged line present
+            "ahead":    int | None,   # commits ahead of upstream; None = no upstream
+            "behind":   int | None,   # commits behind upstream; None = no upstream
+        }
+
+    Never raises.  ahead/behind default to ``None`` (not 0) when the
+    ``# branch.ab`` line is absent (Pitfall 3: no upstream configured).
+
+    Edge cases handled (all VERIFIED against git 2.53.0):
+    - ``# branch.head (detached)``  → detached=True, branch=None (Pitfall 4)
+    - ``# branch.oid (initial)``    → oid=None without crashing (Pitfall 2)
+    - Missing ``# branch.ab``       → ahead=None, behind=None (Pitfall 3)
+    - Any "1 "/"2 "/"u " or "? " line → dirty=True (D-02)
+    """
+    try:
+        branch: str | None = None
+        oid: str | None = None
+        detached = False
+        ahead: int | None = None
+        behind: int | None = None
+        dirty = False
+
+        for line in stdout.splitlines():
+            if line.startswith("# branch.head "):
+                head = line[len("# branch.head "):].strip()
+                if head == "(detached)":
+                    detached = True
+                else:
+                    branch = head
+            elif line.startswith("# branch.oid "):
+                val = line[len("# branch.oid "):].strip()
+                oid = None if val == "(initial)" else val
+            elif line.startswith("# branch.ab "):
+                # format: "+N -M"
+                parts = line[len("# branch.ab "):].split()
+                for p in parts:
+                    if p.startswith("+"):
+                        ahead = int(p[1:])
+                    elif p.startswith("-"):
+                        behind = int(p[1:])
+            elif line[:2] in ("1 ", "2 ", "u ") or line.startswith("? "):
+                dirty = True
+
+        return {
+            "branch": branch,
+            "detached": detached,
+            "oid": oid,
+            "dirty": dirty,
+            "ahead": ahead,
+            "behind": behind,
+        }
+    except Exception:
+        return None
+
+
+def _detect_linked_worktree(rev_parse_stdout: str) -> tuple[bool, str | None]:
+    """Return ``(is_linked, worktree_basename)`` from ``rev-parse`` output.
+
+    *rev_parse_stdout* must be the stdout of::
+
+        git rev-parse --absolute-git-dir --git-common-dir --show-toplevel
+
+    Detection logic (D-03, D-04, Pitfall 6):
+    - Compare ``os.path.realpath`` of line 0 (``--absolute-git-dir``) with
+      line 1 (``--git-common-dir``).  They resolve EQUAL in the main checkout
+      and DIVERGE inside a linked worktree (git-dir = ``…/.git/worktrees/<n>``
+      while common-dir = ``…/.git``).
+    - ``--git-common-dir`` may be returned as a RELATIVE path (e.g. ``.git``
+      in the main checkout) or contain ``/../..`` segments (VERIFIED: real
+      worktree probe).  Relative paths are resolved against ``--show-toplevel``
+      (line 2) before applying ``os.path.realpath``, ensuring the comparison
+      is always between two absolute normalised paths.
+    - basename = ``os.path.basename(toplevel)`` gives the worktree dir name,
+      which is what the user thinks in (D-04).
+
+    Returns ``(False, None)`` on any malformed / insufficient input.
+    Never raises.
+    """
+    try:
+        lines = rev_parse_stdout.splitlines()
+        if len(lines) < 3:
+            return (False, None)
+        abs_git_dir_raw = lines[0].strip()
+        common_raw      = lines[1].strip()
+        toplevel        = lines[2].strip()
+
+        git_dir = os.path.realpath(abs_git_dir_raw)
+
+        # ``--git-common-dir`` may be relative (e.g. ".git" in the main checkout).
+        # Resolve it relative to the toplevel so realpath normalises correctly.
+        if not os.path.isabs(common_raw) and toplevel:
+            common = os.path.realpath(os.path.join(toplevel, common_raw))
+        else:
+            common = os.path.realpath(common_raw)
+
+        is_linked = git_dir != common
+        name = os.path.basename(toplevel.rstrip("/")) if toplevel else None
+        return (is_linked, name)
+    except Exception:
+        return (False, None)
+
+
+# ---------------------------------------------------------------------------
 # Segment builders (each returns a string or None to omit)
 # Each builder accepts thresholds forwarded from loaded config.
 # ---------------------------------------------------------------------------
