@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Phase 4 context gathered
-last_updated: "2026-05-29T16:14:33.821Z"
+status: Phase 03.1 inserted, not planned yet
+stopped_at: Phase 5 context gathered
+last_updated: "2026-05-29T19:43:04.863Z"
 last_activity: 2026-05-29 -- Phase 04 marked complete
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 5
   total_plans: 13
   completed_plans: 13
-  percent: 83
+  percent: 71
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Phase 04 — git info including active worktree
+**Current focus:** Phase 03.1 — Resolve default bar gradient vs shade test drift (URGENT, inserted)
 
 ## Current Position
 
-Phase: 04 — COMPLETE
+Phase: 03.1 — INSERTED, not planned
 Plan: Not started
-Status: Phase 04 complete
+Status: Phase 03.1 inserted, not planned yet
 Last activity: 2026-05-29 -- Phase 04 marked complete
 
 Progress: [██████████] 100%
@@ -105,6 +105,7 @@ Recent decisions affecting current work:
 - Phase 4 added: git info including active worktree
 - Phase 5 added: GSD status info especially the active Plan(s) being run
 - Phase 02.1 inserted after Phase 2: Nerd Font icon set — weather glyphs + other segment glyphs, pulled forward from v2 ENH-04 (URGENT)
+- Phase 03.1 inserted after Phase 3: Resolve default bar gradient vs shade test drift (URGENT)
 
 ### Pending Todos
 
@@ -124,6 +125,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-05-29T16:07:37.894Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-git-info-including-active-worktree/04-CONTEXT.md
+Last session: 2026-05-29T19:43:04.851Z
+Stopped at: Phase 5 context gathered
+Resume file: .planning/phases/05-gsd-status-info-especially-the-active-plan-s-being-run/05-CONTEXT.md
