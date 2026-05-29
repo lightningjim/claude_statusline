@@ -685,5 +685,119 @@ class TestGitSegmentBuilder(unittest.TestCase):
             self.mod._run_git = original
 
 
+# ---------------------------------------------------------------------------
+# End-to-end subprocess tests (Task 3)
+# ---------------------------------------------------------------------------
+
+# Project root is the actual git repo for this project (used in e2e tests)
+_REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# An isolated HOME with no config so weather is omitted and show_git defaults True
+_E2E_HOME = tempfile.mkdtemp(prefix="gsd-statusline-e2e-home-")
+
+
+def _run_script_e2e(stdin_dict: dict, home: str = _E2E_HOME) -> subprocess.CompletedProcess:
+    """Pipe a JSON dict to the script as a subprocess and return the result."""
+    env = dict(os.environ)
+    env["HOME"] = home
+    return subprocess.run(
+        [sys.executable, SCRIPT],
+        input=json.dumps(stdin_dict).encode(),
+        capture_output=True,
+        env=env,
+    )
+
+
+def _minimal_data(current_dir: str) -> dict:
+    """Minimal stdin JSON with workspace.current_dir pointing to current_dir."""
+    return {
+        "model": {"display_name": "TestModel"},
+        "thinking": {"enabled": False},
+        "workspace": {
+            "current_dir": current_dir,
+            "project_dir": current_dir,
+            "added_dirs": [],
+        },
+        "cwd": current_dir,
+        "context_window": {"used_percentage": 10},
+        "rate_limits": {
+            "five_hour": {"used_percentage": 10, "resets_at": None},
+            "seven_day": {"used_percentage": 5, "resets_at": None},
+        },
+    }
+
+
+import json
+
+
+class TestGitSegmentE2E(unittest.TestCase):
+    """End-to-end subprocess tests: piping JSON to the script and inspecting stdout."""
+
+    def test_e2e_repo_dir_shows_git_segment_between_project_and_model(self):
+        """Piping the project repo as current_dir: git segment appears between [project] and [model].
+
+        This is the D-09 ordering test: project < git < model on the top line.
+        """
+        data = _minimal_data(_REPO_DIR)
+        result = _run_script_e2e(data)
+        self.assertEqual(result.returncode, 0,
+                         f"Script exited {result.returncode}; stderr: {result.stderr.decode()!r}")
+        stderr = result.stderr.decode()
+        self.assertNotIn("Traceback", stderr, f"Traceback in stderr: {stderr!r}")
+        top_line = result.stdout.decode().splitlines()[0]
+
+        # Both known markers must be present
+        project_marker = "[claude_statusline]"
+        model_marker = "[TestModel]"
+        idx_project = top_line.find(project_marker)
+        idx_model = top_line.find(model_marker)
+
+        self.assertGreater(idx_project, -1,
+                           f"Project marker not found: {top_line!r}")
+        self.assertGreater(idx_model, -1,
+                           f"Model marker not found: {top_line!r}")
+
+        # The git segment must appear between project and model
+        project_end = idx_project + len(project_marker)
+        between = top_line[project_end:idx_model]
+        self.assertIn("[", between,
+                      f"No git segment bracket between project and model. "
+                      f"Between: {between!r}  Line: {top_line!r}")
+
+        # Project must come before model
+        self.assertLess(idx_project, idx_model,
+                        f"[project] must precede [model]; line: {top_line!r}")
+
+    def test_e2e_non_repo_dir_omits_git_segment_exits_zero(self):
+        """Piping a non-repo temp dir: git segment omitted, script exits 0, no traceback."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data = _minimal_data(tmpdir)
+            result = _run_script_e2e(data)
+        self.assertEqual(result.returncode, 0,
+                         f"Script must exit 0 even for non-repo dir; "
+                         f"stderr: {result.stderr.decode()!r}")
+        stderr = result.stderr.decode()
+        self.assertNotIn("Traceback", stderr, f"Traceback in stderr: {stderr!r}")
+        self.assertNotIn("Error", stderr)
+
+        # The bar must still render (at minimum the model segment)
+        top_line = result.stdout.decode().splitlines()[0]
+        self.assertIn("[TestModel]", top_line,
+                      f"Model segment must still render when git segment absent: {top_line!r}")
+
+    def test_e2e_empty_stdin_exits_zero(self):
+        """Empty stdin: script exits 0, no traceback (never-crash contract, RUN-02)."""
+        env = dict(os.environ)
+        env["HOME"] = _E2E_HOME
+        result = subprocess.run(
+            [sys.executable, SCRIPT],
+            input=b"",
+            capture_output=True,
+            env=env,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("Traceback", result.stderr.decode())
+
+
 if __name__ == "__main__":
     unittest.main()

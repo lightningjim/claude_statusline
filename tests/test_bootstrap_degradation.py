@@ -132,18 +132,25 @@ class TestRenderTopLineWeatherOmitted(unittest.TestCase):
         self.assertIn("Opus 4.8 (1M context)", top)
 
     def test_top_line_no_weather_equals_phase1_format(self):
-        """Top line with weather omitted exactly matches [project] [model] format."""
+        """Top line with weather AND git omitted exactly matches [project] [model] format.
+
+        Phase 04 update: the git segment (D-09) is now wired between project and model.
+        To keep this a "Phase-1 style" guard (exactly two segments), we also disable
+        show_git via cfg so only project and model remain.
+        """
         orig_weather_ok = self.mod._WEATHER_OK
         try:
             self.mod._WEATHER_OK = False
             cfg = dict(self.cfg_no_weather)
             cfg["weather"] = {"show_weather": False}
+            # Phase 04: disable git segment so this remains a two-segment guard
+            cfg["display"] = {"show_git": False, "icon_set": "nerd", "bar_style": "shade"}
             top = self.mod.render_top_line(self.data, cfg)
             # Must not contain a third bracketed segment beyond project and model
             # The Phase-1 top line is exactly: "[project] [model ...]"
             parts = top.split("] [")  # rough bracket split
-            # With two segments: "[project] [model 💭]" → 2 parts after split
-            # With three: "[project] [model 💭] [weather ...]" → 3 parts
+            # With two segments: "[project] [model 💭]" -> 2 parts after split
+            # With three: "[project] [model 💭] [weather ...]" -> 3 parts
             self.assertLessEqual(len(parts), 2, f"Expected at most 2 segments, got: {top!r}")
         finally:
             self.mod._WEATHER_OK = orig_weather_ok

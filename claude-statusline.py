@@ -1914,9 +1914,12 @@ def _rate_segment(
 def render_top_line(data: dict, cfg: dict) -> str:
     """Assemble the top line from present segments, joined by a single space.
 
-    Phase 1: [project] [model 💭]
-    Phase 2: [project] [model 💭] [<weather segment>]  (weather omitted when deps unavailable)
-    Phase 02.1: glyph set controlled by icon_set (D-01/D-07): mirrors show_thinking_glyph threading.
+    Phase 1:    [project] [model 💭]
+    Phase 2:    [project] [model 💭] [<weather segment>]
+    Phase 02.1: glyph set controlled by icon_set (D-01/D-07).
+    Phase 04:   [project] [git] [model 💭] [<weather>]  (D-09 ordering)
+                git segment inserted between project and model (D-09).
+                Omitted when show_git=false, non-repo, timeout, or git absent.
     """
     toggles = cfg.get("toggles", {})
     show_thinking_glyph = toggles.get("show_thinking_glyph", True)
@@ -1924,8 +1927,9 @@ def render_top_line(data: dict, cfg: dict) -> str:
     icon_set = display.get("icon_set", "nerd")
     segments = [
         _project_segment(data),
+        _git_segment(data, cfg),        # D-09: immediately after project, before model
         _model_segment(data, show_thinking_glyph=show_thinking_glyph, icon_set=icon_set),
-        _weather_segment(data, cfg),   # None-filtered by the existing space-join (D2-10)
+        _weather_segment(data, cfg),    # None-filtered by the existing space-join (D2-10)
     ]
     present = [s for s in segments if s is not None]
     return " ".join(present)
