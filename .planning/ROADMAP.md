@@ -108,7 +108,12 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 03-01-PLAN.md — `bar_style` config key + whole-cell presets (shade/solid/solid-dim), per-cell filled-color/empty-gray rule, silent fallback to shade (D-01,D-06,D-07,D-08,D-09,D-10)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 03-02-PLAN.md — Gradient preset: 1/8 sub-cell boundary-block render (left blocks) + blank empty track, with 0%/100% edge cases (D-02,D-04,D-05)
 
 ### Phase 4: git info including active worktree
@@ -119,6 +124,7 @@ Plans:
 **Plans:** 0 plans
 
 Plans:
+
 - [ ] TBD (run /gsd-plan-phase 4 to break down)
 
 ### Phase 5: GSD status info especially the active Plan(s) being run
@@ -129,6 +135,7 @@ Plans:
 **Plans:** 0 plans
 
 Plans:
+
 - [ ] TBD (run /gsd-plan-phase 5 to break down)
 
 ## Progress
