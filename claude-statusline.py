@@ -1453,6 +1453,109 @@ def _project_segment(data: dict) -> str | None:
         return None
 
 
+def _git_segment(data: dict, cfg: dict) -> str | None:
+    """[<wt-marker?><branch-glyph><branch|sha> <dirty?><ahead/behind?>] or None.
+
+    Reads live git state for the session's working directory (D-08) and renders
+    a bracketed top-line segment mirroring the _project_segment shape.
+
+    Decision mapping:
+    - D-01: shows branch, dirty, ahead/behind — no standalone SHA or stash count
+    - D-02: single dirty marker only (no per-type counts)
+    - D-03/D-04: worktree glyph+basename prepended ONLY when in a linked worktree
+    - D-05/D-06: two timeout-guarded git subprocess calls via _run_git
+    - D-07: no caching — runs every render
+    - D-08: dir from workspace.current_dir → cwd → os.getcwd() (NOT project_dir)
+    - D-10: branch/worktree label NEUTRAL; dirty/ahead/behind markers COLORED
+    - RUN-01/RUN-02: never raises, entire body wrapped in try/except
+
+    Glyph selection follows icon_set ('nerd' → _NF_GIT_* constants;
+    anything else → emoji/ascii fallbacks: '⑂' worktree, '✚' dirty, '↑'/'↓' ab).
+    """
+    try:
+        # (1) Config toggle (D-08 discretion: display.show_git, default True)
+        if not cfg.get("display", {}).get("show_git", True):
+            return None
+
+        # (2) Resolve repo dir: workspace.current_dir → cwd → os.getcwd() (D-08)
+        ws = data.get("workspace", {}) if isinstance(data.get("workspace"), dict) else {}
+        repo_dir = ws.get("current_dir") or data.get("cwd") or os.getcwd()
+
+        # (3) Fetch git status (D-05/D-06: one call, timeout-guarded)
+        status_out = _run_git(["status", "--porcelain=v2", "--branch"], repo_dir)
+        if status_out is None:
+            return None   # non-repo / timeout / git absent → omit silently (RUN-01)
+
+        # (4) Parse the porcelain-v2 output
+        st = _parse_git_status_v2(status_out)
+        if st is None:
+            return None
+
+        # (5) Worktree detection: second git call (D-04)
+        rp_out = _run_git(
+            ["rev-parse", "--absolute-git-dir", "--git-common-dir", "--show-toplevel"],
+            repo_dir,
+        )
+        is_linked, wt_name = _detect_linked_worktree(rp_out or "")
+
+        # (6) Resolve glyphs from icon_set (Pattern 4)
+        icon_set = cfg.get("display", {}).get("icon_set", "nerd")
+        if icon_set == "nerd":
+            branch_glyph = _NF_GIT_BRANCH
+            wt_glyph     = _NF_GIT_WORKTREE
+            dirty_glyph  = _NF_GIT_DIRTY
+            ahead_glyph  = _NF_GIT_AHEAD
+            behind_glyph = _NF_GIT_BEHIND
+        else:
+            branch_glyph = ""      # no branch glyph in plain emoji/ascii mode
+            wt_glyph     = "⑂"
+            dirty_glyph  = "✚"
+            ahead_glyph  = "↑"
+            behind_glyph = "↓"
+
+        # (7) Branch text: name or 7-char short SHA for detached HEAD (D-01, Pitfall 4)
+        if st["detached"]:
+            oid = st.get("oid") or ""
+            branch_text = oid[:7] if oid else "HEAD"
+        elif st["branch"]:
+            branch_text = st["branch"]
+        else:
+            # Unborn branch with no oid — show empty string; the UNBORN name is in branch
+            branch_text = "HEAD"
+
+        # Build the neutral branch label (D-10: no color wrap for the branch itself).
+        # branch_glyph precedes the name; both rendered without color.
+        label = f"{branch_glyph}{branch_text}" if branch_glyph else branch_text
+
+        # (8) Dirty marker: YELLOW-colored single glyph, only when dirty (D-02/D-10)
+        dirty_part = f"{YELLOW}{dirty_glyph}{RESET}" if st["dirty"] else ""
+
+        # (9) Ahead/behind markers: colored, only when non-None AND > 0 (Open Q1)
+        ab_parts = []
+        ahead = st.get("ahead")
+        behind = st.get("behind")
+        if ahead is not None and ahead > 0:
+            ab_parts.append(f"{GREEN}{ahead_glyph}{ahead}{RESET}")
+        if behind is not None and behind > 0:
+            ab_parts.append(f"{YELLOW}{behind_glyph}{behind}{RESET}")
+        ab_part = " ".join(ab_parts)
+
+        # Assemble the interior: label + optional state markers
+        state_parts = [p for p in [dirty_part, ab_part] if p]
+        if state_parts:
+            interior = f"{label} {''.join(state_parts)}"
+        else:
+            interior = label
+
+        # (10) Prepend worktree marker ONLY when inside a linked worktree (D-03/D-04)
+        if is_linked and wt_name:
+            interior = f"{wt_glyph} {wt_name} {interior}"
+
+        return f"[{interior}]"
+    except Exception:
+        return None   # RUN-01/RUN-02: never raise, never traceback
+
+
 def _model_segment(
     data: dict,
     show_thinking_glyph: bool = True,
