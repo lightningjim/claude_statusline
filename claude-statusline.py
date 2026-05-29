@@ -102,6 +102,9 @@ _BAR_PRESETS: dict[str, tuple[str, str]] = {
 _FILLED = _BAR_PRESETS["shade"][0]   # "▓"
 _EMPTY  = _BAR_PRESETS["shade"][1]   # "░"
 _BAR_WIDTH = 20
+# Partial-block glyphs for the gradient preset (D-02): left-aligned, 1/8 → 7/8 precision.
+# Index i corresponds to remainder == i+1 (1/8 through 7/8 of a cell).
+_GRADIENT_PARTIAL = ("▏", "▎", "▍", "▌", "▋", "▊", "▉")   # 7 glyphs, 1/8..7/8
 
 
 def _bar_preset(style: str) -> tuple[str, str]:
@@ -1311,22 +1314,51 @@ def _context_segment(
     Per-cell color (D-06/D-07): filled cells are wrapped in the threshold color; empty cells
     are wrapped in GRAY — sharpening the filled/empty contrast for all block presets.
     Unknown bar_style silently falls back to "shade" via _bar_preset (RUN-02).
+
+    gradient preset (D-02/D-04/D-07): eighth-block sub-cell precision — full █ cells + one
+    left-aligned partial-block boundary cell (▏▎▍▌▋▊▉) + blank empty track. The blank
+    track is uncolored per D-07 (gray treatment is moot when there is nothing to color).
+    Sub-cell precision is gradient-only; shade/solid/solid-dim stay whole-cell (D-04).
     """
     try:
         ctx = data.get("context_window", {})
         pct = pct_int(ctx.get("used_percentage"))
         if pct is None:
             return None
-        # Clamp to [0, _BAR_WIDTH] so out-of-range pct (e.g. >104, or negative)
-        # can never overflow/underflow the 20-char bar (CR-01).
-        filled = max(0, min(_BAR_WIDTH, math.floor(pct * _BAR_WIDTH / 100)))
-        empty = _BAR_WIDTH - filled
-        fill_glyph, empty_glyph = _bar_preset(bar_style)
         color = color_for(pct, warn, crit)
-        # D-06: filled run in threshold color, empty run in dim GRAY — per-cell color split.
-        filled_str = f"{color}{fill_glyph * filled}{RESET}" if filled else ""
-        empty_str  = f"{GRAY}{empty_glyph * empty}{RESET}"  if empty  else ""
-        bar = f"[{filled_str}{empty_str}]"
+
+        if bar_style == "gradient":
+            # D-02/D-04: eighth-block sub-cell rendering for gradient only.
+            # total_eighths clamped to [0, _BAR_WIDTH*8] so out-of-range pct never
+            # overflows/underflows the bar or indexes _GRADIENT_PARTIAL out of range (T-03-03).
+            total_eighths = round(pct / 100 * _BAR_WIDTH * 8)
+            total_eighths = max(0, min(_BAR_WIDTH * 8, total_eighths))
+            full_cells = total_eighths // 8
+            remainder  = total_eighths % 8   # 0 means exact whole-cell boundary
+            # Build the visible cell content (always exactly _BAR_WIDTH cells wide).
+            filled_part = "█" * full_cells
+            if remainder > 0:
+                boundary_glyph = _GRADIENT_PARTIAL[remainder - 1]
+                blank_count    = _BAR_WIDTH - full_cells - 1
+            else:
+                boundary_glyph = ""
+                blank_count    = _BAR_WIDTH - full_cells
+            # D-07: filled run + boundary glyph get the threshold color; blank track is
+            # uncolored (no GRAY wrap) because there is nothing to color there.
+            colored_filled = f"{color}{filled_part}{boundary_glyph}{RESET}" if (filled_part or boundary_glyph) else ""
+            blank_track = " " * blank_count
+            bar = f"[{colored_filled}{blank_track}]"
+        else:
+            # Whole-cell rendering for shade / solid / solid-dim (D-04 — do not touch).
+            # Clamp to [0, _BAR_WIDTH] so out-of-range pct never overflows (CR-01).
+            filled = max(0, min(_BAR_WIDTH, math.floor(pct * _BAR_WIDTH / 100)))
+            empty = _BAR_WIDTH - filled
+            fill_glyph, empty_glyph = _bar_preset(bar_style)
+            # D-06: filled run in threshold color, empty run in dim GRAY — per-cell color split.
+            filled_str = f"{color}{fill_glyph * filled}{RESET}" if filled else ""
+            empty_str  = f"{GRAY}{empty_glyph * empty}{RESET}"  if empty  else ""
+            bar = f"[{filled_str}{empty_str}]"
+
         pct_str = f"{color}{pct}%{RESET}"
         return f"{bar} {pct_str}"
     except Exception:
