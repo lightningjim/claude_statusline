@@ -91,6 +91,7 @@ At a glance, the bottom of the terminal tells the truth about the current sessio
 | Context-bar fill presets via `display.bar_style` (shade default / solid / solid-dim / gradient) | Selectable fill styles incl. a sub-cell eighth-block gradient; filled=threshold color, empty=dim gray; independent of `icon_set`; unknown values degrade to shade | ✅ Phase 3 |
 | Read-only git segment via `display.show_git` (branch/dirty/ahead-behind + linked-worktree marker) | Timeout-guarded, runs every render (no cache), neutral label + colored state, scoped to `current_dir`; omits silently off-repo | ✅ Phase 4 |
 | Read-only GSD-status segment via `display.show_gsd` (active plan + task progress + lifecycle glyph) | Reads `.planning/` under `project_dir`; HANDOFF-first/roadmap-fallback with staleness window; milestone-complete confirmed from STATE `progress` (not a fall-through); untrusted labels sanitized; never blocks/crashes; omits silently off-GSD | ✅ Phase 5 |
+| Default `bar_style` stays `shade`; full-run tests must isolate `$HOME` | Two "default bar" tests were failing because `run_script` spawns the real script, which reads the developer's live config (`bar_style="gradient"`) — a test-isolation leak, not a code drift. Default kept at `shade` (Phase-3 D-09 preserved, production code untouched); the tests now run under an empty `_NO_CONFIG_HOME` so they assert the true no-config fallback. Any full-run test asserting baseline render must override `$HOME` | ✅ Phase 03.1 |
 
 ## Evolution
 
@@ -110,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-29 after Phase 5 (GSD-status segment) completion*
+*Last updated: 2026-05-29 after Phase 03.1 (default-bar test-drift resolution) completion*
