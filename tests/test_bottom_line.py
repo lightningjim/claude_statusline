@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timezone
 
@@ -18,6 +19,17 @@ SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 FIXTURE = os.path.join(
     os.path.dirname(__file__), "..", ".examples", "claude_stdin.json"
 )
+
+# ---------------------------------------------------------------------------
+# No-config isolation helper (D-01, D-03, T-03.1-01)
+# ---------------------------------------------------------------------------
+
+# _NO_CONFIG_HOME is an empty tempdir with no claude-statusline.toml.
+# Pointing $HOME here forces load_config's silent DEFAULTS fallback (bar_style="shade"),
+# so tests that assert the shipped default render the shade bar — not the developer's
+# live gradient config.  The user's real ~/.claude/claude-statusline/claude-statusline.toml
+# is structurally guaranteed untouched on every exit path (T-03.1-01).
+_NO_CONFIG_HOME = tempfile.mkdtemp(prefix="gsd-statusline-test-noconfig-home-")
 
 # ---------------------------------------------------------------------------
 # Helpers to load helpers from the script without executing main()
@@ -31,11 +43,24 @@ def _load_script_module():
     return mod
 
 
-def run_script(stdin_bytes: bytes) -> subprocess.CompletedProcess:
+def run_script(stdin_bytes: bytes, home: str | None = None) -> subprocess.CompletedProcess:
+    """Run the script with the given stdin bytes.
+
+    When *home* is provided, $HOME is overridden to that directory for the
+    subprocess.  Pass ``home=_NO_CONFIG_HOME`` to ensure no config is found
+    and ``load_config`` returns DEFAULTS (non-destructive — the user's real
+    config file is never read or modified).  When *home* is None, the real
+    $HOME is used (behaviour unchanged for tests that do not assert the
+    default bar render).
+    """
+    env = dict(os.environ)
+    if home is not None:
+        env["HOME"] = home
     return subprocess.run(
         [sys.executable, SCRIPT],
         input=stdin_bytes,
         capture_output=True,
+        env=env,
     )
 
 
@@ -242,8 +267,12 @@ class TestBottomLineFixture(unittest.TestCase):
         self.assertIn("]", bottom)
 
     def test_bottom_line_bar_fill_cells(self):
-        """Bar fill: floor(7*20/100) = 1 filled block + 19 empty blocks (CTX-01)."""
-        result = run_script(self.fixture_bytes)
+        """Bar fill: floor(7*20/100) = 1 filled block + 19 empty blocks (CTX-01).
+
+        Runs under _NO_CONFIG_HOME so load_config falls back to DEFAULTS (bar_style="shade")
+        regardless of the developer's live config (D-01, D-03, T-03.1-01).
+        """
+        result = run_script(self.fixture_bytes, home=_NO_CONFIG_HOME)
         bottom = result.stdout.decode().splitlines()[1]
         # Strip ANSI codes to count raw characters
         import re
@@ -255,6 +284,9 @@ class TestBottomLineFixture(unittest.TestCase):
         self.assertEqual(len(bar), 20, f"Bar should be exactly 20 chars, got {len(bar)}: {bar!r}")
         self.assertEqual(bar.count("▓"), 1, f"Expected 1 filled block, got bar: {bar!r}")
         self.assertEqual(bar.count("░"), 19, f"Expected 19 empty blocks, got bar: {bar!r}")
+        # D-03: assert no gradient glyphs — makes the config-leak failure mode self-documenting
+        for g in "█▏▎▍▌▋▊▉":
+            self.assertNotIn(g, bar, f"Shade default must not contain gradient glyph {g!r}: {bar!r}")
 
     def test_bottom_line_has_five_hour_glyph(self):
         """Bottom line contains the five_hour glyph (LIM-01).
@@ -444,16 +476,23 @@ class TestBarStylePresets(unittest.TestCase):
         return stripped[bar_start:bar_end]
 
     def test_default_no_config_shade_unchanged(self):
-        """D-09: with no bar_style config, bar still renders 1 ▓ + 19 ░ at 7% (shade default)."""
+        """D-09: with no bar_style config, bar still renders 1 ▓ + 19 ░ at 7% (shade default).
+
+        Runs under _NO_CONFIG_HOME so load_config falls back to DEFAULTS (bar_style="shade").
+        The user's live gradient config is never read (D-01, D-03, T-03.1-01).
+        """
         with open(FIXTURE, "rb") as f:
             fixture_bytes = f.read()
-        result = run_script(fixture_bytes)
+        result = run_script(fixture_bytes, home=_NO_CONFIG_HOME)
         self.assertEqual(result.returncode, 0)
         bottom = result.stdout.decode().splitlines()[1]
         bar = self._extract_bar(bottom)
         self.assertEqual(len(bar), 20)
         self.assertEqual(bar.count("▓"), 1)
         self.assertEqual(bar.count("░"), 19)
+        # D-03: assert no gradient glyphs — makes the config-leak failure mode self-documenting
+        for g in "█▏▎▍▌▋▊▉":
+            self.assertNotIn(g, bar, f"Shade default must not contain gradient glyph {g!r}: {bar!r}")
 
     def test_solid_preset_uses_full_block_filled(self):
         """bar_style=solid: filled cells use '█', empty cells use '░' (D-01)."""
