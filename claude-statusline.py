@@ -47,6 +47,7 @@ try:
     import astral  # noqa: F401
     from astral import LocationInfo
     from astral.sun import sun
+    from astral.moon import phase as _moon_phase  # D-04: live moon phase (0–27.99)
     _ASTRAL_OK = True
 except Exception:
     _ASTRAL_OK = False
@@ -79,7 +80,16 @@ RED    = "\033[31m"
 DIM    = "\033[2m"    # dim/neutral — used for reset times (D-04)
 RESET  = "\033[0m"
 
+# Semantic weather colors (Phase 02.1, D-08) — TOP-LINE ONLY.
+# Do NOT use these on the bottom line; GREEN/YELLOW/RED there carry
+# usage-threshold semantics and must not be mixed with weather coloring.
+BLUE    = "\033[34m"   # rain
+CYAN    = "\033[36m"   # snow / freezing rain
+MAGENTA = "\033[35m"   # thunderstorm
+GRAY    = "\033[90m"   # fog / haze (bright black)
+
 # Bar fill characters (▓ = filled block, ░ = light shade / empty)
+# Phase 3: DO NOT modify here — block-fill variations are Phase 3's scope (D-02).
 _FILLED = "▓"
 _EMPTY  = "░"
 _BAR_WIDTH = 20
@@ -120,6 +130,13 @@ DEFAULTS: dict = {
         "contact_email": "your-email@example.com",  # required by NWS ToS for User-Agent
         "show_weather":  True,
         "pop_min":       30,    # hide precip chunk below this PoP% (sub-threshold = noise)
+    },
+    # Phase 02.1: glyph set selection (D-06, D-07)
+    # "nerd" (default) uses Weather Icons / Nerd Font PUA codepoints.
+    # "emoji" falls back to the Phase 2 emoji tables (retained, not deleted).
+    # A single global switch — one key flips all four converted segments (D-07).
+    "display": {
+        "icon_set": "nerd",   # "nerd" (default) or "emoji"
     },
 }
 
@@ -648,6 +665,38 @@ def _alert_color(severity: str) -> str:
         return YELLOW
     # Unknown or any unrecognized severity: YELLOW (safe visible default)
     return YELLOW
+
+
+def _wx_color(condition_type: str) -> str:
+    """Return semantic ANSI color for a weather condition category (D-08).
+
+    Maps the condition category string to a top-line color constant.
+    TOP-LINE ONLY — do not apply to the bottom line (D-08).
+
+    Categories:
+      storm  → MAGENTA (thunderstorm)
+      rain   → BLUE
+      snow   → CYAN (snow / freezing rain)
+      fog    → GRAY (fog / haze)
+      sun    → YELLOW
+      other  → RESET (clear-moon, wind, cold: uncolored / white)
+
+    Never raises — unknown/None/non-str input returns RESET.
+    """
+    try:
+        if condition_type == "storm":
+            return MAGENTA
+        if condition_type == "rain":
+            return BLUE
+        if condition_type == "snow":
+            return CYAN
+        if condition_type == "fog":
+            return GRAY
+        if condition_type == "sun":
+            return YELLOW
+    except Exception:
+        pass
+    return RESET
 
 
 def fetch_alerts(cfg: dict) -> None:
