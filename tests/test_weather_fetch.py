@@ -335,17 +335,26 @@ class TestFetchWeather(unittest.TestCase):
         data = self.mod.read_cache(self.cache_path)
         self.assertIn("weather", data)
 
-    def test_fetch_weather_icon_mapped_to_emoji(self):
-        """fetch_weather sets weather.icon to an emoji (mapped from NWS textDescription/icon)."""
+    def test_fetch_weather_stores_raw_nws_tokens(self):
+        """fetch_weather stores raw NWS tokens (text_desc + icon_url) not a pre-resolved glyph.
+
+        Phase 02.1 D-04/D-07: the cache now stores the raw textDescription and icon URL so
+        that glyph resolution (including live moon phase) happens at render time.
+        """
         fake_get = self._make_nws_get_fixture()
         with patch.object(self.mod, "_nws_get", side_effect=fake_get):
             with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
                 self.mod.fetch_weather(self.cfg)
         data = self.mod.read_cache(self.cache_path)
-        icon = data["weather"].get("icon", "")
-        # Should be a non-empty string (the emoji; not a URL)
-        self.assertTrue(len(icon) > 0)
-        self.assertNotIn("api.weather.gov", icon)  # must not be the raw NWS URL
+        weather = data.get("weather", {})
+        # Must store raw text description
+        self.assertIn("text_desc", weather, "weather section missing 'text_desc' key")
+        self.assertIsInstance(weather["text_desc"], str)
+        # Must store raw NWS icon URL
+        self.assertIn("icon_url", weather, "weather section missing 'icon_url' key")
+        icon_url = weather.get("icon_url", "")
+        self.assertIn("api.weather.gov", icon_url,
+                      f"icon_url should be a NWS URL, got: {icon_url!r}")
 
     def test_fetch_weather_temp_converted_to_f(self):
         """fetch_weather converts 22.222°C to 72°F for temp_unit=F."""

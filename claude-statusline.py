@@ -194,9 +194,16 @@ def load_config(path: str | None = None) -> dict:
 # Structure (three independently-timestamped sections — D2-06):
 #   {
 #     "geo":     { "fetched_at": <epoch>, "cwa": ..., "gridX": ..., "gridY": ..., "station_id": ... },
-#     "weather": { "fetched_at": <epoch>, "icon": ..., "temp": ..., "pop": ... },
+#     "weather": { "fetched_at": <epoch>, "text_desc": str, "icon_url": str,
+#                  "temp": int|null, "pop": int|null },
 #     "alerts":  { "fetched_at": <epoch>, "active": [...] }
 #   }
+#
+# Phase 02.1 change (D-04/D-07): the weather section now stores the raw NWS
+# tokens (textDescription + icon URL) instead of a pre-resolved glyph in "icon".
+# Glyph resolution happens at render time in _weather_segment via _icon_to_glyph.
+# This allows the icon_set toggle to take effect immediately (D-07) and the
+# clear-night moon phase to reflect the live current phase (D-04).
 #
 # All helpers return safe defaults / swallow errors so a corrupt cache can never
 # crash the render (D-10 never-crash discipline).
@@ -721,8 +728,11 @@ def fetch_weather(cfg: dict) -> None:
         obs_props = obs_data["properties"]
         temp_c = obs_props.get("temperature", {}).get("value")  # Celsius, may be null
         text_desc = obs_props.get("textDescription", "")
-        icon_url = obs_props.get("icon", "")
-        icon_emoji = _icon_to_emoji(text_desc, icon_url)
+        icon_url_raw = obs_props.get("icon", "")
+        # D-04/D-07: store raw NWS tokens, NOT a pre-resolved glyph.
+        # The render path (_weather_segment) resolves the glyph at render time via
+        # _icon_to_glyph, allowing the icon_set toggle to take effect immediately
+        # and the clear-night moon phase to reflect the live time (not a baked phase).
         temp_converted = c_to_unit(temp_c, temp_unit)
 
         # Step 4: /gridpoints/{cwa}/{x},{y}/forecast/hourly — PoP for current period
@@ -734,9 +744,12 @@ def fetch_weather(cfg: dict) -> None:
             pop_field = periods[0].get("probabilityOfPrecipitation", {})
             pop = pop_field.get("value")  # percent, may be null
 
-        # Step 5: write weather section atomically
+        # Step 5: write weather section atomically — raw tokens, not a resolved glyph.
+        # Schema: { "fetched_at": <epoch>, "text_desc": str, "icon_url": str,
+        #           "temp": int|None, "pop": int|None }
         weather_payload = {
-            "icon": icon_emoji,
+            "text_desc": text_desc,
+            "icon_url":  icon_url_raw,
         }
         if temp_converted is not None:
             weather_payload["temp"] = temp_converted
@@ -1385,15 +1398,45 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
         # Step 2: Trigger background refresh if weather OR alerts is stale (D2-05)
         maybe_spawn_refresh(cfg, cache)
 
+        # Resolve icon_set from config (D-06/D-07): read at render time so toggling
+        # takes effect on the next render without waiting for a cache refresh.
+        display = cfg.get("display", {})
+        icon_set = display.get("icon_set", "nerd")
+
         # Step 3a: Conditions chunk — only when within the max-stale ceiling (D2-12)
         conditions_chunk = None
         if section_within_ceiling(weather_section, max_stale=weather_max_stale, now=now):
-            icon = weather_section.get("icon")
+            # Read raw NWS tokens stored by fetch_weather (D-04/D-07).
+            # Backward-compat: also check the old "icon" key for existing caches
+            # that pre-date the token migration (old caches may store a glyph in "icon").
+            text_desc = weather_section.get("text_desc", "")
+            cached_icon_url = weather_section.get("icon_url", "")
+            # Fallback to old "icon" key for backward-compat with pre-migration caches
+            legacy_icon = weather_section.get("icon")
             temp = weather_section.get("temp")
-            if icon and temp is not None:
+
+            if temp is not None and (text_desc or cached_icon_url or legacy_icon):
                 temp_unit = cfg.get("units", {}).get("temp_unit", "F")
                 unit_symbol = "°C" if temp_unit == "C" else "°F"
-                conditions_chunk = f"{icon} {temp}{unit_symbol}"
+
+                if text_desc or cached_icon_url:
+                    # New token format: resolve glyph at render time
+                    try:
+                        glyph = _icon_to_glyph(text_desc, cached_icon_url, icon_set)
+                        if icon_set == "nerd":
+                            # D-08: wrap nerd glyph in semantic ANSI color (top-line only)
+                            category = _condition_category(text_desc, cached_icon_url)
+                            color = _wx_color(category)
+                            colored_glyph = f"{color}{glyph}{RESET}"
+                        else:
+                            # emoji path: emoji carry their own color — no ANSI wrapping
+                            colored_glyph = glyph
+                    except Exception:
+                        colored_glyph = legacy_icon or _WI_FALLBACK
+                    conditions_chunk = f"{colored_glyph} {temp}{unit_symbol}"
+                elif legacy_icon:
+                    # Old cache format (pre-migration) — use stored glyph as-is
+                    conditions_chunk = f"{legacy_icon} {temp}{unit_symbol}"
 
         # Step 3b: Precip chunk — only when PoP meets the minimum threshold (WX-02, D2-09).
         # Sub-threshold PoP is noise to a forecaster; hide it. Default floor 30%,
