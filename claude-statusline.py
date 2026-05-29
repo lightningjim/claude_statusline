@@ -64,6 +64,7 @@ _WEATHER_OK = _ASTRAL_OK and _REQUESTS_OK
 import copy
 import json
 import math
+import re
 import subprocess
 import tomllib
 from datetime import datetime, timedelta, timezone
@@ -1372,6 +1373,39 @@ _GSD_MAX_BYTES = 65_536
 # the session ended and the project is now parked (idle).
 _GSD_HANDOFF_STALE_SECONDS = 3600   # 1 hour; D-05 discretion
 
+# Roadmap-fallback parsing patterns (IN-01: hoisted to module scope, compiled once).
+# Two incomplete-marker shapes are recognised, checked in this order:
+#   1. _GSD_PLAN_CHECKBOX  — unchecked plan rows ("- [ ] 05-01-PLAN.md"), the
+#      planned-but-unexecuted plan path (kept for synthetic + real roadmaps).
+#   2. _GSD_PHASE_HEADER   — unchecked phase headers ("- [ ] **Phase 03.1: ...**"),
+#      the real-roadmap shape for a phase with no broken-out plan rows yet.
+# Anything else (incl. "- [ ] TBD (run ...)" placeholders) yields no identifier;
+# combined with the STATE-progress completeness check this resolves to idle, never
+# a false "done" (CR-01 / WR-02).
+_GSD_PLAN_CHECKBOX = re.compile(r"-\s\[\s\]\s+(\d+(?:\.\d+)?-\d+-PLAN\.md)")
+_GSD_PHASE_HEADER  = re.compile(r"-\s\[\s\]\s+\*\*Phase\s+(\d+(?:\.\d+)?)\s*:")
+
+# Max rendered width for untrusted free-text labels (plan, milestone) — WR-01.
+_GSD_LABEL_MAXLEN = 24
+
+
+def _sanitize_label(s, maxlen=_GSD_LABEL_MAXLEN):
+    """Strip control chars (esp. ESC \\x1b) from untrusted file text and clamp width.
+
+    WR-01: ``plan`` (HANDOFF.json) and ``milestone`` (STATE.md) are untrusted
+    on-disk text rendered verbatim into the bar.  Keep only printable chars plus
+    ASCII space, drop ESC/control sequences (prevents ANSI injection), and truncate
+    to ``maxlen`` (prevents unbounded segment width).  Never raises.
+    """
+    try:
+        cleaned = "".join(
+            ch for ch in str(s)
+            if ch == " " or (ch.isprintable() and ch != "\x1b")
+        )
+        return cleaned[:maxlen]
+    except Exception:
+        return ""
+
 
 def _read_gsd_state(planning_dir: str) -> dict | None:
     """Read HANDOFF.json, STATE.md frontmatter, and ROADMAP.md from planning_dir.
@@ -1471,7 +1505,11 @@ def _parse_gsd_frontmatter(text: str) -> dict | None:
                 k, _, v = line.partition(":")
                 k = k.strip()
                 v = v.strip()
-                if v == "" or v.endswith(":"):
+                # IN-02: only an empty value starts a nested mapping; nesting is
+                # confirmed by the following two-space-indented child lines.  The
+                # old `v.endswith(":")` heuristic misread a scalar value that
+                # happens to end in a colon (e.g. "stopped_at: see step 2:").
+                if v == "":
                     # Mapping key — start nested dict
                     current_key = k
                     current_mapping = {}
@@ -1546,7 +1584,34 @@ def _infer_gsd_lifecycle(state: dict | None) -> dict | None:
         except (TypeError, ValueError):
             plans_total = None
 
-        milestone_label = state_fm.get("milestone")
+        # WR-01: milestone is untrusted STATE.md text — sanitize before it can
+        # ever reach the rendered segment (strip ESC/control chars, clamp width).
+        milestone_raw = state_fm.get("milestone")
+        milestone_label = _sanitize_label(milestone_raw) if milestone_raw is not None else None
+
+        # --- Determine milestone completeness from STATE progress (D-07) ---
+        # D-07 must be POSITIVELY confirmed, never a fall-through default.  Treat
+        # the milestone as complete only when STATE.md progress confirms every
+        # phase (and, when known, every plan) is done.  This is the authoritative
+        # signal; the roadmap is only consulted for the next-incomplete identifier.
+        phases_done  = progress.get("completed_phases")
+        phases_total = progress.get("total_phases")
+        try:
+            phases_done  = int(phases_done)  if phases_done  is not None else None
+        except (TypeError, ValueError):
+            phases_done = None
+        try:
+            phases_total = int(phases_total) if phases_total is not None else None
+        except (TypeError, ValueError):
+            phases_total = None
+
+        milestone_complete = (
+            phases_total is not None and phases_total > 0
+            and phases_done is not None and phases_done >= phases_total
+        )
+        # When plan-level counts are also present, require plan completion too.
+        if milestone_complete and plans_total is not None and plans_done is not None:
+            milestone_complete = plans_total > 0 and plans_done >= plans_total
 
         # --- Check HANDOFF liveness (D-05) ---
         handoff_plan = handoff.get("plan")
@@ -1577,12 +1642,19 @@ def _infer_gsd_lifecycle(state: dict | None) -> dict | None:
                 total_tasks = int(total_tasks_raw) if total_tasks_raw is not None else None
             except (TypeError, ValueError):
                 total_tasks = None
-            tasks_done = len(completed_tasks)
+            # WR-03: a non-positive total_tasks (e.g. 0 or negative from a
+            # malformed HANDOFF) is meaningless — treat as "no task count" so the
+            # render drops the N/M fragment rather than showing garbage like -1/-1.
+            if total_tasks is not None and total_tasks <= 0:
+                total_tasks = None
+            tasks_done = max(0, len(completed_tasks))
             if total_tasks is not None:
                 tasks_done = min(tasks_done, total_tasks)
 
             return {
-                "plan_id":     handoff_plan,
+                # WR-01: handoff_plan is untrusted HANDOFF.json text — sanitize.
+                "plan_id":     _sanitize_label(handoff_plan),
+                "phase_id":    None,
                 "tasks_done":  tasks_done,
                 "total_tasks": total_tasks,
                 "plans_done":  plans_done,
@@ -1592,37 +1664,56 @@ def _infer_gsd_lifecycle(state: dict | None) -> dict | None:
             }
 
         # --- HANDOFF stale or null: roadmap fallback (D-05/D-06/D-07) ---
-        # Find the first "- [ ] NN(.N)?-NN-PLAN.md" line.
-        import re as _re
-        _PLAN_CHECKBOX = _re.compile(r"-\s\[\s\]\s+(\d+(?:\.\d+)?-\d+-PLAN\.md)")
-        next_plan_id = None
-        for line in roadmap.splitlines():
-            m = _PLAN_CHECKBOX.search(line)
-            if m:
-                # Strip the -PLAN.md suffix to get bare plan id (e.g. "05-01")
-                next_plan_id = m.group(1)[: -len("-PLAN.md")]
-                break
-
-        if next_plan_id is not None:
+        # D-07 is only emitted when STATE progress POSITIVELY confirms completion
+        # (computed above).  This is the fix for CR-01/WR-02: "done" is never a
+        # fall-through for an unrecognised/empty roadmap — that resolves to idle.
+        if milestone_complete:
             return {
-                "plan_id":     next_plan_id,
+                "plan_id":     None,
+                "phase_id":    None,
                 "tasks_done":  None,
                 "total_tasks": None,
                 "plans_done":  plans_done,
                 "plans_total": plans_total,
-                "state":       "idle",
-                "milestone":   None,
+                "state":       "done",
+                "milestone":   milestone_label,
             }
 
-        # No incomplete plan → done (D-07)
+        # Not milestone-complete (D-06): find the next incomplete identifier in
+        # ROADMAP.md.  Recognise two shapes and PREFER a plan row over a phase
+        # header (a plan row is the more specific "next plan" pointer):
+        #   1. first unchecked plan row  ("- [ ] 05-01-PLAN.md")        → plan_id
+        #   2. else first unchecked phase head ("- [ ] **Phase 03.1: ...**") → phase_id
+        # "- [ ] TBD (...)" placeholders match neither and are skipped — yielding
+        # an idle state with no identifier rather than a false "done".
+        next_plan_id = None
+        next_phase_id = None
+        for line in roadmap.splitlines():
+            m = _GSD_PLAN_CHECKBOX.search(line)
+            if m:
+                # Strip the -PLAN.md suffix to get the bare plan id (e.g. "05-01").
+                next_plan_id = m.group(1)[: -len("-PLAN.md")]
+                break
+        if next_plan_id is None:
+            for line in roadmap.splitlines():
+                mp = _GSD_PHASE_HEADER.search(line)
+                if mp:
+                    # No plan row anywhere — surface the first incomplete phase number.
+                    next_phase_id = mp.group(1)
+                    break
+
+        # Idle (D-06): show whatever identifier we found (plan id preferred), or
+        # none.  Never "done" here.  next_plan_id is regex-constrained (safe);
+        # next_phase_id is regex-constrained too.
         return {
-            "plan_id":     None,
+            "plan_id":     next_plan_id,
+            "phase_id":    next_phase_id,
             "tasks_done":  None,
             "total_tasks": None,
             "plans_done":  plans_done,
             "plans_total": plans_total,
-            "state":       "done",
-            "milestone":   milestone_label,
+            "state":       "idle",
+            "milestone":   None,
         }
 
     except Exception:
@@ -1711,6 +1802,7 @@ def _gsd_segment(data: dict, cfg: dict) -> str | None:
 
         # (7) Neutral label (D-09: no color wrap on plan id or task count)
         plan_id     = info.get("plan_id")
+        phase_id    = info.get("phase_id")
         tasks_done  = info.get("tasks_done")
         total_tasks = info.get("total_tasks")
         milestone   = info.get("milestone")
@@ -1718,17 +1810,23 @@ def _gsd_segment(data: dict, cfg: dict) -> str | None:
         plans_total = info.get("plans_total")
 
         if lifecycle == "done":
-            # D-07: explicit done state — show milestone label, not "None"
-            milestone_label = milestone or "done"
+            # D-07: explicit done state — show milestone label, not "None".
+            # WR-01: milestone is already sanitized in _infer_gsd_lifecycle;
+            # sanitize again here as a defensive render-boundary guard.
+            milestone_label = _sanitize_label(milestone) if milestone else "done"
             interior = f"{milestone_label} {status_glyph}"
         else:
-            # Active / idle: plan id + task progress (neutral) + colored glyph
-            if plan_id is None:
-                return None   # no plan id in non-done state — omit silently
-            if tasks_done is not None and total_tasks is not None:
-                task_label = f"{plan_id} {tasks_done}/{total_tasks}"
+            # Active / idle: plan id + task progress (neutral) + colored glyph.
+            # CR-01/D-06: when the roadmap fallback found no plan id but did find
+            # the next incomplete phase header, surface the phase id instead so
+            # the segment still tells you where you'll resume (idle granularity).
+            label_id = plan_id if plan_id is not None else phase_id
+            if label_id is None:
+                return None   # no identifier in non-done state — omit silently
+            if plan_id is not None and tasks_done is not None and total_tasks is not None:
+                task_label = f"{label_id} {tasks_done}/{total_tasks}"
             else:
-                task_label = plan_id
+                task_label = label_id
 
             # (9) Optional plan-of-total fragment (D-04) — neutral, no color
             if plans_done is not None and plans_total is not None:
@@ -1861,7 +1959,10 @@ def _detect_linked_worktree(rev_parse_stdout: str) -> tuple[bool, str | None]:
 def _project_segment(data: dict) -> str | None:
     """[<basename of workspace.project_dir>] or None if absent/empty."""
     try:
-        project_dir = data.get("workspace", {}).get("project_dir", "")
+        # IN-03: standardize on the isinstance-guarded workspace access used by
+        # _gsd_segment / _git_segment (handles workspace being a non-dict cleanly).
+        ws = data.get("workspace", {}) if isinstance(data.get("workspace"), dict) else {}
+        project_dir = ws.get("project_dir", "")
         if not project_dir:
             return None
         basename = os.path.basename(project_dir.rstrip("/"))
