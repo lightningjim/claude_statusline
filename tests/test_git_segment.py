@@ -381,5 +381,309 @@ class TestDetectLinkedWorktree(unittest.TestCase):
             self.assertEqual(detect_result, (False, None))
 
 
+# ---------------------------------------------------------------------------
+# _git_segment builder tests (Task 2 — monkeypatched _run_git)
+# ---------------------------------------------------------------------------
+
+# Canned porcelain-v2 status outputs for each behavior scenario
+_CLEAN_MAIN_NO_UPSTREAM = (
+    "# branch.oid abc1234\n"
+    "# branch.head main\n"
+)
+
+_CLEAN_MAIN_WITH_UPSTREAM = (
+    "# branch.oid abc1234\n"
+    "# branch.head main\n"
+    "# branch.upstream origin/main\n"
+    "# branch.ab +0 -0\n"
+)
+
+_DIRTY_MAIN = (
+    "# branch.oid abc1234\n"
+    "# branch.head main\n"
+    "# branch.upstream origin/main\n"
+    "# branch.ab +0 -0\n"
+    "1 .M N... 100644 100644 100644 abc abc somefile.py\n"
+)
+
+_AHEAD_2_BEHIND_1 = (
+    "# branch.oid abc1234\n"
+    "# branch.head feature\n"
+    "# branch.upstream origin/feature\n"
+    "# branch.ab +2 -1\n"
+)
+
+_DETACHED_HEAD = (
+    "# branch.oid 0123456789abcdefdeadbeef01234567deadbeef\n"
+    "# branch.head (detached)\n"
+)
+
+_UNBORN = (
+    "# branch.oid (initial)\n"
+    "# branch.head main\n"
+)
+
+# Canned rev-parse outputs (3 lines: abs-git-dir, common-dir, toplevel)
+def _make_main_rp(tmpdir: str) -> str:
+    """rev-parse output for a main checkout (git-dir == common-dir)."""
+    git_dir = f"{tmpdir}/.git"
+    return f"{git_dir}\n{git_dir}\n{tmpdir}\n"
+
+def _make_linked_rp(main_dir: str, wt_dir: str) -> str:
+    """rev-parse output for a linked worktree (git-dir != common-dir)."""
+    git_dir = f"{main_dir}/.git/worktrees/feat"
+    common = f"{main_dir}/.git"
+    return f"{git_dir}\n{common}\n{wt_dir}\n"
+
+
+class TestGitSegmentBuilder(unittest.TestCase):
+    """Builder tests: monkeypatched _run_git, covers all behavior cases (D-01..D-10)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def _call(self, status_stdout, rp_stdout=None, cfg_override=None, tmpdir=None):
+        """Call _git_segment with monkeypatched _run_git returning canned outputs."""
+        if tmpdir is None:
+            tmpdir = "/tmp/fake-repo"
+        if rp_stdout is None:
+            rp_stdout = _make_main_rp(tmpdir)
+
+        call_count = [0]
+        def fake_run_git(args, cwd, timeout=0.15):
+            call_count[0] += 1
+            if "status" in args:
+                return status_stdout
+            elif "rev-parse" in args:
+                return rp_stdout
+            return None
+
+        original_run_git = self.mod._run_git
+        self.mod._run_git = fake_run_git
+        try:
+            cfg = {
+                "display": {"icon_set": "nerd", "show_git": True, "bar_style": "shade"},
+                "toggles": {"show_thinking_glyph": True},
+                "thresholds": {"warn": 70, "crit": 90},
+            }
+            if cfg_override:
+                for k, v in cfg_override.items():
+                    if isinstance(v, dict) and isinstance(cfg.get(k), dict):
+                        cfg[k].update(v)
+                    else:
+                        cfg[k] = v
+            data = {
+                "workspace": {"current_dir": tmpdir, "project_dir": tmpdir},
+                "cwd": tmpdir,
+            }
+            return self.mod._git_segment(data, cfg)
+        finally:
+            self.mod._run_git = original_run_git
+
+    def test_git_segment_exists(self):
+        """_git_segment is defined on the module."""
+        self.assertTrue(hasattr(self.mod, "_git_segment"),
+                        "_git_segment not found in module")
+
+    def test_show_git_false_returns_none(self):
+        """show_git=False → returns None (segment toggled off, D-08)."""
+        result = self._call(
+            _CLEAN_MAIN_NO_UPSTREAM,
+            cfg_override={"display": {"show_git": False}},
+        )
+        self.assertIsNone(result, "Expected None when show_git=False")
+
+    def test_status_none_returns_none(self):
+        """When _run_git returns None (non-repo/timeout) → segment returns None."""
+        def fake_run_git(args, cwd, timeout=0.15):
+            return None
+        original = self.mod._run_git
+        self.mod._run_git = fake_run_git
+        try:
+            cfg = {"display": {"icon_set": "nerd", "show_git": True}}
+            data = {"workspace": {"current_dir": "/tmp/nonrepo"}, "cwd": "/tmp/nonrepo"}
+            result = self.mod._git_segment(data, cfg)
+            self.assertIsNone(result, "Expected None when _run_git returns None")
+        finally:
+            self.mod._run_git = original
+
+    def test_clean_main_no_upstream_shows_branch(self):
+        """Clean main-checkout with no upstream: shows branch name, no dirty marker,
+        no ahead/behind, no worktree marker, returns a bracketed string."""
+        result = self._call(_CLEAN_MAIN_NO_UPSTREAM)
+        self.assertIsNotNone(result, "Expected non-None for clean main checkout")
+        self.assertIsInstance(result, str)
+        self.assertTrue(result.startswith("["), "Segment must start with '['")
+        self.assertTrue(result.endswith("]"), "Segment must end with ']'")
+        self.assertIn("main", result, "Expected branch name 'main' in segment")
+        # Should NOT contain ahead/behind markers
+        self.assertNotIn("↑", result)
+        self.assertNotIn("↓", result)
+
+    def test_dirty_repo_shows_yellow_dirty_marker(self):
+        """Dirty repo → segment contains YELLOW ANSI code and no plain-text dirty label."""
+        result = self._call(_DIRTY_MAIN)
+        self.assertIsNotNone(result)
+        # The dirty marker must be colored YELLOW
+        self.assertIn(self.mod.YELLOW, result,
+                      "Expected YELLOW color code for dirty state (D-10)")
+        self.assertIn(self.mod.RESET, result)
+
+    def test_clean_repo_no_dirty_marker(self):
+        """Clean repo → segment contains no YELLOW dirty marker."""
+        result = self._call(_CLEAN_MAIN_WITH_UPSTREAM)
+        self.assertIsNotNone(result)
+        # No dirty-state marker in the nerd glyph set
+        self.assertNotIn(self.mod._NF_GIT_DIRTY, result,
+                         "Expected no dirty glyph in clean repo")
+
+    def test_no_upstream_no_ahead_behind(self):
+        """No upstream configured → no ahead/behind text in segment (Open Q1)."""
+        result = self._call(_CLEAN_MAIN_NO_UPSTREAM)
+        self.assertIsNotNone(result)
+        # Neither nerd glyphs nor emoji arrows should appear when no upstream
+        self.assertNotIn(self.mod._NF_GIT_AHEAD, result,
+                         "Ahead glyph must not appear when no upstream")
+        self.assertNotIn(self.mod._NF_GIT_BEHIND, result,
+                         "Behind glyph must not appear when no upstream")
+        # Also no plain arrow fallbacks
+        self.assertNotIn("↑", result)
+        self.assertNotIn("↓", result)
+
+    def test_ahead_2_behind_1_shows_colored_markers(self):
+        """ahead=2, behind=1 → shows ahead marker '2' and behind marker '1', colored."""
+        result = self._call(_AHEAD_2_BEHIND_1)
+        self.assertIsNotNone(result)
+        self.assertIn("2", result, "Expected '2' for ahead count")
+        self.assertIn("1", result, "Expected '1' for behind count")
+        # Must have color codes (both ahead and behind are colored)
+        self.assertIn(self.mod.RESET, result)
+
+    def test_zero_ahead_zero_behind_no_markers(self):
+        """ahead=0, behind=0 → ahead/behind chunk is omitted (hide-when-zero)."""
+        result = self._call(_CLEAN_MAIN_WITH_UPSTREAM)
+        self.assertIsNotNone(result)
+        self.assertNotIn(self.mod._NF_GIT_AHEAD, result,
+                         "Ahead marker must not appear when ahead=0")
+        self.assertNotIn(self.mod._NF_GIT_BEHIND, result,
+                         "Behind marker must not appear when behind=0")
+
+    def test_detached_head_shows_7char_oid(self):
+        """Detached HEAD → branch slot shows the 7-char short oid (oid[:7]), NOT '(detached)'."""
+        result = self._call(_DETACHED_HEAD)
+        self.assertIsNotNone(result)
+        self.assertIn("0123456", result,
+                      "Expected exactly 7-char oid prefix '0123456' in detached HEAD")
+        # Exact 7 chars: '0123456' must be present but '01234567' (8 chars) must not
+        self.assertNotIn("01234567", result,
+                         "Only 7-char oid slice (oid[:7]) expected, not 8 chars")
+        self.assertNotIn("(detached)", result,
+                         "Literal '(detached)' must not appear in the segment")
+
+    def test_unborn_branch_shows_branch_name_no_crash(self):
+        """Unborn/empty repo → shows branch name, no crash."""
+        result = self._call(_UNBORN)
+        # May be None or a string — must never raise
+        self.assertTrue(result is None or isinstance(result, str),
+                        f"Expected None or str for unborn repo, got {result!r}")
+        if result is not None:
+            # If it renders, it should show the unborn branch name
+            self.assertIn("main", result, "Expected unborn branch name 'main' in segment")
+
+    def test_main_checkout_no_worktree_marker(self):
+        """Main checkout → NO worktree glyph (_NF_GIT_WORKTREE) in segment (D-03)."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rp = _make_main_rp(tmpdir)
+            result = self._call(_CLEAN_MAIN_NO_UPSTREAM, rp_stdout=rp, tmpdir=tmpdir)
+        self.assertIsNotNone(result)
+        self.assertNotIn(self.mod._NF_GIT_WORKTREE, result,
+                         "Worktree glyph must not appear in main checkout (D-03)")
+
+    def test_linked_worktree_shows_worktree_basename(self):
+        """Linked worktree → shows _NF_GIT_WORKTREE glyph AND worktree dir basename (D-04)."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as main_dir:
+            with tempfile.TemporaryDirectory() as wt_dir:
+                # Create the fake git-worktree path structure for realpath to work
+                import os
+                git_wt_path = os.path.join(main_dir, ".git", "worktrees", "feat")
+                common_path = os.path.join(main_dir, ".git")
+                os.makedirs(git_wt_path)
+                os.makedirs(common_path, exist_ok=True)
+                rp = f"{git_wt_path}\n{common_path}\n{wt_dir}\n"
+                result = self._call(_CLEAN_MAIN_NO_UPSTREAM, rp_stdout=rp, tmpdir=wt_dir)
+                self.assertIsNotNone(result)
+                wt_basename = os.path.basename(wt_dir)
+                self.assertIn(wt_basename, result,
+                              f"Expected worktree basename '{wt_basename}' in segment (D-04)")
+                self.assertIn(self.mod._NF_GIT_WORKTREE, result,
+                              "Expected _NF_GIT_WORKTREE glyph in linked worktree segment (D-04)")
+
+    def test_branch_label_is_neutral_no_green_red(self):
+        """Branch label is neutral — should NOT be wrapped in GREEN or RED (D-10)."""
+        result = self._call(_CLEAN_MAIN_NO_UPSTREAM)
+        self.assertIsNotNone(result)
+        self.assertNotIn(self.mod.GREEN, result,
+                         "Branch label must not be GREEN (D-10: keep branch neutral)")
+        self.assertNotIn(self.mod.RED, result,
+                         "Branch label must not be RED (D-10: keep branch neutral)")
+
+    def test_emoji_icon_set_uses_fallback_glyphs(self):
+        """icon_set='emoji' → uses emoji/ascii fallback glyphs, not nerd codepoints."""
+        result = self._call(
+            _DIRTY_MAIN,
+            cfg_override={"display": {"icon_set": "emoji"}},
+        )
+        self.assertIsNotNone(result)
+        # Must NOT contain nerd PUA codepoints for dirty
+        self.assertNotIn(self.mod._NF_GIT_DIRTY, result,
+                         "Nerd dirty glyph must not appear in emoji mode")
+        # Must contain the emoji dirty marker
+        self.assertIn("✚", result,
+                      "Expected '✚' emoji dirty marker in emoji mode")
+
+    def test_emoji_worktree_uses_circle_glyph(self):
+        """icon_set='emoji' + linked worktree → uses '⑂' emoji worktree glyph, not nerd glyph."""
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as main_dir:
+            with tempfile.TemporaryDirectory() as wt_dir:
+                git_wt_path = os.path.join(main_dir, ".git", "worktrees", "feat")
+                common_path = os.path.join(main_dir, ".git")
+                os.makedirs(git_wt_path)
+                os.makedirs(common_path, exist_ok=True)
+                rp = f"{git_wt_path}\n{common_path}\n{wt_dir}\n"
+                result = self._call(
+                    _CLEAN_MAIN_NO_UPSTREAM,
+                    rp_stdout=rp,
+                    tmpdir=wt_dir,
+                    cfg_override={"display": {"icon_set": "emoji"}},
+                )
+                self.assertIsNotNone(result)
+                self.assertNotIn(self.mod._NF_GIT_WORKTREE, result,
+                                 "Nerd worktree glyph must not appear in emoji mode")
+                self.assertIn("⑂", result,
+                              "Expected '⑂' emoji worktree glyph in emoji mode")
+
+    def test_never_raises_on_any_input(self):
+        """_git_segment never raises on edge-case inputs."""
+        original = self.mod._run_git
+        try:
+            self.mod._run_git = lambda *a, **kw: None
+            for data, cfg in [
+                ({}, {}),
+                (None, {}),
+                ({"workspace": None}, {"display": {}}),
+                ({"workspace": {"current_dir": ""}}, {"display": {"show_git": True}}),
+            ]:
+                try:
+                    result = self.mod._git_segment(data or {}, cfg or {})
+                    self.assertTrue(result is None or isinstance(result, str))
+                except Exception as exc:
+                    self.fail(f"_git_segment raised on edge input {data!r}: {exc!r}")
+        finally:
+            self.mod._run_git = original
+
+
 if __name__ == "__main__":
     unittest.main()
