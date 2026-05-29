@@ -351,6 +351,122 @@ def _icon_to_emoji(text_description: str, icon_url: str) -> str:
     return "🌡️"  # fallback: thermometer
 
 
+# ---------------------------------------------------------------------------
+# Nerd Font / Weather Icons glyph constants (Phase 02.1, D-03, D-04)
+#
+# All codepoints are from the Weather Icons range bundled in Nerd Fonts
+# (nf-weather-* alias, PUA block starting at U+E300).
+# Each constant is named _WI_<CONDITION> or _NF_<CONDITION> and holds the
+# single Unicode character. Trailing comments name the wi-*/nf-* identifier
+# and hex codepoint for traceability.
+#
+# These constants are consumed by Plans 02 and 03.  This plan defines them
+# all here so downstream plans never re-derive codepoints.
+# ---------------------------------------------------------------------------
+
+# --- Condition icons: day variants ---
+_WI_DAY_CLEAR        = ""   # wi-day-sunny           U+E30D
+_WI_DAY_PARTLY       = ""   # wi-day-cloudy          U+E302
+
+# --- Condition icons: night variants ---
+_WI_NIGHT_CLEAR      = ""   # wi-night-clear         U+E32B
+_WI_NIGHT_PARTLY     = ""   # wi-night-alt-cloudy    U+E379
+
+# --- Cloud / overcast (day/night neutral) ---
+_WI_CLOUDY           = ""   # wi-cloudy              U+E312
+
+# --- Precipitation ---
+_WI_RAIN             = ""   # wi-rain                U+E318
+_WI_RAIN_SHOWERS     = ""   # wi-showers             U+E319
+_WI_SNOW             = ""   # wi-snow                U+E31A
+_WI_SLEET            = ""   # wi-sleet               U+E3AC
+_WI_FREEZING_RAIN    = ""   # wi-rain-mix            U+E311
+_WI_RAIN_SNOW        = ""   # wi-rain-mix (rain-snow U+E311 — same glyph)
+
+# --- Severe / thunderstorm ---
+_WI_THUNDERSTORM      = ""  # wi-thunderstorm        U+E31D
+_WI_THUNDERSTORM_RAIN = ""  # wi-storm-showers       U+E31E
+
+# --- Low visibility ---
+_WI_FOG              = ""   # wi-fog                 U+E313
+
+# --- Wind ---
+_WI_WINDY            = ""   # wi-windy               U+E3BC  (nf-weather-windy)
+
+# --- Sun events (used by _sun_segment in Plan 03) ---
+_WI_SUNRISE          = ""   # wi-sunrise             U+E34C
+_WI_SUNSET           = ""   # wi-sunset              U+E34D
+
+# --- Thinking indicator (Plan 03: model segment; Claude's Discretion) ---
+_NF_THINKING         = ""   # nf-fa-lightbulb        U+F0EB
+
+# --- Rate-limit glyphs (Plan 03: rate segment; Claude's Discretion) ---
+_NF_HOURGLASS        = ""   # nf-fa-hourglass        U+F254  (5h window)
+_NF_CALENDAR         = ""   # nf-fa-calendar         U+F073  (weekly window)
+
+# --- Fallback (single-cell thermometer) ---
+_WI_FALLBACK         = ""   # wi-thermometer         U+E33D
+
+
+# ---------------------------------------------------------------------------
+# Moon-phase glyph table (D-04)
+#
+# 28 slots mapping astral.moon.phase() output (0–27.99) to wi-moon-* glyphs.
+# Slot 0 = new moon, slot 14 = full moon.
+# Phase sequence: new → waxing-crescent ×6 → first-quarter → waxing-gibbous ×6
+#                → full → waning-gibbous ×6 → third-quarter → waning-crescent ×6
+# ---------------------------------------------------------------------------
+
+_MOON_PHASE_GLYPHS: list[str] = [
+    "",   # 0  wi-moon-new                U+E380
+    "",   # 1  wi-moon-waxing-crescent-1  U+E381
+    "",   # 2  wi-moon-waxing-crescent-2  U+E382
+    "",   # 3  wi-moon-waxing-crescent-3  U+E383
+    "",   # 4  wi-moon-waxing-crescent-4  U+E384
+    "",   # 5  wi-moon-waxing-crescent-5  U+E385
+    "",   # 6  wi-moon-waxing-crescent-6  U+E386
+    "",   # 7  wi-moon-first-quarter      U+E387
+    "",   # 8  wi-moon-waxing-gibbous-1   U+E388
+    "",   # 9  wi-moon-waxing-gibbous-2   U+E389
+    "",   # 10 wi-moon-waxing-gibbous-3   U+E38A
+    "",   # 11 wi-moon-waxing-gibbous-4   U+E38B
+    "",   # 12 wi-moon-waxing-gibbous-5   U+E38C
+    "",   # 13 wi-moon-waxing-gibbous-6   U+E38D
+    "",   # 14 wi-moon-full               U+E38E
+    "",   # 15 wi-moon-waning-gibbous-1   U+E38F
+    "",   # 16 wi-moon-waning-gibbous-2   U+E390
+    "",   # 17 wi-moon-waning-gibbous-3   U+E391
+    "",   # 18 wi-moon-waning-gibbous-4   U+E392
+    "",   # 19 wi-moon-waning-gibbous-5   U+E393
+    "",   # 20 wi-moon-waning-gibbous-6   U+E394
+    "",   # 21 wi-moon-third-quarter      U+E395
+    "",   # 22 wi-moon-waning-crescent-1  U+E396
+    "",   # 23 wi-moon-waning-crescent-2  U+E397
+    "",   # 24 wi-moon-waning-crescent-3  U+E398
+    "",   # 25 wi-moon-waning-crescent-4  U+E399
+    "",   # 26 wi-moon-waning-crescent-5  U+E39A
+    "",   # 27 wi-moon-waning-crescent-6  U+E39B
+]
+
+
+def _moon_phase_index(phase: float) -> int:
+    """Map an astral moon phase value (0–27.99) to a _MOON_PHASE_GLYPHS index.
+
+    astral.moon.phase() returns a float in [0, 28).  This helper converts it
+    to an integer index in [0, 27].  Out-of-range values are clamped so a bad
+    phase value degrades to a valid glyph rather than raising IndexError
+    (never-crash, RUN-01/02).
+
+    Does NOT call astral — Plan 02 wires the astral call under the _ASTRAL_OK
+    guard; this helper performs only the index arithmetic.
+    """
+    try:
+        idx = int(phase)
+        return max(0, min(27, idx))
+    except Exception:
+        return 0
+
+
 def make_user_agent(version: str, contact_email: str) -> str:
     """Return the NWS-ToS-compliant User-Agent string.
 
