@@ -859,5 +859,332 @@ class TestWeatherSegmentRenderTimeResolution(unittest.TestCase):
             self.fail(f"_weather_segment raised on missing tokens: {exc!r}")
 
 
+# ---------------------------------------------------------------------------
+# Plan 03 Task 1: icon_set-branched glyphs for sun, thinking, and rate-limit
+# ---------------------------------------------------------------------------
+
+import time as _time_mod
+
+
+class TestSunSegmentNerdGlyphs(unittest.TestCase):
+    """D-01: _sun_segment with icon_set='nerd' returns wi-sunrise/wi-sunset glyphs."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        if not getattr(self.mod, "_ASTRAL_OK", False):
+            self.skipTest("astral not installed")
+        # Denver, CO; cfg pins icon_set="nerd"
+        self.cfg_nerd = {
+            "location": {"lat": 39.7392, "lon": -104.9903},
+            "display": {"icon_set": "nerd"},
+            "cache": {},
+            "weather": {"show_weather": True},
+            "units": {},
+            "thresholds": {},
+            "toggles": {},
+        }
+        self.cfg_emoji = {
+            "location": {"lat": 39.7392, "lon": -104.9903},
+            "display": {"icon_set": "emoji"},
+            "cache": {},
+            "weather": {"show_weather": True},
+            "units": {},
+            "thresholds": {},
+            "toggles": {},
+        }
+
+    def _now_local(self, hour, minute=0):
+        from datetime import datetime
+        return datetime(2025, 6, 21, hour, minute, 0)
+
+    def test_before_sunrise_nerd_returns_wi_sunrise(self):
+        """nerd + before sunrise: result contains _WI_SUNRISE."""
+        now = self._now_local(3, 0)
+        result = self.mod._sun_segment(self.cfg_nerd, now=now)
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod._WI_SUNRISE, result,
+                      f"Expected _WI_SUNRISE in nerd sunrise result: {result!r}")
+
+    def test_before_sunset_nerd_returns_wi_sunset(self):
+        """nerd + after sunrise/before sunset: result contains _WI_SUNSET."""
+        now = self._now_local(12, 0)
+        result = self.mod._sun_segment(self.cfg_nerd, now=now)
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod._WI_SUNSET, result,
+                      f"Expected _WI_SUNSET in nerd sunset result: {result!r}")
+
+    def test_after_sunset_nerd_returns_wi_sunrise(self):
+        """nerd + after sunset: result contains _WI_SUNRISE (next day)."""
+        now = self._now_local(22, 0)
+        result = self.mod._sun_segment(self.cfg_nerd, now=now)
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod._WI_SUNRISE, result,
+                      f"Expected _WI_SUNRISE in nerd post-sunset result: {result!r}")
+
+    def test_emoji_path_returns_emoji_sunrise_glyph(self):
+        """emoji path: before sunrise returns the Phase 2 emoji codepoint, not nerd glyph."""
+        now = self._now_local(3, 0)
+        result = self.mod._sun_segment(self.cfg_emoji, now=now)
+        self.assertIsNotNone(result)
+        self.assertIn("\U0001f305", result)  # 🌅
+        self.assertNotIn(self.mod._WI_SUNRISE, result)
+
+    def test_emoji_path_returns_emoji_sunset_glyph(self):
+        """emoji path: before sunset returns the Phase 2 emoji codepoint, not nerd glyph."""
+        now = self._now_local(12, 0)
+        result = self.mod._sun_segment(self.cfg_emoji, now=now)
+        self.assertIsNotNone(result)
+        self.assertIn("\U0001f307", result)  # 🌇
+        self.assertNotIn(self.mod._WI_SUNSET, result)
+
+    def test_nerd_failure_falls_back_to_emoji(self):
+        """If nerd glyph selection raises, falls back to emoji glyph (never crashes)."""
+        import unittest.mock
+        mod = _load_script_module()
+        # Temporarily break _WI_SUNRISE to a non-string to trigger the fallback branch
+        # We test that the function does not raise regardless of glyph assignment
+        orig = mod._WI_SUNRISE
+        try:
+            mod._WI_SUNRISE = None  # will cause the branch to fall back
+            cfg = dict(self.cfg_nerd)
+            from datetime import datetime
+            now = datetime(2025, 6, 21, 3, 0, 0)
+            try:
+                result = mod._sun_segment(cfg, now=now)
+                # Must return a string or None — never raise
+            except Exception as exc:
+                self.fail(f"_sun_segment raised when nerd glyph broken: {exc!r}")
+        finally:
+            mod._WI_SUNRISE = orig
+
+
+class TestModelSegmentNerdThinking(unittest.TestCase):
+    """D-01: _model_segment thinking indicator branches on icon_set."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def _make_data(self, thinking_enabled=True):
+        return {
+            "model": {"display_name": "claude-opus-4"},
+            "thinking": {"enabled": thinking_enabled},
+        }
+
+    def test_nerd_thinking_enabled_uses_nf_thinking(self):
+        """nerd + thinking=True: result contains _NF_THINKING glyph."""
+        data = self._make_data(thinking_enabled=True)
+        result = self.mod._model_segment(data, show_thinking_glyph=True, icon_set="nerd")
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod._NF_THINKING, result,
+                      f"Expected _NF_THINKING in nerd thinking result: {result!r}")
+
+    def test_emoji_thinking_enabled_uses_thought_bubble(self):
+        """emoji + thinking=True: result contains '💭' emoji, not _NF_THINKING."""
+        data = self._make_data(thinking_enabled=True)
+        result = self.mod._model_segment(data, show_thinking_glyph=True, icon_set="emoji")
+        self.assertIsNotNone(result)
+        self.assertIn("💭", result,
+                      f"Expected '💭' in emoji thinking result: {result!r}")
+        self.assertNotIn(self.mod._NF_THINKING, result,
+                         f"_NF_THINKING must not appear in emoji result: {result!r}")
+
+    def test_thinking_disabled_no_glyph_either_path(self):
+        """thinking=False: no thinking glyph in nerd or emoji mode."""
+        data = self._make_data(thinking_enabled=False)
+        for icon_set in ("nerd", "emoji"):
+            with self.subTest(icon_set=icon_set):
+                result = self.mod._model_segment(data, show_thinking_glyph=True, icon_set=icon_set)
+                self.assertIsNotNone(result)
+                self.assertNotIn("💭", result)
+                self.assertNotIn(self.mod._NF_THINKING, result)
+
+    def test_show_thinking_glyph_false_suppresses_both(self):
+        """show_thinking_glyph=False: no thinking glyph in either mode."""
+        data = self._make_data(thinking_enabled=True)
+        for icon_set in ("nerd", "emoji"):
+            with self.subTest(icon_set=icon_set):
+                result = self.mod._model_segment(data, show_thinking_glyph=False, icon_set=icon_set)
+                self.assertIsNotNone(result)
+                self.assertNotIn("💭", result)
+                self.assertNotIn(self.mod._NF_THINKING, result)
+
+
+class TestRateLimitNerdGlyphs(unittest.TestCase):
+    """D-01: render_bottom_line uses _NF_HOURGLASS/_NF_CALENDAR under nerd icon_set."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def _make_rate_data(self, pct=50):
+        return {
+            "context_window": {"used_percentage": 40},
+            "rate_limits": {
+                "five_hour": {"used_percentage": pct, "resets_at": None},
+                "seven_day": {"used_percentage": pct, "resets_at": None},
+            },
+        }
+
+    def _run_bottom_line(self, data, icon_set):
+        cfg = {
+            "toggles": {"show_context_bar": True, "show_five_hour": True, "show_weekly": True},
+            "thresholds": {"warn": 70, "crit": 90},
+            "display": {"icon_set": icon_set},
+        }
+        return self.mod.render_bottom_line(data, cfg)
+
+    def test_nerd_five_hour_uses_nf_hourglass(self):
+        """nerd: 5h rate-limit segment contains _NF_HOURGLASS."""
+        data = self._make_rate_data(50)
+        result = self._run_bottom_line(data, "nerd")
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod._NF_HOURGLASS, result,
+                      f"Expected _NF_HOURGLASS in nerd rate result: {result!r}")
+
+    def test_nerd_weekly_uses_nf_calendar(self):
+        """nerd: weekly rate-limit segment contains _NF_CALENDAR."""
+        data = self._make_rate_data(50)
+        result = self._run_bottom_line(data, "nerd")
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod._NF_CALENDAR, result,
+                      f"Expected _NF_CALENDAR in nerd rate result: {result!r}")
+
+    def test_emoji_five_hour_uses_hourglass_emoji(self):
+        """emoji: 5h rate-limit segment contains ⏳ emoji."""
+        data = self._make_rate_data(50)
+        result = self._run_bottom_line(data, "emoji")
+        self.assertIsNotNone(result)
+        self.assertIn("⏳", result,
+                      f"Expected '⏳' in emoji rate result: {result!r}")
+
+    def test_emoji_weekly_uses_calendar_emoji(self):
+        """emoji: weekly rate-limit segment contains 🗓 emoji."""
+        data = self._make_rate_data(50)
+        result = self._run_bottom_line(data, "emoji")
+        self.assertIsNotNone(result)
+        self.assertIn("🗓", result,
+                      f"Expected '🗓' in emoji rate result: {result!r}")
+
+    def test_nerd_does_not_contain_emoji_rate_glyphs(self):
+        """nerd: ⏳/🗓 must not appear in the rate segments (pure nerd path)."""
+        data = self._make_rate_data(50)
+        result = self._run_bottom_line(data, "nerd")
+        self.assertIsNotNone(result)
+        self.assertNotIn("⏳", result,
+                         f"Emoji ⏳ must not appear in nerd result: {result!r}")
+        self.assertNotIn("🗓", result,
+                         f"Emoji 🗓 must not appear in nerd result: {result!r}")
+
+
+class TestThresholdColoringUnchanged(unittest.TestCase):
+    """D-08: bottom-line GREEN/YELLOW/RED threshold coloring is unchanged by glyph swap."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def _run_bottom_line(self, pct, icon_set):
+        data = {
+            "context_window": {"used_percentage": pct},
+            "rate_limits": {
+                "five_hour": {"used_percentage": pct, "resets_at": None},
+                "seven_day": {"used_percentage": pct, "resets_at": None},
+            },
+        }
+        cfg = {
+            "toggles": {"show_context_bar": True, "show_five_hour": True, "show_weekly": True},
+            "thresholds": {"warn": 70, "crit": 90},
+            "display": {"icon_set": icon_set},
+        }
+        return self.mod.render_bottom_line(data, cfg)
+
+    def test_pct_above_crit_is_red_regardless_of_icon_set(self):
+        """95% usage is RED in both nerd and emoji modes (D-08 not disturbed)."""
+        for icon_set in ("nerd", "emoji"):
+            with self.subTest(icon_set=icon_set):
+                result = self._run_bottom_line(95, icon_set)
+                self.assertIsNotNone(result)
+                self.assertIn(self.mod.RED, result,
+                               f"Expected RED for 95% in {icon_set} mode: {result!r}")
+
+    def test_pct_below_warn_is_green_regardless_of_icon_set(self):
+        """50% usage is GREEN in both nerd and emoji modes (D-08 not disturbed)."""
+        for icon_set in ("nerd", "emoji"):
+            with self.subTest(icon_set=icon_set):
+                result = self._run_bottom_line(50, icon_set)
+                self.assertIsNotNone(result)
+                self.assertIn(self.mod.GREEN, result,
+                               f"Expected GREEN for 50% in {icon_set} mode: {result!r}")
+
+
+class TestSingleSwitchAllSegmentsTogether(unittest.TestCase):
+    """D-07: icon_set='nerd' makes all converted segments use nerd glyphs; no mixed bar."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_nerd_bottom_line_no_emoji_rate_glyphs(self):
+        """nerd: bottom line never contains ⏳ or 🗓 (rate segments use nerd glyphs)."""
+        data = {
+            "context_window": {"used_percentage": 40},
+            "rate_limits": {
+                "five_hour": {"used_percentage": 50, "resets_at": None},
+                "seven_day": {"used_percentage": 50, "resets_at": None},
+            },
+        }
+        cfg = {
+            "toggles": {"show_context_bar": True, "show_five_hour": True, "show_weekly": True},
+            "thresholds": {"warn": 70, "crit": 90},
+            "display": {"icon_set": "nerd"},
+        }
+        result = self.mod.render_bottom_line(data, cfg)
+        self.assertIsNotNone(result)
+        self.assertNotIn("⏳", result)
+        self.assertNotIn("🗓", result)
+        self.assertIn(self.mod._NF_HOURGLASS, result)
+        self.assertIn(self.mod._NF_CALENDAR, result)
+
+    def test_emoji_bottom_line_no_nerd_rate_glyphs(self):
+        """emoji: bottom line uses ⏳/🗓, not _NF_HOURGLASS/_NF_CALENDAR."""
+        data = {
+            "context_window": {"used_percentage": 40},
+            "rate_limits": {
+                "five_hour": {"used_percentage": 50, "resets_at": None},
+                "seven_day": {"used_percentage": 50, "resets_at": None},
+            },
+        }
+        cfg = {
+            "toggles": {"show_context_bar": True, "show_five_hour": True, "show_weekly": True},
+            "thresholds": {"warn": 70, "crit": 90},
+            "display": {"icon_set": "emoji"},
+        }
+        result = self.mod.render_bottom_line(data, cfg)
+        self.assertIsNotNone(result)
+        self.assertIn("⏳", result)
+        self.assertIn("🗓", result)
+        self.assertNotIn(self.mod._NF_HOURGLASS, result)
+        self.assertNotIn(self.mod._NF_CALENDAR, result)
+
+    def test_nerd_model_segment_no_thought_bubble(self):
+        """nerd + thinking: model segment uses _NF_THINKING, not '💭'."""
+        data = {
+            "model": {"display_name": "claude-3"},
+            "thinking": {"enabled": True},
+        }
+        result = self.mod._model_segment(data, show_thinking_glyph=True, icon_set="nerd")
+        self.assertIsNotNone(result)
+        self.assertNotIn("💭", result)
+        self.assertIn(self.mod._NF_THINKING, result)
+
+    def test_emoji_model_segment_no_nf_thinking(self):
+        """emoji + thinking: model segment uses '💭', not _NF_THINKING."""
+        data = {
+            "model": {"display_name": "claude-3"},
+            "thinking": {"enabled": True},
+        }
+        result = self.mod._model_segment(data, show_thinking_glyph=True, icon_set="emoji")
+        self.assertIsNotNone(result)
+        self.assertIn("💭", result)
+        self.assertNotIn(self.mod._NF_THINKING, result)
+
+
 if __name__ == "__main__":
     unittest.main()
