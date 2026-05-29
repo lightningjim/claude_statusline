@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 03.1 complete (1/1) — ready to discuss Phase 04
-last_updated: 2026-05-29T22:35:43.831Z
-last_activity: 2026-05-29 -- Phase 03.1 execution started
+status: planning
+stopped_at: Phase 05.1 context gathered
+last_updated: "2026-05-29T23:57:06.242Z"
+last_activity: 2026-05-29
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 7
   total_plans: 16
   completed_plans: 16
-  percent: 100
+  percent: 88
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-05-28)
 
 ## Current Position
 
-Phase: 04
+Phase: 05.1
 Plan: Not started
 Status: Ready to plan
 Last activity: 2026-05-29
@@ -117,6 +117,7 @@ Recent decisions affecting current work:
 - Phase 5 added: GSD status info especially the active Plan(s) being run
 - Phase 02.1 inserted after Phase 2: Nerd Font icon set — weather glyphs + other segment glyphs, pulled forward from v2 ENH-04 (URGENT)
 - Phase 03.1 inserted after Phase 3: Resolve default bar gradient vs shade test drift (URGENT)
+- Phase 05.1 inserted after Phase 05: Fix TestGsdSegmentBuilder environment-leak test failures (URGENT)
 
 ### Pending Todos
 
@@ -136,6 +137,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-05-29T22:28:41.892Z
-Stopped at: Phase 03.1 context gathered
-Resume file: .planning/phases/03.1-resolve-default-bar-gradient-vs-shade-test-drift/03.1-CONTEXT.md
+Last session: 2026-05-29T23:57:06.231Z
+Stopped at: Phase 05.1 context gathered
+Resume file: .planning/phases/05.1-fix-testgsdsegmentbuilder-environment-leak-test-failures/05.1-CONTEXT.md
