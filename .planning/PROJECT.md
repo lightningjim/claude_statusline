@@ -88,6 +88,7 @@ At a glance, the bottom of the terminal tells the truth about the current sessio
 | Single TOML config file | Centralize lat/lon, thresholds, units, toggles, TTLs | — Pending |
 | Color bands green<70 / yellow 70–90 / red>90 | Matches the bash predecessor's `perc_color` | — Pending |
 | Nerd Font icon set with `icon_set` toggle (default nerd, emoji fallback) | Installed Nerd Fonts unlock granular day/night + live moon-phase glyphs with semantic color; cmap-guarded | ✅ Phase 02.1 |
+| Context-bar fill presets via `display.bar_style` (shade default / solid / solid-dim / gradient) | Selectable fill styles incl. a sub-cell eighth-block gradient; filled=threshold color, empty=dim gray; independent of `icon_set`; unknown values degrade to shade | ✅ Phase 3 |
 
 ## Evolution
 
@@ -107,4 +108,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-28 after Phase 02.1 (Nerd Font icon set) completion*
+*Last updated: 2026-05-29 after Phase 3 (block-fill presets) completion*
