@@ -53,7 +53,7 @@ Deferred to future release. Tracked but not in current roadmap.
 - **ENH-01**: Show session cost (`cost.total_cost_usd`)
 - **ENH-02**: Show effort level / fast-mode indicator
 - **ENH-03**: Multi-location or auto-geolocation for weather
-- **ENH-04**: Config-driven richer icon set (`icon_set = "emoji" | "nerd-weather"`) using the [Weather Icons](https://erikflowers.github.io/weather-icons/) glyphs bundled in Nerd Fonts — far more granular (day/night variants, fog/sleet/gusts, moon phases), monochrome + ANSI-colorable, consistent single-cell width. Maps the NWS observation icon-URL token (skc/few/sct/bkn/ovc/ra/tsra/sn/fg + day|night) → `wi-*` PUA codepoints. Requires the user's terminal to use a Nerd Font (or Weather Icons font); default stays emoji for portability. (Considered during Phase 2 — user open to installing a Nerd Font.)
+- **ENH-04**: ✅ **Delivered in Phase 02.1** (pulled forward once JetBrains + DejaVu Nerd Fonts were installed). Config-driven richer icon set via `icon_set = "nerd" | "emoji"` (default `nerd`; emoji retained as fallback) using the [Weather Icons](https://erikflowers.github.io/weather-icons/) glyphs bundled in Nerd Fonts — granular day/night variants, full precip vocabulary (snow/sleet/freezing-rain/rain-snow/thunderstorm/fog/windy), live moon phases (28 `wi-moon-*` via `astral`), monochrome + semantic ANSI color, single-cell width. Single global toggle flips weather/sun/thinking/rate-limit segments together; `▓░` context bar deferred to Phase 3. A fontTools cmap guard test validates every glyph constant against the installed Nerd Font.
 
 ## Out of Scope
 

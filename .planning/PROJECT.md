@@ -87,6 +87,7 @@ At a glance, the bottom of the terminal tells the truth about the current sessio
 | Project name replaces user@host:cwd prefix | "Project being run" is the useful signal; path was noise | — Pending |
 | Single TOML config file | Centralize lat/lon, thresholds, units, toggles, TTLs | — Pending |
 | Color bands green<70 / yellow 70–90 / red>90 | Matches the bash predecessor's `perc_color` | — Pending |
+| Nerd Font icon set with `icon_set` toggle (default nerd, emoji fallback) | Installed Nerd Fonts unlock granular day/night + live moon-phase glyphs with semantic color; cmap-guarded | ✅ Phase 02.1 |
 
 ## Evolution
 
@@ -106,4 +107,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-28 after initialization*
+*Last updated: 2026-05-28 after Phase 02.1 (Nerd Font icon set) completion*
