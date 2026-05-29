@@ -152,13 +152,13 @@ Plans:
 **Goal:** A read-only GSD-status segment on the top line (immediately after the git segment) surfaces the project's GSD planning state — emphasizing the active plan being run — as a neutral plan id + task progress (e.g. `05-02 2/3`, no duplicate phase prefix) plus a single colored lifecycle glyph (executing/done→green, verifying→yellow, blocked→red, idle→dim), sourced HANDOFF-first with a ROADMAP-checkbox fallback (idle next-up + explicit milestone-complete done state), scoped to `.planning/` under `project_dir`, never blocking/crashing the bar and silently omitted off-GSD (CONTEXT D-01..D-10).
 **Requirements**: None mapped (CONTEXT-driven enhancement; scope tracked against D-01..D-10. RUN-01/RUN-02 honored.)
 **Depends on:** Phase 4
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — GSD data-access + lifecycle-inference layer: `_read_gsd_state` (bounded never-raising HANDOFF.json + STATE.md frontmatter + ROADMAP.md reader) + `_infer_gsd_lifecycle` (pure HANDOFF-first/roadmap-fallback resolver: plan id, task progress, plan-of-total, lifecycle state, milestone) + unit tests (D-01..D-07)
+- [x] 05-01-PLAN.md — GSD data-access + lifecycle-inference layer: `_read_gsd_state` (bounded never-raising HANDOFF.json + STATE.md frontmatter + ROADMAP.md reader) + `_infer_gsd_lifecycle` (pure HANDOFF-first/roadmap-fallback resolver: plan id, task progress, plan-of-total, lifecycle state, milestone) + unit tests (D-01..D-07)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -176,4 +176,4 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5
 | 02.1. Nerd Font icon set | 3/3 | Complete    | 2026-05-29 |
 | 3. Presets for block fill | 2/2 | Complete   | 2026-05-29 |
 | 4. git info incl. active worktree | 2/2 | Complete   | 2026-05-29 |
-| 5. GSD status info | 0/2 | Planned | - |
+| 5. GSD status info | 1/2 | In Progress|  |
