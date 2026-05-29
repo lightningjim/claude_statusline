@@ -300,56 +300,6 @@ _APP_VERSION = "0.2.0"
 # Lockfile path — created with exclusive mode to prevent concurrent fetches (T-02-09).
 _LOCK_PATH = os.path.expanduser("~/.claude/claude-statusline/refresh.lock")
 
-# NWS textDescription / icon-path → emoji mapping (Claude's discretion per CONTEXT).
-# The icon URL path encodes the condition code (e.g. /icons/land/day/skc).
-# We match against textDescription first (case-insensitive) then fall back to
-# scanning the icon URL path segment.
-_NWS_ICON_MAP: list[tuple[tuple[str, ...], str]] = [
-    # Thunderstorm conditions
-    (("thunderstorm", "tstm", "thunder"), "⛈️"),
-    # Rain / shower conditions
-    (("rain_showers", "rain shower", "showers", "drizzle", "rain", "sleet"), "🌧️"),
-    # Snow conditions
-    (("snow", "blizzard", "wintry mix", "winter mix", "freezing rain"), "🌨️"),
-    # Fog / low visibility
-    (("fog", "haze", "smoke", "dust", "sand", "ash"), "🌫️"),
-    # Windy / blustery
-    (("wind", "breezy", "blustery"), "💨"),
-    # Partly/mostly sunny (sun-dominant). MUST precede the broad "cloudy"/"sunny"
-    # rules below — "Partly Cloudy" contains "cloudy" and "Mostly Sunny" contains
-    # "sunny", so the specific sky states have to match first (first-match wins).
-    (("partly cloudy", "partly sunny", "mostly sunny", "mostly clear",
-      "few", "scattered"), "⛅"),
-    # Cloudy / overcast / mostly cloudy / broken (cloud-dominant)
-    (("mostly cloudy", "broken", "bkn", "overcast", "cloudy"), "☁️"),
-    # Clear / sunny
-    (("clear", "fair", "sunny", "skc", "hot"), "☀️"),
-    # Cold / frost
-    (("cold", "frost"), "🥶"),
-]
-
-
-def _icon_to_emoji(text_description: str, icon_url: str) -> str:
-    """Map NWS textDescription and/or icon URL to an emoji condition icon.
-
-    Tries text_description first (lowercase contains-match), then icon URL path.
-    Falls back to "🌡️" if no match found.
-    """
-    desc = (text_description or "").lower()
-    icon_path = (icon_url or "").lower()
-    # NWS icon URLs encode day/night, e.g. /icons/land/night/skc. A clear sky at
-    # night is the moon, not the sun. (Cloud/rain/storm glyphs read fine at night,
-    # and emoji has no clean moon-behind-cloud, so only the sun glyph is swapped.)
-    is_night = "/night/" in icon_path
-
-    for keywords, emoji in _NWS_ICON_MAP:
-        for kw in keywords:
-            if kw in desc or kw in icon_path:
-                if is_night and emoji == "☀️":
-                    return "🌙"
-                return emoji
-    return "🌡️"  # fallback: thermometer
-
 
 # ---------------------------------------------------------------------------
 # Nerd Font / Weather Icons glyph constants (Phase 02.1, D-03, D-04)
@@ -465,6 +415,209 @@ def _moon_phase_index(phase: float) -> int:
         return max(0, min(27, idx))
     except Exception:
         return 0
+
+
+# ---------------------------------------------------------------------------
+# NWS condition icon tables (D-03, D-05, D-06)
+#
+# Two parallel tables — same list[tuple[tuple[str,...], str]] shape:
+#   _NWS_ICON_MAP_EMOJI : Phase 2 emoji glyphs (retained as icon_set="emoji" fallback)
+#   _NWS_ICON_MAP_NERD  : Weather Icons / Nerd Font _WI_* glyphs (default, D-03)
+#
+# Both tables use the same first-match ordering discipline (D-05):
+#   specific sky states (partly/mostly/few/scattered) MUST precede the broad
+#   cloudy/sunny/clear entries — "Partly Cloudy" contains "cloudy", so if the
+#   broad entry came first it would match incorrectly (first-match wins).
+#
+# Token vocabulary for the nerd table (D-03): NWS icon-URL tokens (skc, few,
+# sct, bkn, ovc, ra, rain_showers, rasn, sn, fzra, tsra, tstm, fg, wind, ip)
+# plus textDescription synonyms.  The URL check (icon_path) uses lowercase
+# substring matching on the icon URL path segment.
+#
+# Defined AFTER the _WI_* constants and _MOON_PHASE_GLYPHS they reference.
+# ---------------------------------------------------------------------------
+
+# Phase 2 emoji table — retained exactly as-is for icon_set="emoji" fallback (D-06).
+# DO NOT alter its glyphs or ordering.
+_NWS_ICON_MAP_EMOJI: list[tuple[tuple[str, ...], str]] = [
+    # Thunderstorm conditions
+    (("thunderstorm", "tstm", "thunder"), "⛈️"),
+    # Rain / shower conditions
+    (("rain_showers", "rain shower", "showers", "drizzle", "rain", "sleet"), "🌧️"),
+    # Snow conditions
+    (("snow", "blizzard", "wintry mix", "winter mix", "freezing rain"), "🌨️"),
+    # Fog / low visibility
+    (("fog", "haze", "smoke", "dust", "sand", "ash"), "🌫️"),
+    # Windy / blustery
+    (("wind", "breezy", "blustery"), "💨"),
+    # Partly/mostly sunny (sun-dominant). MUST precede the broad "cloudy"/"sunny"
+    # rules below — "Partly Cloudy" contains "cloudy" and "Mostly Sunny" contains
+    # "sunny", so the specific sky states have to match first (first-match wins).
+    (("partly cloudy", "partly sunny", "mostly sunny", "mostly clear",
+      "few", "scattered"), "⛅"),
+    # Cloudy / overcast / mostly cloudy / broken (cloud-dominant)
+    (("mostly cloudy", "broken", "bkn", "overcast", "cloudy"), "☁️"),
+    # Clear / sunny
+    (("clear", "fair", "sunny", "skc", "hot"), "☀️"),
+    # Cold / frost
+    (("cold", "frost"), "🥶"),
+]
+
+# Nerd Font / Weather Icons table — full D-03 granularity.
+# Maps each condition category to a _WI_* constant.
+# Ordering discipline: specific entries MUST precede broad ones (D-05).
+#
+# Shape: list[tuple[tuple[str,...], str, str]]
+#   (keywords_tuple, glyph_constant, category_string)
+# The category_string is used by _weather_segment to select _wx_color() (D-08).
+# Categories: "storm", "rain", "snow", "fog", "wind", "cloud", "sun"
+_NWS_ICON_MAP_NERD: list[tuple[tuple[str, ...], str, str]] = [
+    # --- Severe / thunderstorm (most specific — precede plain rain) ---
+    # tsra = thunderstorm with rain; tstm = thunderstorm without precipitation
+    (("thunderstorm", "tstm", "thunder", "tsra"), _WI_THUNDERSTORM, "storm"),
+
+    # --- Freezing precipitation (specific — precede generic snow/rain) ---
+    # fzra = freezing rain (NWS token); "freezing rain/drizzle" via textDescription
+    (("fzra", "freezing rain", "freezing drizzle"), _WI_FREEZING_RAIN, "snow"),
+
+    # --- Rain-snow mix (specific — precede snow and rain individually) ---
+    # rasn = rain-snow mix (NWS token); "wintry mix", "rain snow" via textDescription
+    (("rasn", "wintry mix", "winter mix", "rain snow", "rain/snow"), _WI_RAIN_SNOW, "snow"),
+
+    # --- Sleet (specific — precede generic rain) ---
+    # ip = ice pellets (NWS token for sleet); "sleet" via textDescription
+    (("ip", "sleet", "ice pellet"), _WI_SLEET, "snow"),
+
+    # --- Snow (specific — precede generic cloud/rain) ---
+    # sn = snow (NWS token); "blizzard" via textDescription
+    (("sn", "snow", "blizzard"), _WI_SNOW, "snow"),
+
+    # --- Rain / showers (specific — precede broad cloud) ---
+    # ra = rain (NWS token); rain_showers / showers / drizzle via text or URL
+    (("rain_showers", "rain shower", "showers", "drizzle", "/ra", "rain"), _WI_RAIN, "rain"),
+
+    # --- Fog / low visibility ---
+    # fg = fog (NWS token); smoke/haze/dust/sand/ash collapse to fog glyph
+    (("fg", "fog", "haze", "smoke", "dust", "sand", "ash"), _WI_FOG, "fog"),
+
+    # --- Wind ---
+    # wind_skc, wind_few, wind_bkn, etc. in NWS URL; "windy", "breezy", "blustery" via text
+    (("wind", "breezy", "blustery"), _WI_WINDY, "wind"),
+
+    # --- Partly / mostly cloudy/sunny (specific — MUST precede broad cloudy/clear) ---
+    # few = FEW clouds; sct = SCaTtered; "partly", "mostly clear", "mostly sunny"
+    (("partly cloudy", "partly sunny", "mostly sunny", "mostly clear",
+      "few", "sct", "scattered"), _WI_DAY_PARTLY, "sun"),
+
+    # --- Mostly cloudy / broken / overcast (cloud-dominant; precede clear) ---
+    # bkn = BroKeN cloud cover; ovc = OVerCast
+    (("mostly cloudy", "broken", "bkn", "ovc", "overcast", "cloudy"), _WI_CLOUDY, "cloud"),
+
+    # --- Clear / sunny (broad — must follow all more-specific sun entries above) ---
+    # skc = SKy Clear; "fair", "hot" collapse to clear
+    (("clear", "fair", "sunny", "skc", "hot"), _WI_DAY_CLEAR, "sun"),
+
+    # --- Cold / frost (low priority) ---
+    (("cold", "frost"), _WI_DAY_CLEAR, "sun"),
+]
+
+
+# _NERD_SUN_GLYPHS: frozenset of glyphs in _NWS_ICON_MAP_NERD that represent
+# clear/sunny conditions and must be swapped to the live moon on clear nights (D-04).
+_NERD_SUN_GLYPHS: frozenset = frozenset({_WI_DAY_CLEAR, _WI_DAY_PARTLY})
+
+
+def _icon_to_glyph(text_description: str, icon_url: str, icon_set: str = "nerd") -> str:
+    """Map NWS textDescription and/or icon URL to a condition glyph.
+
+    When icon_set == "nerd" (default): iterates _NWS_ICON_MAP_NERD and returns the
+    matching _WI_* glyph constant.  For a matched clear/sun glyph on a night URL,
+    branches to the live moon-phase path (D-04): guards on _ASTRAL_OK, calls
+    _moon_phase() today, maps via _moon_phase_index() into the 28-slot table.
+    If _ASTRAL_OK is False, returns _WI_NIGHT_CLEAR as a generic fallback.
+
+    When icon_set != "nerd": iterates _NWS_ICON_MAP_EMOJI and reproduces the Phase 2
+    emoji behavior exactly, including "🌙" for clear nights (D-06).
+
+    Tries text_description first (lowercase contains-match), then icon URL path.
+    Falls back to _WI_FALLBACK (nerd) or "🌡️" (emoji) when no token matches.
+
+    Never raises to the caller (RUN-01/02, T-02.1-05).
+    """
+    try:
+        desc = (text_description or "").lower()
+        icon_path = (icon_url or "").lower()
+        # D-05: preserve the is_night flag and text-then-URL dispatch order.
+        is_night = "/night/" in icon_path
+
+        if icon_set == "nerd":
+            for keywords, glyph, _category in _NWS_ICON_MAP_NERD:
+                for kw in keywords:
+                    if kw in desc or kw in icon_path:
+                        # D-04: clear/sunny glyph at night → live moon phase
+                        if is_night and glyph in _NERD_SUN_GLYPHS:
+                            if _ASTRAL_OK:
+                                try:
+                                    from datetime import date as _date
+                                    phase = _moon_phase(_date.today())
+                                    return _MOON_PHASE_GLYPHS[_moon_phase_index(phase)]
+                                except Exception:
+                                    return _WI_NIGHT_CLEAR
+                            return _WI_NIGHT_CLEAR  # _ASTRAL_OK False — degrade
+                        return glyph
+            return _WI_FALLBACK  # no match: fallback thermometer glyph
+        else:
+            # emoji path: reproduce Phase 2 behavior exactly (D-06)
+            for keywords, emoji in _NWS_ICON_MAP_EMOJI:
+                for kw in keywords:
+                    if kw in desc or kw in icon_path:
+                        if is_night and emoji == "☀️":
+                            return "🌙"
+                        return emoji
+            return "🌡️"  # fallback: thermometer emoji
+    except Exception:
+        # Never-crash (RUN-01/02): return the safest fallback for the requested set.
+        try:
+            return _WI_FALLBACK if icon_set == "nerd" else "🌡️"
+        except Exception:
+            return "🌡️"
+
+
+def _icon_to_emoji(text_description: str, icon_url: str) -> str:
+    """Backward-compat alias — delegates to _icon_to_glyph with icon_set='emoji'.
+
+    MUST delegate explicitly with icon_set='emoji' — NOT the 'nerd' default —
+    so existing callers (test_weather_fetch.py TestIconMapping) continue to
+    receive Phase 2 emoji glyphs (D-06).
+    """
+    return _icon_to_glyph(text_description, icon_url, "emoji")
+
+
+def _condition_category(text_description: str, icon_url: str) -> str:
+    """Return the semantic condition category string for a NWS token pair.
+
+    Used by _weather_segment to select the _wx_color() argument (D-08).
+    Returns one of: "storm", "rain", "snow", "fog", "wind", "cloud", "sun", "moon".
+    Falls back to "sun" (RESET-adjacent / yellow) on any error or unknown token.
+
+    The category is derived from the nerd table regardless of icon_set — it
+    represents the meteorological nature of the condition.
+    """
+    try:
+        desc = (text_description or "").lower()
+        icon_path = (icon_url or "").lower()
+        is_night = "/night/" in icon_path
+
+        for keywords, glyph, category in _NWS_ICON_MAP_NERD:
+            for kw in keywords:
+                if kw in desc or kw in icon_path:
+                    # Clear/sun glyph at night → moon (dim/white, not yellow)
+                    if is_night and glyph in _NERD_SUN_GLYPHS:
+                        return "moon"
+                    return category
+        return "sun"
+    except Exception:
+        return "sun"
 
 
 def make_user_agent(version: str, contact_email: str) -> str:
