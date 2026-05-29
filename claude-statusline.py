@@ -66,7 +66,7 @@ import json
 import math
 import subprocess
 import tomllib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 # ---------------------------------------------------------------------------
@@ -1321,6 +1321,282 @@ def _run_git(args: list[str], cwd: str, timeout: float = 0.15) -> str | None:
         return proc.stdout
     except Exception:
         return None              # TimeoutExpired, FileNotFoundError (no git), OSError, …
+
+
+# ---------------------------------------------------------------------------
+# GSD state helper layer (Phase 05, Plan 01)
+# Two pure / IO-isolated helpers consumed by _gsd_segment (Plan 02).
+# json, os, and datetime are already imported above — no new imports.
+# ---------------------------------------------------------------------------
+
+# Maximum bytes to read from any single .planning/ file (T-05-01: denial-of-service guard).
+# 64 KiB is generous for HANDOFF.json (~2 KiB), STATE.md (~3 KiB), ROADMAP.md (~8 KiB)
+# while bounding memory usage on a pathologically large file.
+_GSD_MAX_BYTES = 65_536
+
+# Staleness window for HANDOFF.json (D-05 Claude's discretion).
+# A HANDOFF is treated as "live" only when its plan field is non-null AND its
+# timestamp is within this many seconds of now (UTC).  Beyond the window we fall
+# back to the ROADMAP checkbox position.  1 hour is generous — the executor always
+# writes a new HANDOFF on each checkpoint; a 1 h-old HANDOFF almost certainly means
+# the session ended and the project is now parked (idle).
+_GSD_HANDOFF_STALE_SECONDS = 3600   # 1 hour; D-05 discretion
+
+
+def _read_gsd_state(planning_dir: str) -> dict | None:
+    """Read HANDOFF.json, STATE.md frontmatter, and ROADMAP.md from planning_dir.
+
+    Returns a dict::
+
+        {
+            "handoff": dict,   # parsed HANDOFF.json
+            "state":   dict,   # parsed STATE.md YAML frontmatter (incl. nested "progress")
+            "roadmap": str,    # raw ROADMAP.md text
+        }
+
+    Returns None on any missing file, parse error, oversized read, or OS error.
+    Never raises (RUN-01/RUN-02).
+
+    Security (T-05-01, T-05-02):
+    - Each file is read with an explicit byte cap (_GSD_MAX_BYTES) — no unbounded
+      reads that could stall the bar.
+    - All paths are constructed with os.path.join(planning_dir, "<fixed-name>") — no
+      attacker-controlled path components beyond the three fixed filenames; no writes
+      anywhere; no symlink following added.
+    - Whole body is wrapped in try/except Exception so a parse blow-up degrades to
+      omission rather than a traceback.
+    """
+    try:
+        handoff_path = os.path.join(planning_dir, "HANDOFF.json")
+        state_path   = os.path.join(planning_dir, "STATE.md")
+        roadmap_path = os.path.join(planning_dir, "ROADMAP.md")
+
+        # --- HANDOFF.json ---
+        with open(handoff_path, encoding="utf-8") as fh:
+            handoff = json.loads(fh.read(_GSD_MAX_BYTES))
+        if not isinstance(handoff, dict):
+            return None
+
+        # --- STATE.md frontmatter ---
+        with open(state_path, encoding="utf-8") as fh:
+            state_text = fh.read(_GSD_MAX_BYTES)
+        state_fm = _parse_gsd_frontmatter(state_text)
+        if state_fm is None:
+            return None
+
+        # --- ROADMAP.md ---
+        with open(roadmap_path, encoding="utf-8") as fh:
+            roadmap_text = fh.read(_GSD_MAX_BYTES)
+
+        return {
+            "handoff": handoff,
+            "state":   state_fm,
+            "roadmap": roadmap_text,
+        }
+    except Exception:
+        return None   # file missing, JSON/YAML parse error, OS error — omit silently
+
+
+def _parse_gsd_frontmatter(text: str) -> dict | None:
+    """Parse the YAML frontmatter between the first two ``---`` delimiters in text.
+
+    Handles one level of nesting (the ``progress:`` block in STATE.md) whose
+    children are indented with two spaces.  Coerces digit-only values to int;
+    strips surrounding quotes from string values.  Returns an empty dict if the
+    frontmatter block is present but empty.  Returns None if no delimiters found.
+    Never raises.
+
+    This is intentionally minimal — just enough to extract the handful of keys
+    the GSD segment needs from STATE.md.  No new dependency added (project uses
+    stdlib tomllib for config; YAML here is hand-parsed per the same convention).
+    """
+    try:
+        # Split on '---' lines.  We need lines that are exactly '---' (optional
+        # trailing whitespace).  Use splitlines() to handle \r\n safely.
+        lines = text.splitlines()
+        delimiters = [i for i, ln in enumerate(lines) if ln.strip() == "---"]
+        if len(delimiters) < 2:
+            return None  # no frontmatter block — caller returns None or empty dict
+
+        fm_lines = lines[delimiters[0] + 1 : delimiters[1]]
+        result: dict = {}
+        current_mapping: dict | None = None  # active nested dict (e.g. progress)
+        current_key: str | None = None
+
+        for line in fm_lines:
+            if not line.strip() or line.strip().startswith("#"):
+                continue
+
+            # Two-space-indented child → belongs to current_mapping
+            if line.startswith("  ") and current_mapping is not None:
+                child = line.strip()
+                if ":" in child:
+                    k, _, v = child.partition(":")
+                    v = v.strip().strip('"').strip("'")
+                    current_mapping[k.strip()] = int(v) if v.isdigit() else v
+                continue
+
+            # Top-level key
+            if ":" in line:
+                k, _, v = line.partition(":")
+                k = k.strip()
+                v = v.strip()
+                if v == "" or v.endswith(":"):
+                    # Mapping key — start nested dict
+                    current_key = k
+                    current_mapping = {}
+                    result[k] = current_mapping
+                else:
+                    current_mapping = None
+                    current_key = None
+                    v = v.strip('"').strip("'")
+                    result[k] = int(v) if v.isdigit() else v
+
+        return result
+    except Exception:
+        return None
+
+
+def _infer_gsd_lifecycle(state: dict | None) -> dict | None:
+    """Infer the active GSD plan id, task progress, plan-of-total, and lifecycle state.
+
+    Input is the dict returned by ``_read_gsd_state``::
+
+        {
+            "handoff": dict,
+            "state":   dict,   # parsed STATE.md frontmatter
+            "roadmap": str,
+        }
+
+    Returns a dict::
+
+        {
+            "plan_id":     str | None,   # e.g. "05-02", or None when done
+            "tasks_done":  int | None,   # len(completed_tasks) clamped ≤ total_tasks
+            "total_tasks": int | None,
+            "plans_done":  int | None,   # from STATE progress.completed_plans
+            "plans_total": int | None,   # from STATE progress.total_plans
+            "state":       str,          # "executing"|"verifying"|"blocked"|"idle"|"done"
+            "milestone":   str | None,   # e.g. "v1.0" — only set when state=="done"
+        }
+
+    Precedence (D-05): HANDOFF is live when its ``plan`` field is a non-null string AND
+    its ``timestamp`` is within ``_GSD_HANDOFF_STALE_SECONDS`` seconds of now (UTC).
+    When live, HANDOFF is authoritative.  Otherwise fall back to the first incomplete
+    plan checkbox in ROADMAP (state → "idle") or "done" when all complete (D-06/D-07).
+
+    Lifecycle priorities (D-03):
+    1. blockers non-empty → "blocked"  (highest priority, even over live HANDOFF)
+    2. live HANDOFF with status containing "verif" → "verifying"
+    3. live HANDOFF → "executing"
+    4. stale/null HANDOFF + incomplete ROADMAP plan found → "idle"
+    5. stale/null HANDOFF + no incomplete plan → "done"
+
+    Never raises.  Returns None only when state is None.
+    """
+    if state is None:
+        return None
+
+    try:
+        handoff  = state.get("handoff") or {}
+        state_fm = state.get("state") or {}
+        roadmap  = state.get("roadmap") or ""
+
+        # --- plan-of-total from STATE frontmatter ---
+        progress    = state_fm.get("progress") or {}
+        plans_done  = progress.get("completed_plans")
+        plans_total = progress.get("total_plans")
+        # Coerce to int in case they arrived as strings (defensive)
+        try:
+            plans_done  = int(plans_done)  if plans_done  is not None else None
+        except (TypeError, ValueError):
+            plans_done = None
+        try:
+            plans_total = int(plans_total) if plans_total is not None else None
+        except (TypeError, ValueError):
+            plans_total = None
+
+        milestone_label = state_fm.get("milestone")
+
+        # --- Check HANDOFF liveness (D-05) ---
+        handoff_plan = handoff.get("plan")
+        handoff_live = False
+        if isinstance(handoff_plan, str) and handoff_plan:
+            ts_raw = handoff.get("timestamp") or ""
+            try:
+                ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                age = (datetime.now(timezone.utc) - ts).total_seconds()
+                handoff_live = age <= _GSD_HANDOFF_STALE_SECONDS
+            except Exception:
+                handoff_live = False  # bad timestamp → treat as stale
+
+        # --- Lifecycle state ---
+        blockers = handoff.get("blockers") or []
+        if handoff_live:
+            # Blockers highest priority (D-03 rule 1)
+            if blockers:
+                lifecycle = "blocked"
+            elif "verif" in str(handoff.get("status") or "").lower():
+                lifecycle = "verifying"
+            else:
+                lifecycle = "executing"
+
+            completed_tasks = handoff.get("completed_tasks") or []
+            total_tasks_raw = handoff.get("total_tasks")
+            try:
+                total_tasks = int(total_tasks_raw) if total_tasks_raw is not None else None
+            except (TypeError, ValueError):
+                total_tasks = None
+            tasks_done = len(completed_tasks)
+            if total_tasks is not None:
+                tasks_done = min(tasks_done, total_tasks)
+
+            return {
+                "plan_id":     handoff_plan,
+                "tasks_done":  tasks_done,
+                "total_tasks": total_tasks,
+                "plans_done":  plans_done,
+                "plans_total": plans_total,
+                "state":       lifecycle,
+                "milestone":   None,
+            }
+
+        # --- HANDOFF stale or null: roadmap fallback (D-05/D-06/D-07) ---
+        # Find the first "- [ ] NN(.N)?-NN-PLAN.md" line.
+        import re as _re
+        _PLAN_CHECKBOX = _re.compile(r"-\s\[\s\]\s+(\d+(?:\.\d+)?-\d+-PLAN\.md)")
+        next_plan_id = None
+        for line in roadmap.splitlines():
+            m = _PLAN_CHECKBOX.search(line)
+            if m:
+                # Strip the -PLAN.md suffix to get bare plan id (e.g. "05-01")
+                next_plan_id = m.group(1)[: -len("-PLAN.md")]
+                break
+
+        if next_plan_id is not None:
+            return {
+                "plan_id":     next_plan_id,
+                "tasks_done":  None,
+                "total_tasks": None,
+                "plans_done":  plans_done,
+                "plans_total": plans_total,
+                "state":       "idle",
+                "milestone":   None,
+            }
+
+        # No incomplete plan → done (D-07)
+        return {
+            "plan_id":     None,
+            "tasks_done":  None,
+            "total_tasks": None,
+            "plans_done":  plans_done,
+            "plans_total": plans_total,
+            "state":       "done",
+            "milestone":   milestone_label,
+        }
+
+    except Exception:
+        return None   # RUN-01/RUN-02: never raise on partial dicts
 
 
 def _parse_git_status_v2(stdout: str) -> dict | None:
