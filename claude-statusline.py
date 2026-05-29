@@ -62,7 +62,6 @@ except Exception:
 _WEATHER_OK = _ASTRAL_OK and _REQUESTS_OK
 
 import copy
-import fcntl
 import json
 import math
 import subprocess
@@ -354,6 +353,9 @@ _WI_WINDY            = ""   # wi-windy               U+E31E
 _WI_SUNRISE          = ""   # wi-sunrise             U+E34C
 _WI_SUNSET           = ""   # wi-sunset              U+E34D
 
+# --- Precipitation probability indicator (used by precip chunk in _weather_segment) ---
+_WI_RAINDROPS        = ""   # weather-raindrops      U+E34A
+
 # --- Thinking indicator (Plan 03: model segment; Claude's Discretion) ---
 _NF_THINKING         = ""   # nf-fa-lightbulb        U+F0EB
 
@@ -529,9 +531,11 @@ _NWS_ICON_MAP_NERD: list[tuple[tuple[str, ...], str, str]] = [
 ]
 
 
-# _NERD_SUN_GLYPHS: frozenset of glyphs in _NWS_ICON_MAP_NERD that represent
-# clear/sunny conditions and must be swapped to the live moon on clear nights (D-04).
-_NERD_SUN_GLYPHS: frozenset = frozenset({_WI_DAY_CLEAR, _WI_DAY_PARTLY})
+# _NERD_SUN_GLYPHS: frozenset of glyphs that trigger live moon-phase substitution on
+# clear nights (D-04).  Only FULLY CLEAR day glyphs belong here; _WI_DAY_PARTLY must
+# NOT be included — partly-cloudy nights must return _WI_NIGHT_PARTLY, not a moon phase
+# (CR-01 fix).
+_NERD_SUN_GLYPHS: frozenset = frozenset({_WI_DAY_CLEAR})
 
 
 def _icon_to_glyph(text_description: str, icon_url: str, icon_set: str = "nerd") -> str:
@@ -561,7 +565,11 @@ def _icon_to_glyph(text_description: str, icon_url: str, icon_set: str = "nerd")
             for keywords, glyph, _category in _NWS_ICON_MAP_NERD:
                 for kw in keywords:
                     if kw in desc or kw in icon_path:
-                        # D-04: clear/sunny glyph at night → live moon phase
+                        # CR-01: partly-cloudy night → dedicated moon-behind-cloud glyph,
+                        # NOT a live moon phase.  Must come before the sun-glyph check.
+                        if is_night and glyph == _WI_DAY_PARTLY:
+                            return _WI_NIGHT_PARTLY
+                        # D-04: fully-clear glyph at night → live moon phase
                         if is_night and glyph in _NERD_SUN_GLYPHS:
                             if _ASTRAL_OK:
                                 try:
@@ -618,6 +626,11 @@ def _condition_category(text_description: str, icon_url: str) -> str:
         for keywords, glyph, category in _NWS_ICON_MAP_NERD:
             for kw in keywords:
                 if kw in desc or kw in icon_path:
+                    # CR-01: partly-cloudy night keeps its day color category (e.g. 'sun')
+                    # so it renders with YELLOW, not the dim moon color.  Only fully-clear
+                    # nights return 'moon' (RESET / dim white).
+                    if is_night and glyph == _WI_DAY_PARTLY:
+                        return category  # 'sun' — same as its day counterpart
                     # Clear/sun glyph at night → moon (dim/white, not yellow)
                     if is_night and glyph in _NERD_SUN_GLYPHS:
                         return "moon"
@@ -1474,7 +1487,12 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
             except (TypeError, ValueError):
                 pop_min = 30.0
             if pop is not None and float(pop) >= pop_min:
-                precip_chunk = f"\U0001f327️{int(pop)}%"  # 🌧️
+                # D-07 / IN-02: respect icon_set toggle so the precip chunk stays
+                # visually consistent with the rest of the weather block.
+                if icon_set == "nerd":
+                    precip_chunk = f"{_WI_RAINDROPS}{int(pop)}%"
+                else:
+                    precip_chunk = f"\U0001f327️{int(pop)}%"  # 🌧️
 
         # Step 3c: Trailing detail — alert override or sun event (D2-11, D2-12, WX-04)
         trailing_detail = None

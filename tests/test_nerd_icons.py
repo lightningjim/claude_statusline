@@ -225,6 +225,7 @@ class TestNerdFontGlyphConstants(unittest.TestCase):
         "_WI_WINDY",
         "_WI_SUNRISE",
         "_WI_SUNSET",
+        "_WI_RAINDROPS",
         "_NF_THINKING",
         "_NF_HOURGLASS",
         "_NF_CALENDAR",
@@ -1256,6 +1257,7 @@ class TestAllNerdGlyphConstantsInInstalledFont(unittest.TestCase):
         "_WI_WINDY",
         "_WI_SUNRISE",
         "_WI_SUNSET",
+        "_WI_RAINDROPS",
         "_NF_THINKING",
         "_NF_HOURGLASS",
         "_NF_CALENDAR",
@@ -1369,6 +1371,201 @@ class TestMoonPhaseGlyphsAreMoonGlyphs(unittest.TestCase):
         self.assertIn(
             "moon_full", glyph_name.lower(),
             f"Slot [14] U+{cp:04X} glyph name {glyph_name!r} does not contain 'moon_full'"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Code-review fix tests (CR-01, IN-02)
+# ---------------------------------------------------------------------------
+
+class TestPartlyCloudyNightResolution(unittest.TestCase):
+    """CR-01: partly-cloudy night must return _WI_NIGHT_PARTLY, not a moon-phase glyph."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_partly_cloudy_night_sct_returns_wi_night_partly(self):
+        """NWS sct (scattered) + /night/ URL → _WI_NIGHT_PARTLY (moon-behind-cloud)."""
+        result = self.mod._icon_to_glyph(
+            "Partly Cloudy",
+            "https://api.weather.gov/icons/land/night/sct?size=medium",
+            "nerd",
+        )
+        self.assertEqual(
+            result, self.mod._WI_NIGHT_PARTLY,
+            f"Partly cloudy night should return _WI_NIGHT_PARTLY, got {result!r}",
+        )
+
+    def test_partly_cloudy_night_few_returns_wi_night_partly(self):
+        """NWS few + /night/ URL (mostly clear) → _WI_NIGHT_PARTLY."""
+        result = self.mod._icon_to_glyph(
+            "Mostly Clear",
+            "https://api.weather.gov/icons/land/night/few?size=medium",
+            "nerd",
+        )
+        self.assertEqual(
+            result, self.mod._WI_NIGHT_PARTLY,
+            f"Mostly clear night (few) should return _WI_NIGHT_PARTLY, got {result!r}",
+        )
+
+    def test_partly_cloudy_night_not_in_moon_phase_glyphs(self):
+        """_WI_NIGHT_PARTLY must NOT be a moon-phase glyph (CR-01 lock)."""
+        result = self.mod._icon_to_glyph(
+            "Partly Cloudy",
+            "https://api.weather.gov/icons/land/night/sct?size=medium",
+            "nerd",
+        )
+        self.assertNotIn(
+            result, self.mod._MOON_PHASE_GLYPHS,
+            f"Partly cloudy night returned a moon-phase glyph {result!r} — CR-01 regression",
+        )
+
+    def test_partly_cloudy_night_not_wi_night_clear(self):
+        """Partly cloudy night must not collapse to the generic clear-night glyph."""
+        result = self.mod._icon_to_glyph(
+            "Partly Cloudy",
+            "https://api.weather.gov/icons/land/night/sct?size=medium",
+            "nerd",
+        )
+        self.assertNotEqual(
+            result, self.mod._WI_NIGHT_CLEAR,
+            "Partly cloudy night should not collapse to _WI_NIGHT_CLEAR",
+        )
+
+    def test_condition_category_partly_cloudy_night_not_moon(self):
+        """_condition_category for partly-cloudy night returns a color category, not 'moon'."""
+        cat = self.mod._condition_category(
+            "Partly Cloudy",
+            "https://api.weather.gov/icons/land/night/sct?size=medium",
+        )
+        self.assertNotEqual(
+            cat, "moon",
+            f"_condition_category for partly-cloudy night returned 'moon' — CR-01 regression",
+        )
+
+
+class TestClearNightStillMoonPhase(unittest.TestCase):
+    """Regression guard for CR-01 fix: clear nights must still return a moon-phase glyph (D-04)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        if not getattr(self.mod, "_ASTRAL_OK", False):
+            self.skipTest("astral not installed — moon-phase path requires astral")
+
+    def test_clear_night_skc_returns_moon_phase_glyph(self):
+        """NWS skc + /night/ URL → live moon-phase glyph from _MOON_PHASE_GLYPHS."""
+        result = self.mod._icon_to_glyph(
+            "Clear",
+            "https://api.weather.gov/icons/land/night/skc?size=medium",
+            "nerd",
+        )
+        self.assertIn(
+            result, self.mod._MOON_PHASE_GLYPHS,
+            f"Clear night should return a moon-phase glyph; got {result!r}",
+        )
+
+    def test_condition_category_clear_night_is_moon(self):
+        """_condition_category for a fully clear night returns 'moon' (dim coloring)."""
+        cat = self.mod._condition_category(
+            "Clear",
+            "https://api.weather.gov/icons/land/night/skc?size=medium",
+        )
+        self.assertEqual(
+            cat, "moon",
+            f"_condition_category for clear night should be 'moon', got {cat!r}",
+        )
+
+
+class TestPrecipChunkIconSetToggle(unittest.TestCase):
+    """IN-02: precip chunk uses _WI_RAINDROPS under nerd, emoji under emoji (D-07 lock)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_wi_raindrops_constant_exists(self):
+        """_WI_RAINDROPS constant is defined (U+E34A weather-raindrops)."""
+        self.assertTrue(
+            hasattr(self.mod, "_WI_RAINDROPS"),
+            "Module missing _WI_RAINDROPS constant",
+        )
+        val = self.mod._WI_RAINDROPS
+        self.assertIsInstance(val, str)
+        self.assertEqual(len(val), 1, f"_WI_RAINDROPS must be single-cell, got {val!r}")
+        self.assertEqual(
+            ord(val), 0xE34A,
+            f"_WI_RAINDROPS should be U+E34A, got U+{ord(val):04X}",
+        )
+
+    def _run_weather_segment_with_pop(self, icon_set, pop=45):
+        """Call _weather_segment with a nerd or emoji cfg and a pop above threshold."""
+        if not self.mod._WEATHER_OK:
+            return None
+
+        import json as _json, os, tempfile, time
+        from unittest.mock import patch
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            cache_path = os.path.join(tmpdir, "cache.json")
+            cache = {
+                "weather": {
+                    "fetched_at": time.time() - 60,
+                    "text_desc": "Partly Cloudy",
+                    "icon_url": "https://api.weather.gov/icons/land/day/sct?size=medium",
+                    "temp": 72,
+                    "pop": pop,
+                }
+            }
+            with open(cache_path, "w") as f:
+                _json.dump(cache, f)
+
+            cfg = {
+                "location": {"lat": 35.4676, "lon": -97.5164},
+                "weather": {"contact_email": "test@example.com", "show_weather": True},
+                "units": {"temp_unit": "F"},
+                "cache": {"weather_ttl": 600, "alerts_ttl": 300,
+                          "weather_max_stale": 3600, "alerts_max_stale": 900},
+                "toggles": {"show_thinking_glyph": True},
+                "thresholds": {"warn": 70, "crit": 90},
+                "display": {"icon_set": icon_set},
+            }
+            with patch.object(self.mod, "_CACHE_PATH", cache_path):
+                with patch.object(self.mod, "maybe_spawn_refresh", side_effect=lambda *a: None):
+                    return self.mod._weather_segment(None, cfg)
+        finally:
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_nerd_precip_chunk_uses_wi_raindrops(self):
+        """Under icon_set='nerd', the precip chunk contains _WI_RAINDROPS (U+E34A)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False")
+        result = self._run_weather_segment_with_pop("nerd", pop=45)
+        self.assertIsNotNone(result, "Expected a weather segment result")
+        self.assertIn(
+            self.mod._WI_RAINDROPS, result,
+            f"Expected _WI_RAINDROPS in nerd precip chunk; got: {result!r}",
+        )
+        # Must NOT use the rain emoji in nerd mode
+        self.assertNotIn(
+            "\U0001f327", result,
+            f"Rain emoji must not appear in nerd mode precip chunk; got: {result!r}",
+        )
+
+    def test_emoji_precip_chunk_uses_rain_emoji(self):
+        """Under icon_set='emoji', the precip chunk contains the 🌧️ rain emoji."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False")
+        result = self._run_weather_segment_with_pop("emoji", pop=45)
+        self.assertIsNotNone(result, "Expected a weather segment result")
+        self.assertIn(
+            "\U0001f327", result,
+            f"Expected rain emoji (🌧️) in emoji precip chunk; got: {result!r}",
+        )
+        # Must NOT use the nerd raindrops glyph in emoji mode
+        self.assertNotIn(
+            self.mod._WI_RAINDROPS, result,
+            f"_WI_RAINDROPS must not appear in emoji mode precip chunk; got: {result!r}",
         )
 
 

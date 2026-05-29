@@ -608,7 +608,10 @@ class TestWeatherSegmentRender(unittest.TestCase):
         self.mod = _load_script_module()
         self.tmpdir = tempfile.mkdtemp()
 
-        # Config with location (required for _sun_segment)
+        # Config with location (required for _sun_segment).
+        # Pin icon_set="emoji" so the three sun-glyph assertions below (which check
+        # for "\U0001f305"/"\U0001f307") hold regardless of whether astral is installed
+        # (CR-02: without this, nerd-default mode returns _WI_SUNRISE/_WI_SUNSET).
         self.cfg = {
             "location": {"lat": 35.4676, "lon": -97.5164},
             "weather": {"contact_email": "test@example.com", "show_weather": True},
@@ -617,6 +620,7 @@ class TestWeatherSegmentRender(unittest.TestCase):
                       "weather_max_stale": 3600, "alerts_max_stale": 900},
             "toggles": {"show_thinking_glyph": True},
             "thresholds": {"warn": 70, "crit": 90},
+            "display": {"icon_set": "emoji"},
         }
 
     def tearDown(self):
