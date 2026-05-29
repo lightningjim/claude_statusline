@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Core Statusline** - Colored two-line bar from stdin — project, model+thinking, context bar, rate limits with reset times, TOML config, graceful degradation — DONE 2026-05-28
 - [x] **Phase 2: Weather Layer** - NWS conditions/temp/precip, cached alerts, local sunrise/sunset via astral, weather degradation (completed 2026-05-28)
 - [x] **Phase 02.1: Nerd Font icon set (INSERTED)** - Nerd Font glyphs across four segments (weather conditions/alerts, sun events, thinking, rate-limit) behind a single icon_set toggle; emoji retained as fallback (completed 2026-05-29)
-- [ ] **Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)**
+- [x] **Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)** (completed 2026-05-29)
 - [ ] **Phase 4: git info including active worktree**
 - [ ] **Phase 5: GSD status info especially the active Plan(s) being run**
 
@@ -105,7 +105,7 @@ Plans:
 **Goal:** A config-selectable `bar_style` lets the user pick the context bar's fill look from four presets — `shade` (default, unchanged), `solid`, `solid-dim`, and `gradient` (1/8 sub-cell precision) — with filled cells in threshold color and empty cells dim gray, all degrading gracefully on unknown values.
 **Requirements**: None mapped (enhancement built on ENH-04; scope driven by CONTEXT.md D-01..D-10)
 **Depends on:** Phase 2
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 **Wave 1**
@@ -114,7 +114,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-02-PLAN.md — Gradient preset: 1/8 sub-cell boundary-block render (left blocks) + blank empty track, with 0%/100% edge cases (D-02,D-04,D-05)
+- [x] 03-02-PLAN.md — Gradient preset: 1/8 sub-cell boundary-block render (left blocks) + blank empty track, with 0%/100% edge cases (D-02,D-04,D-05)
 
 ### Phase 4: git info including active worktree
 
@@ -148,6 +148,6 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5
 | 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
 | 2. Weather Layer | 3/3 | Complete   | 2026-05-29 |
 | 02.1. Nerd Font icon set | 3/3 | Complete    | 2026-05-29 |
-| 3. Presets for block fill | 1/2 | In Progress|  |
+| 3. Presets for block fill | 2/2 | Complete   | 2026-05-29 |
 | 4. git info incl. active worktree | 0/TBD | Not started | - |
 | 5. GSD status info | 0/TBD | Not started | - |
