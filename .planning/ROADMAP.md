@@ -105,12 +105,12 @@ Plans:
 **Goal:** A config-selectable `bar_style` lets the user pick the context bar's fill look from four presets — `shade` (default, unchanged), `solid`, `solid-dim`, and `gradient` (1/8 sub-cell precision) — with filled cells in threshold color and empty cells dim gray, all degrading gracefully on unknown values.
 **Requirements**: None mapped (enhancement built on ENH-04; scope driven by CONTEXT.md D-01..D-10)
 **Depends on:** Phase 2
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — `bar_style` config key + whole-cell presets (shade/solid/solid-dim), per-cell filled-color/empty-gray rule, silent fallback to shade (D-01,D-06,D-07,D-08,D-09,D-10)
+- [x] 03-01-PLAN.md — `bar_style` config key + whole-cell presets (shade/solid/solid-dim), per-cell filled-color/empty-gray rule, silent fallback to shade (D-01,D-06,D-07,D-08,D-09,D-10)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -148,6 +148,6 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5
 | 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
 | 2. Weather Layer | 3/3 | Complete   | 2026-05-29 |
 | 02.1. Nerd Font icon set | 3/3 | Complete    | 2026-05-29 |
-| 3. Presets for block fill | 0/2 | Planned | - |
+| 3. Presets for block fill | 1/2 | In Progress|  |
 | 4. git info incl. active worktree | 0/TBD | Not started | - |
 | 5. GSD status info | 0/TBD | Not started | - |
