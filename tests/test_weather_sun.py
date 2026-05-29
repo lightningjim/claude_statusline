@@ -138,9 +138,13 @@ class TestSunSegmentBranches(unittest.TestCase):
         if not getattr(self.mod, "_ASTRAL_OK", False):
             self.skipTest("astral not installed — skipping sun-branch tests")
 
-        # Denver, CO
+        # Denver, CO; pin icon_set="emoji" so these tests keep asserting the Phase 2
+        # emoji codepoints (🌅/🌇) regardless of the nerd default (D-06).
+        # The corresponding nerd-path assertions (_WI_SUNRISE/_WI_SUNSET) live in
+        # tests/test_nerd_icons.py::TestSunSegmentNerdGlyphs.
         self.cfg = {
             "location": {"lat": 39.7392, "lon": -104.9903},
+            "display": {"icon_set": "emoji"},
             "cache": {},
             "weather": {"show_weather": True, "contact_email": ""},
             "units": {"temp_unit": "F"},

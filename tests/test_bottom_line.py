@@ -257,10 +257,16 @@ class TestBottomLineFixture(unittest.TestCase):
         self.assertEqual(bar.count("░"), 19, f"Expected 19 empty blocks, got bar: {bar!r}")
 
     def test_bottom_line_has_five_hour_glyph(self):
-        """Bottom line contains ⏳ (five_hour indicator, LIM-01)."""
+        """Bottom line contains the five_hour glyph (LIM-01).
+
+        With icon_set="nerd" (default), the script renders the Nerd Font hourglass
+        (U+F254, nf-fa-hourglass) instead of the Phase 2 emoji ⏳.
+        """
         result = run_script(self.fixture_bytes)
         bottom = result.stdout.decode().splitlines()[1]
-        self.assertIn("⏳", bottom)
+        # Nerd Font hourglass (U+F254) is the default; emoji ⏳ only appears when
+        # icon_set="emoji" is set in the user's TOML.
+        self.assertIn("", bottom)
 
     def test_bottom_line_has_five_hour_pct(self):
         """Bottom line contains '30%' (fixture five_hour usage, LIM-01)."""
@@ -269,10 +275,16 @@ class TestBottomLineFixture(unittest.TestCase):
         self.assertIn("30%", bottom)
 
     def test_bottom_line_has_weekly_glyph(self):
-        """Bottom line contains 🗓 (seven_day indicator, LIM-02)."""
+        """Bottom line contains the weekly glyph (LIM-02).
+
+        With icon_set="nerd" (default), the script renders the Nerd Font calendar
+        (U+F073, nf-fa-calendar) instead of the Phase 2 emoji 🗓.
+        """
         result = run_script(self.fixture_bytes)
         bottom = result.stdout.decode().splitlines()[1]
-        self.assertIn("🗓", bottom)
+        # Nerd Font calendar (U+F073) is the default; emoji 🗓 only appears when
+        # icon_set="emoji" is set in the user's TOML.
+        self.assertIn("", bottom)
 
     def test_bottom_line_has_weekly_pct(self):
         """Bottom line contains '3%' (fixture seven_day usage, LIM-02)."""
@@ -315,7 +327,10 @@ class TestBottomLineSynthetic(unittest.TestCase):
                          "Non-green 5h indicator should show reset time")
 
     def test_weekly_green_no_reset(self):
-        """seven_day=3% (green) → no reset time after 🗓 even when 5h is non-green (D-04)."""
+        """seven_day=3% (green) → no reset time after calendar glyph even when 5h is non-green (D-04).
+
+        Uses Nerd Font calendar (U+F073) since icon_set defaults to 'nerd' (Phase 02.1).
+        """
         data = load_fixture()
         data["rate_limits"]["five_hour"]["used_percentage"] = 78
         # seven_day stays at 3% (green)
@@ -324,8 +339,10 @@ class TestBottomLineSynthetic(unittest.TestCase):
         bottom = lines[1] if len(lines) > 1 else ""
         import re
         stripped = re.sub(r'\x1b\[[0-9;]*m', '', bottom)
-        # The calendar glyph should be present and should not be followed by a reset time
-        cal_idx = stripped.find("🗓")
+        # The calendar glyph (Nerd Font U+F073, default) must be present
+        # U+F073 = nf-fa-calendar (Nerd Font), the default weekly glyph
+        _cal_glyph = "\uF073"
+        cal_idx = stripped.find(_cal_glyph)
         self.assertGreater(cal_idx, -1, "Calendar glyph must be in bottom line")
         after_cal = stripped[cal_idx:]
         self.assertNotRegex(after_cal, r'\d:\d{2}[ap]m',
@@ -361,15 +378,20 @@ class TestBottomLineSynthetic(unittest.TestCase):
         self.assertNotIn("🗓", stripped)
 
     def test_missing_context_window_still_renders_rate(self):
-        """Missing context_window block → rate segments still render, exit 0 (D-10)."""
+        """Missing context_window block → rate segments still render, exit 0 (D-10).
+
+        With icon_set='nerd' (default, Phase 02.1), rate glyphs are Nerd Font
+        hourglass (U+F254) and calendar (U+F073) instead of ⏳/🗓.
+        """
         data = load_fixture()
         del data["context_window"]
         rc, lines = self._run(data)
         self.assertEqual(rc, 0)
         bottom = lines[1] if len(lines) > 1 else ""
-        # Rate glyphs should be present
-        self.assertIn("⏳", bottom)
-        self.assertIn("🗓", bottom)
+        # Nerd Font rate glyphs must be present (default icon_set="nerd")
+        # U+F254 = nf-fa-hourglass; U+F073 = nf-fa-calendar
+        self.assertIn("\uF254", bottom)
+        self.assertIn("\uF073", bottom)
         # Context bar brackets should be absent in the bottom line
         import re
         stripped = re.sub(r'\x1b\[[0-9;]*m', '', bottom)

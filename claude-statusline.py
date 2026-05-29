@@ -1236,17 +1236,29 @@ def _project_segment(data: dict) -> str | None:
         return None
 
 
-def _model_segment(data: dict, show_thinking_glyph: bool = True) -> str | None:
-    """[<model.display_name> 💭?] or None if display_name absent/empty.
+def _model_segment(
+    data: dict,
+    show_thinking_glyph: bool = True,
+    icon_set: str = "nerd",
+) -> str | None:
+    """[<model.display_name> <thinking-glyph>?] or None if display_name absent/empty.
 
     When show_thinking_glyph is False the thinking glyph is suppressed (D-08).
+    icon_set selects the thinking glyph: "nerd" uses _NF_THINKING, "emoji" uses 💭 (D-01/D-07).
     """
     try:
         display_name = data.get("model", {}).get("display_name", "")
         if not display_name:
             return None
         thinking_enabled = data.get("thinking", {}).get("enabled", False)
-        suffix = " 💭" if (thinking_enabled and show_thinking_glyph) else ""
+        if thinking_enabled and show_thinking_glyph:
+            try:
+                thinking_glyph = _NF_THINKING if icon_set == "nerd" else "💭"
+            except Exception:
+                thinking_glyph = "💭"  # fallback to emoji on any glyph-selection failure
+            suffix = f" {thinking_glyph}"
+        else:
+            suffix = ""
         return f"[{display_name}{suffix}]"
     except Exception:
         return None
@@ -1320,17 +1332,30 @@ def _sun_segment(cfg: dict | None, now: datetime | None = None) -> str | None:
         sunrise_today = s_today["sunrise"]
         sunset_today  = s_today["sunset"]
 
+        # Resolve icon_set from cfg (D-06/D-07); default "nerd" matches the config default.
+        _display = (cfg or {}).get("display", {})
+        _icon_set = _display.get("icon_set", "nerd")
+
         if now < sunrise_today:
             event_time = sunrise_today
-            glyph = "\U0001f305"  # 🌅
+            is_sunrise = True
         elif now < sunset_today:
             event_time = sunset_today
-            glyph = "\U0001f307"  # 🌇
+            is_sunrise = False
         else:
             # Past today's sunset — next event is tomorrow's sunrise
             s_tomorrow = sun(loc.observer, date=today + timedelta(days=1), tzinfo=local_tz)
             event_time = s_tomorrow["sunrise"]
-            glyph = "\U0001f305"  # 🌅
+            is_sunrise = True
+
+        # Select glyph based on icon_set with emoji fallback on any failure (D-10)
+        try:
+            if _icon_set == "nerd":
+                glyph = _WI_SUNRISE if is_sunrise else _WI_SUNSET
+            else:
+                glyph = "\U0001f305" if is_sunrise else "\U0001f307"  # 🌅 / 🌇
+        except Exception:
+            glyph = "\U0001f305" if is_sunrise else "\U0001f307"  # emoji fallback
 
         # Format in LOCAL time: "6:14am" — matches fmt_reset() format (LIM-04 / D2-10)
         time_str = event_time.strftime("%-I:%M%p").lower()
@@ -1527,12 +1552,15 @@ def render_top_line(data: dict, cfg: dict) -> str:
 
     Phase 1: [project] [model 💭]
     Phase 2: [project] [model 💭] [<weather segment>]  (weather omitted when deps unavailable)
+    Phase 02.1: glyph set controlled by icon_set (D-01/D-07): mirrors show_thinking_glyph threading.
     """
     toggles = cfg.get("toggles", {})
     show_thinking_glyph = toggles.get("show_thinking_glyph", True)
+    display = cfg.get("display", {})
+    icon_set = display.get("icon_set", "nerd")
     segments = [
         _project_segment(data),
-        _model_segment(data, show_thinking_glyph=show_thinking_glyph),
+        _model_segment(data, show_thinking_glyph=show_thinking_glyph, icon_set=icon_set),
         _weather_segment(data, cfg),   # None-filtered by the existing space-join (D2-10)
     ]
     present = [s for s in segments if s is not None]
@@ -1562,13 +1590,24 @@ def render_bottom_line(data: dict, cfg: dict) -> str | None:
         five_hour_block = rate_limits.get("five_hour", {}) if isinstance(rate_limits, dict) else {}
         seven_day_block = rate_limits.get("seven_day", {}) if isinstance(rate_limits, dict) else {}
 
+        # Resolve rate-limit glyphs from icon_set (D-01/D-07).
+        # _rate_segment signature is UNCHANGED — glyph swap happens at the call site only.
+        _display = cfg.get("display", {})
+        _icon_set = _display.get("icon_set", "nerd")
+        if _icon_set == "nerd":
+            _glyph_5h = _NF_HOURGLASS
+            _glyph_wk = _NF_CALENDAR
+        else:
+            _glyph_5h = "⏳"
+            _glyph_wk = "🗓"
+
         five_hour_seg = (
-            _rate_segment(five_hour_block, "⏳", warn=warn, crit=crit)
+            _rate_segment(five_hour_block, _glyph_5h, warn=warn, crit=crit)
             if (toggles.get("show_five_hour", True) and isinstance(five_hour_block, dict))
             else None
         )
         weekly_seg = (
-            _rate_segment(seven_day_block, "🗓", warn=warn, crit=crit)
+            _rate_segment(seven_day_block, _glyph_wk, warn=warn, crit=crit)
             if (toggles.get("show_weekly", True) and isinstance(seven_day_block, dict))
             else None
         )

@@ -600,7 +600,11 @@ class TestWeatherSegmentAlertOverride(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _run_segment_with_cache(self, cache_dict, spawn_recorder=None):
-        """Call _weather_segment with a monkeypatched read_cache."""
+        """Call _weather_segment with a monkeypatched read_cache.
+
+        Pins icon_set="emoji" so the three fallback-to-sun tests keep asserting the
+        Phase 2 emoji sun glyphs (🌅/🌇) regardless of the nerd default (D-06).
+        """
         cache_path = os.path.join(self.tmpdir, "cache.json")
         with open(cache_path, "w") as f:
             json.dump(cache_dict, f)
@@ -609,9 +613,14 @@ class TestWeatherSegmentAlertOverride(unittest.TestCase):
             if spawn_recorder is not None:
                 spawn_recorder.append(True)
 
+        # Pin icon_set="emoji" so emoji codepoint assertions remain valid under
+        # the new nerd default introduced in Phase 02.1 Plan 03.
+        cfg_with_emoji = dict(self.cfg)
+        cfg_with_emoji["display"] = {"icon_set": "emoji"}
+
         with patch.object(self.mod, "_CACHE_PATH", cache_path):
             with patch.object(self.mod, "maybe_spawn_refresh", side_effect=no_op_spawn):
-                result = self.mod._weather_segment(None, self.cfg)
+                result = self.mod._weather_segment(None, cfg_with_emoji)
         return result
 
     def _make_cache_with_alert(self, severity="Extreme", event="Tornado Warning",

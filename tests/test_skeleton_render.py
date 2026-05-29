@@ -50,13 +50,19 @@ class TestSkeletonRender(unittest.TestCase):
     # --- Behavior tests ---
 
     def test_fixture_top_line_exact(self):
-        """Given the real fixture, first line == '[claude_statusline] [Opus 4.8 (1M context) 💭]'"""
+        """Given the real fixture, first line == '[claude_statusline] [Opus 4.8 (1M context) <thinking-glyph>]'
+
+        Phase 02.1: with icon_set='nerd' (the default), the thinking indicator is the
+        Nerd Font lightbulb glyph (U+F0EB, nf-fa-lightbulb) instead of the Phase 2 💭.
+        """
         with open(FIXTURE, "rb") as f:
             fixture_bytes = f.read()
         result = run_script(fixture_bytes)
         self.assertEqual(result.returncode, 0)
         first_line = result.stdout.decode().splitlines()[0]
-        self.assertEqual(first_line, "[claude_statusline] [Opus 4.8 (1M context) 💭]")
+        # U+F0EB is the nf-fa-lightbulb Nerd Font glyph (_NF_THINKING); it replaces 💭
+        # when icon_set="nerd" (default). To see 💭, set icon_set="emoji" in the TOML.
+        self.assertEqual(first_line, "[claude_statusline] [Opus 4.8 (1M context) ]")
 
     def test_thinking_false_no_glyph(self):
         """thinking.enabled=False → model brackets contain no 💭"""

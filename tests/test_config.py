@@ -308,11 +308,17 @@ class TestPerSegmentToggles(unittest.TestCase):
         self.assertNotIn("Traceback", stderr)
 
     def test_show_thinking_glyph_true_shows_glyph(self):
-        """show_thinking_glyph=true (default): top line includes 💭 (fixture has thinking.enabled=true)."""
+        """show_thinking_glyph=true (default): top line includes a thinking glyph (fixture has thinking.enabled=true).
+
+        Phase 02.1: with icon_set='nerd' (default), the glyph is U+F0EB (nf-fa-lightbulb).
+        Add [display]\nicon_set = "emoji" to your TOML to get the Phase 2 💭 instead.
+        """
         toml = b"[toggles]\nshow_thinking_glyph = true\n"
         rc, lines, stderr = self._run_with_toml(toml)
         self.assertEqual(rc, 0)
-        self.assertIn("\U0001f4ad", lines[0])  # 💭 present
+        # Nerd Font lightbulb (U+F0EB, _NF_THINKING) is the default thinking glyph.
+        # The test checks a glyph IS present (regardless of which specific glyph).
+        self.assertIn("", lines[0])  # nf-fa-lightbulb (nerd default)
 
     def test_show_five_hour_false_drops_hourglass(self):
         """show_five_hour=false: bottom line has no ⏳ segment."""
