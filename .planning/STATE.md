@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: paused
-stopped_at: Phase 3 context gathered
-last_updated: "2026-05-29T14:31:12.752Z"
+status: ready_to_plan
+stopped_at: Phase 03 complete (2/2) — ready to discuss Phase 04
+last_updated: 2026-05-29T14:44:33.115Z
 last_activity: 2026-05-29 -- gradient impl + tests committed; awaiting user visual sign-off
 progress:
   total_phases: 6
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Phase 03 — presets-for-the-type-of-block-fill-for-the-progress-bar-incl
+**Current focus:** Phase 04 — git info including active worktree
 
 ## Current Position
 
-Phase: 03 (presets-for-the-type-of-block-fill-for-the-progress-bar-incl) — EXECUTING
-Plan: 2 of 2 — IN PROGRESS (awaiting human-verify gate, Task 3)
-Status: Tasks 1-2 committed; stopped at blocking checkpoint:human-verify
-Last activity: 2026-05-29 -- gradient impl + tests committed; awaiting user visual sign-off
+Phase: 04
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-29
 
 Progress: [██████████] 100%
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 10
+- Total plans completed: 12
 - Average duration: 14 min
 - Total execution time: 0.6 hours
 
@@ -48,6 +48,7 @@ Progress: [██████████] 100%
 | 02-weather-layer | 2/3 | 60 min | 30 min |
 | 2 | 3 | - | - |
 | 02.1 | 3 | - | - |
+| 03 | 2 | - | - |
 
 **Recent Trend:**
 
