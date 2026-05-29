@@ -17,6 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Weather Layer** - NWS conditions/temp/precip, cached alerts, local sunrise/sunset via astral, weather degradation (completed 2026-05-28)
 - [x] **Phase 02.1: Nerd Font icon set (INSERTED)** - Nerd Font glyphs across four segments (weather conditions/alerts, sun events, thinking, rate-limit) behind a single icon_set toggle; emoji retained as fallback (completed 2026-05-29)
 - [x] **Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)** (completed 2026-05-29)
+- [ ] **Phase 03.1: Resolve default bar gradient vs shade test drift (INSERTED)** - Decide whether the default progress bar should render gradient or ▓ shade, then realign the two failing test_bottom_line.py tests with that decision
 - [x] **Phase 4: git info including active worktree** (completed 2026-05-29)
 - [ ] **Phase 5: GSD status info especially the active Plan(s) being run**
 
@@ -116,6 +117,19 @@ Plans:
 
 - [x] 03-02-PLAN.md — Gradient preset: 1/8 sub-cell boundary-block render (left blocks) + blank empty track, with 0%/100% edge cases (D-02,D-04,D-05)
 
+### Phase 03.1: Resolve default bar gradient vs shade test drift (INSERTED)
+
+**Goal:** Resolve the test/code drift in the Phase-3 default progress bar. Two tests fail on `main` (pre-existing, surfaced during Phase 4) because they assert the default bar contains a `▓` shade cell, while the default now renders a gradient (`█▍…`) bar. Decide the intended default (gradient vs shade), then make the default and the tests agree — either fix the default to emit a shade cell or update the tests to expect the gradient.
+**Affected tests:**
+- `tests/test_bottom_line.py::TestBottomLineFixture::test_bottom_line_bar_fill_cells`
+- `tests/test_bottom_line.py::TestBarStylePresets::test_default_no_config_shade_unchanged`
+**Requirements**: TBD
+**Depends on:** Phase 3
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 03.1 to break down)
+
 ### Phase 4: git info including active worktree
 
 **Goal:** A read-only git-info segment on the top line (immediately after the project name) surfaces the session repo's branch (or detached short-SHA), a single colored dirty marker, ahead/behind upstream, and — only when the session is inside a linked worktree — a worktree glyph + worktree-dir basename, all timeout-guarded so the bar never hangs and silently omitted on any non-repo/error (CONTEXT D-01..D-10).
@@ -135,14 +149,20 @@ Plans:
 
 ### Phase 5: GSD status info especially the active Plan(s) being run
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** A read-only GSD-status segment on the top line (immediately after the git segment) surfaces the project's GSD planning state — emphasizing the active plan being run — as a neutral plan id + task progress (e.g. `05-02 2/3`, no duplicate phase prefix) plus a single colored lifecycle glyph (executing/done→green, verifying→yellow, blocked→red, idle→dim), sourced HANDOFF-first with a ROADMAP-checkbox fallback (idle next-up + explicit milestone-complete done state), scoped to `.planning/` under `project_dir`, never blocking/crashing the bar and silently omitted off-GSD (CONTEXT D-01..D-10).
+**Requirements**: None mapped (CONTEXT-driven enhancement; scope tracked against D-01..D-10. RUN-01/RUN-02 honored.)
 **Depends on:** Phase 4
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 5 to break down)
+**Wave 1**
+
+- [ ] 05-01-PLAN.md — GSD data-access + lifecycle-inference layer: `_read_gsd_state` (bounded never-raising HANDOFF.json + STATE.md frontmatter + ROADMAP.md reader) + `_infer_gsd_lifecycle` (pure HANDOFF-first/roadmap-fallback resolver: plan id, task progress, plan-of-total, lifecycle state, milestone) + unit tests (D-01..D-07)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-02-PLAN.md — `_NF_GSD_*` glyph constants (cmap-guarded) + `display.show_gsd` default + `_gsd_segment` builder (neutral label / colored lifecycle glyph) wired into `render_top_line` after `_git_segment`, plus existing exact-string top-line test fixture updates + builder/E2E tests (D-08,D-09,D-10)
 
 ## Progress
 
@@ -156,4 +176,4 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5
 | 02.1. Nerd Font icon set | 3/3 | Complete    | 2026-05-29 |
 | 3. Presets for block fill | 2/2 | Complete   | 2026-05-29 |
 | 4. git info incl. active worktree | 2/2 | Complete   | 2026-05-29 |
-| 5. GSD status info | 0/TBD | Not started | - |
+| 5. GSD status info | 0/2 | Planned | - |
