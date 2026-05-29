@@ -1308,6 +1308,12 @@ class TestAllNerdGlyphConstantsInInstalledFont(unittest.TestCase):
         "_NF_HOURGLASS",
         "_NF_CALENDAR",
         "_WI_FALLBACK",
+        # Phase 04 git segment glyphs (Plan 02)
+        "_NF_GIT_BRANCH",
+        "_NF_GIT_WORKTREE",
+        "_NF_GIT_DIRTY",
+        "_NF_GIT_AHEAD",
+        "_NF_GIT_BEHIND",
     ]
 
     def setUp(self):

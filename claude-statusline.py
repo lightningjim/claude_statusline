@@ -166,6 +166,10 @@ DEFAULTS: dict = {
         # "shade" (default) keeps the existing ▓/░ look — zero change for existing installs.
         # Other values: "solid", "solid-dim", "gradient".  Independent of icon_set (D-10).
         "bar_style": "shade",   # "shade" | "solid" | "solid-dim" | "gradient"
+        # Phase 04: git segment toggle (D-08 discretion: display.show_git).
+        # True (default) renders the git segment on the top line when in a git repo.
+        # Set to false in [display] to suppress the segment (e.g. in test configs).
+        "show_git": True,
     },
 }
 
@@ -395,6 +399,28 @@ _NF_CALENDAR         = ""   # nf-fa-calendar         U+F073  (weekly window)
 
 # --- Fallback (single-cell thermometer) ---
 _WI_FALLBACK         = ""   # wi-thermometer         U+E33D
+
+# ---------------------------------------------------------------------------
+# Git segment glyph constants (Phase 04, Plan 02)
+#
+# Nerd Font codepoints chosen from the powerline / font-awesome ranges and
+# validated against the installed JetBrains Nerd Font cmap (test_nerd_icons.py).
+# ---------------------------------------------------------------------------
+
+# Branch glyph (powerline branch symbol — the universally recognized git branch icon)
+_NF_GIT_BRANCH   = ""   # nf-pl-branch        U+E0A0
+
+# Worktree glyph (code fork — visually suggests a branch diverging from main)
+_NF_GIT_WORKTREE = ""   # nf-fa-code_fork     U+F126
+
+# Dirty-state marker (asterisk — concise single-cell flag for uncommitted changes)
+_NF_GIT_DIRTY    = ""   # nf-fa-asterisk      U+F069
+
+# Ahead-of-upstream marker (arrow up — "you are ahead")
+_NF_GIT_AHEAD    = ""   # nf-fa-arrow_up      U+F062
+
+# Behind-upstream marker (arrow down — "you are behind")
+_NF_GIT_BEHIND   = ""   # nf-fa-arrow_down    U+F063
 
 
 # ---------------------------------------------------------------------------
