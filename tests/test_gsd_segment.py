@@ -515,5 +515,327 @@ class TestInferGsdLifecycle(unittest.TestCase):
         self.assertNotIn("-PLAN.md", plan_id, "plan_id should not contain -PLAN.md suffix")
 
 
+# ---------------------------------------------------------------------------
+# _gsd_segment builder tests (Wave 2, Plan 02)
+# ---------------------------------------------------------------------------
+
+import subprocess
+
+# Project repo root (for E2E tests — this repo has .planning/)
+_REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Isolated HOME for E2E tests (no config installed — weather omitted)
+_E2E_HOME = tempfile.mkdtemp(prefix="gsd-statusline-gsd-e2e-home-")
+
+
+def _run_script_e2e(stdin_dict: dict, home: str = _E2E_HOME) -> subprocess.CompletedProcess:
+    """Pipe a JSON dict to the script as a subprocess and return the result."""
+    env = dict(os.environ)
+    env["HOME"] = home
+    return subprocess.run(
+        [sys.executable, SCRIPT],
+        input=json.dumps(stdin_dict).encode(),
+        capture_output=True,
+        env=env,
+    )
+
+
+def _minimal_data_with_project(project_dir: str) -> dict:
+    """Minimal stdin JSON with workspace.project_dir pointing to project_dir."""
+    return {
+        "model": {"display_name": "TestModel"},
+        "thinking": {"enabled": False},
+        "workspace": {
+            "current_dir": project_dir,
+            "project_dir": project_dir,
+            "added_dirs": [],
+        },
+        "cwd": project_dir,
+        "context_window": {"used_percentage": 10},
+        "rate_limits": {
+            "five_hour": {"used_percentage": 10, "resets_at": None},
+            "seven_day": {"used_percentage": 5, "resets_at": None},
+        },
+    }
+
+
+class TestGsdSegmentBuilder(unittest.TestCase):
+    """Tests for _gsd_segment: builder monkeypatch approach (no disk I/O)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def _call(self, handoff=None, state_fm=None, roadmap=None, cfg_override=None):
+        """Call _gsd_segment with monkeypatched _read_gsd_state.
+
+        Passes a fake project_dir that has a .planning/ directory stub (so the
+        os.path.isdir check passes) but monkeypatches _read_gsd_state to return
+        controlled fixture data.
+        """
+        import tempfile as _tmpfile, os as _os
+
+        # We need an actual directory for the os.path.isdir(.planning) guard
+        with _tmpfile.TemporaryDirectory() as tmpdir:
+            planning_dir = _os.path.join(tmpdir, ".planning")
+            _os.makedirs(planning_dir)
+
+            def fake_read_gsd_state(_planning_dir):
+                if handoff is None:
+                    return None
+                return {
+                    "handoff": handoff,
+                    "state": state_fm or {},
+                    "roadmap": roadmap or "",
+                }
+
+            original = self.mod._read_gsd_state
+            self.mod._read_gsd_state = fake_read_gsd_state
+            try:
+                cfg = {
+                    "display": {"icon_set": "nerd", "show_gsd": True, "bar_style": "shade"},
+                    "toggles": {"show_thinking_glyph": True},
+                    "thresholds": {"warn": 70, "crit": 90},
+                }
+                if cfg_override:
+                    for k, v in cfg_override.items():
+                        if isinstance(v, dict) and isinstance(cfg.get(k), dict):
+                            cfg[k].update(v)
+                        else:
+                            cfg[k] = v
+                data = {
+                    "workspace": {"current_dir": tmpdir, "project_dir": tmpdir},
+                    "cwd": tmpdir,
+                }
+                return self.mod._gsd_segment(data, cfg)
+            finally:
+                self.mod._read_gsd_state = original
+
+    def test_show_gsd_false_returns_none(self):
+        """show_gsd=False -> None (config toggle, D-08)."""
+        result = self._call(
+            handoff=_VALID_HANDOFF,
+            cfg_override={"display": {"show_gsd": False}},
+        )
+        self.assertIsNone(result)
+
+    def test_read_gsd_state_returns_none_gives_none(self):
+        """_read_gsd_state returning None -> _gsd_segment returns None (no .planning/)."""
+        result = self._call(handoff=None)
+        self.assertIsNone(result)
+
+    def test_executing_contains_plan_id(self):
+        """Executing state: output contains the plan id."""
+        result = self._call(handoff=_VALID_HANDOFF)
+        self.assertIsNotNone(result)
+        self.assertIn("05-02", result)
+
+    def test_executing_contains_green(self):
+        """Executing state: GREEN ANSI code present for lifecycle glyph."""
+        result = self._call(handoff=_VALID_HANDOFF)
+        self.assertIsNotNone(result)
+        self.assertIn("\033[32m", result)
+
+    def test_executing_plan_id_not_wrapped_in_color(self):
+        """D-09: plan id label is neutral — GREEN/RED must NOT immediately precede the plan id."""
+        result = self._call(handoff=_VALID_HANDOFF)
+        self.assertIsNotNone(result)
+        # The plan id must not be directly preceded by a GREEN or RED escape
+        green = "\033[32m"
+        red = "\033[31m"
+        plan_id = "05-02"
+        for color in (green, red):
+            idx = result.find(color + plan_id)
+            self.assertEqual(
+                idx, -1,
+                f"Plan id immediately preceded by color code {color!r} (D-09 violated): {result!r}",
+            )
+
+    def test_executing_contains_task_progress(self):
+        """Executing state with completed_tasks: output contains N/M progress."""
+        result = self._call(handoff=_VALID_HANDOFF)
+        self.assertIsNotNone(result)
+        # _VALID_HANDOFF has completed_tasks=["task1","task2"], total_tasks=3 -> "2/3"
+        self.assertIn("2/3", result)
+
+    def test_blocked_contains_red(self):
+        """Blocked state: RED ANSI code present for lifecycle glyph."""
+        result = self._call(handoff=_BLOCKED_HANDOFF)
+        self.assertIsNotNone(result)
+        self.assertIn("\033[31m", result)
+
+    def test_verifying_contains_yellow(self):
+        """Verifying state: YELLOW ANSI code present for lifecycle glyph."""
+        result = self._call(handoff=_VERIFYING_HANDOFF)
+        self.assertIsNotNone(result)
+        self.assertIn("\033[33m", result)
+
+    def test_idle_state_contains_dim(self):
+        """Idle state (null HANDOFF, roadmap fallback): DIM ANSI code present."""
+        result = self._call(
+            handoff=_NULL_HANDOFF,
+            roadmap=_ROADMAP_WITH_INCOMPLETE,
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("\033[2m", result)
+
+    def test_idle_state_contains_next_plan_id(self):
+        """Idle state: output contains the next-up plan id from the roadmap."""
+        result = self._call(
+            handoff=_NULL_HANDOFF,
+            roadmap=_ROADMAP_WITH_INCOMPLETE,
+        )
+        self.assertIsNotNone(result)
+        # First incomplete plan in _ROADMAP_WITH_INCOMPLETE is 05-01
+        self.assertIn("05-01", result)
+
+    def test_milestone_complete_contains_done_glyph_and_green(self):
+        """Milestone-complete (done) state: milestone label + GREEN done glyph (D-07)."""
+        state_fm = {"milestone": "v1.0", "progress": {}}
+        result = self._call(
+            handoff=_NULL_HANDOFF,
+            state_fm=state_fm,
+            roadmap=_ROADMAP_ALL_COMPLETE,
+        )
+        self.assertIsNotNone(result)
+        # Done state must show GREEN (not omit)
+        self.assertIn("\033[32m", result)
+        # Must contain the milestone label
+        self.assertIn("v1.0", result)
+
+    def test_icon_set_emoji_uses_fallback_glyphs(self):
+        """icon_set='emoji': output uses ascii/emoji fallbacks, no _NF_GSD_* codepoints."""
+        result = self._call(
+            handoff=_VALID_HANDOFF,
+            cfg_override={"display": {"icon_set": "emoji"}},
+        )
+        self.assertIsNotNone(result)
+        # Should not contain any of the 6 nerd codepoints
+        for attr in ("_NF_GSD_EXECUTING", "_NF_GSD_VERIFYING", "_NF_GSD_BLOCKED",
+                     "_NF_GSD_DONE", "_NF_GSD_IDLE", "_NF_GSD_PLAN"):
+            nerd_char = getattr(self.mod, attr, None)
+            if nerd_char:
+                self.assertNotIn(
+                    nerd_char, result,
+                    f"Nerd glyph {attr} ({nerd_char!r}) found in emoji-mode result: {result!r}",
+                )
+
+    def test_icon_set_emoji_output_nonempty(self):
+        """icon_set='emoji': output is a non-None, non-empty bracketed string."""
+        result = self._call(
+            handoff=_VALID_HANDOFF,
+            cfg_override={"display": {"icon_set": "emoji"}},
+        )
+        self.assertIsNotNone(result)
+        self.assertTrue(result.startswith("[") and result.endswith("]"),
+                        f"Expected bracketed string, got: {result!r}")
+
+    def test_no_workspace_returns_none(self):
+        """data with no workspace key -> None (no traceback, never-raise)."""
+        try:
+            result = self.mod._gsd_segment({}, {"display": {"show_gsd": True}})
+            # None is expected when project_dir is absent/empty
+            self.assertIsNone(result)
+        except Exception as e:
+            self.fail(f"_gsd_segment raised on empty data: {e}")
+
+    def test_none_workspace_returns_none(self):
+        """data with workspace=None -> None (never raises)."""
+        try:
+            result = self.mod._gsd_segment(
+                {"workspace": None},
+                {"display": {"show_gsd": True}},
+            )
+            self.assertIsNone(result)
+        except Exception as e:
+            self.fail(f"_gsd_segment raised on workspace=None: {e}")
+
+    def test_nonexistent_project_dir_returns_none(self):
+        """project_dir pointing to non-existent path -> None (no traceback)."""
+        try:
+            result = self.mod._gsd_segment(
+                {"workspace": {"project_dir": "/tmp/definitely-does-not-exist-gsd-test"}},
+                {"display": {"show_gsd": True}},
+            )
+            self.assertIsNone(result)
+        except Exception as e:
+            self.fail(f"_gsd_segment raised on nonexistent project_dir: {e}")
+
+    def test_project_dir_without_planning_returns_none(self):
+        """project_dir without .planning/ subdirectory -> None (silent omit, D-08)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = self.mod._gsd_segment(
+                {"workspace": {"project_dir": tmpdir}},
+                {"display": {"show_gsd": True}},
+            )
+            self.assertIsNone(result)
+
+    def test_output_is_bracketed(self):
+        """Successful output is a [<interior>] bracketed string."""
+        result = self._call(handoff=_VALID_HANDOFF)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.startswith("[") and result.endswith("]"),
+                        f"Expected bracketed string, got: {result!r}")
+
+
+class TestGsdSegmentE2E(unittest.TestCase):
+    """End-to-end subprocess tests: piping JSON to the script and inspecting stdout."""
+
+    def test_e2e_repo_dir_shows_gsd_segment_between_git_and_model(self):
+        """Piping the project repo as project_dir: gsd segment appears between [git] and [model].
+
+        This repo has .planning/ so with show_gsd defaulting True a [gsd] segment
+        is expected on the top line between [git] and [model] (D-10 ordering).
+        """
+        data = _minimal_data_with_project(_REPO_DIR)
+        result = _run_script_e2e(data)
+        self.assertEqual(
+            result.returncode, 0,
+            f"Script exited {result.returncode}; stderr: {result.stderr.decode()!r}",
+        )
+        stderr = result.stderr.decode()
+        self.assertNotIn("Traceback", stderr, f"Traceback in stderr: {stderr!r}")
+
+        top_line = result.stdout.decode().splitlines()[0]
+
+        # Both project and model must be present
+        project_marker = "[claude_statusline]"
+        model_marker = "[TestModel]"
+        idx_project = top_line.find(project_marker)
+        idx_model = top_line.find(model_marker)
+
+        self.assertGreater(idx_project, -1, f"Project marker not found: {top_line!r}")
+        self.assertGreater(idx_model, -1, f"Model marker not found: {top_line!r}")
+
+        # A [gsd] segment must appear between project and model.
+        # We know [git] is between project and model (Phase 04), and [gsd] comes after [git].
+        # So there must be at least two bracketed items between project and model.
+        project_end = idx_project + len(project_marker)
+        between = top_line[project_end:idx_model]
+        # Count opening brackets in the region between [project] and [model]
+        bracket_count = between.count("[")
+        self.assertGreaterEqual(
+            bracket_count, 2,
+            f"Expected at least [git] + [gsd] between project and model; "
+            f"between={between!r}  line={top_line!r}",
+        )
+
+    def test_e2e_no_planning_dir_omits_gsd_segment_exits_zero(self):
+        """Piping a dir without .planning/: gsd segment omitted, script exits 0, no traceback."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data = _minimal_data_with_project(tmpdir)
+            result = _run_script_e2e(data)
+        self.assertEqual(
+            result.returncode, 0,
+            f"Script must exit 0 even for non-GSD dir; stderr: {result.stderr.decode()!r}",
+        )
+        stderr = result.stderr.decode()
+        self.assertNotIn("Traceback", stderr, f"Traceback in stderr: {stderr!r}")
+        self.assertNotIn("Error", stderr)
+        # Bar must still render (at minimum the model segment)
+        top_line = result.stdout.decode().splitlines()[0]
+        self.assertIn("[TestModel]", top_line,
+                      f"Model segment must still render when gsd segment absent: {top_line!r}")
+
+
 if __name__ == "__main__":
     unittest.main()

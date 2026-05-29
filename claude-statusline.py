@@ -1629,6 +1629,119 @@ def _infer_gsd_lifecycle(state: dict | None) -> dict | None:
         return None   # RUN-01/RUN-02: never raise on partial dicts
 
 
+def _gsd_segment(data: dict, cfg: dict) -> str | None:
+    """[<plan_id> <task_progress> <status_glyph>] or None.
+
+    Reads live GSD planning state from .planning/ under workspace.project_dir and
+    renders a bracketed top-line segment showing the active plan id, task progress,
+    and a colored lifecycle status glyph.
+
+    Decision mapping:
+    - D-01/D-02: headline is plan_id + task progress (e.g. "05-02 2/3"), no phase prefix
+    - D-03/D-09: lifecycle glyph colored (executing/done→GREEN, verifying→YELLOW,
+                  blocked→RED, idle→DIM); plan-id/task label stays neutral (no color wrap)
+    - D-07: milestone-complete shows explicit done state (milestone + green done glyph)
+    - D-08: scoped to workspace.project_dir/.planning; omit silently if absent (non-GSD)
+    - D-10: inserted after _git_segment and before _model_segment in render_top_line
+    - RUN-01/RUN-02: never raises; entire body wrapped in try/except
+
+    Glyph selection follows icon_set ('nerd' → _NF_GSD_* constants;
+    anything else → emoji/ascii fallbacks).
+    """
+    try:
+        # (1) Config toggle (D-08 discretion: display.show_gsd, default True)
+        if not cfg.get("display", {}).get("show_gsd", True):
+            return None
+
+        # (2) Resolve project_dir: workspace.project_dir ONLY (D-08, NOT current_dir)
+        ws = data.get("workspace", {}) if isinstance(data.get("workspace"), dict) else {}
+        project_dir = ws.get("project_dir", "")
+        if not project_dir:
+            return None
+        planning_dir = os.path.join(project_dir, ".planning")
+        if not os.path.isdir(planning_dir):
+            return None   # non-GSD project — omit silently (D-08)
+
+        # (3) Read GSD state files
+        state = _read_gsd_state(planning_dir)
+        if state is None:
+            return None
+
+        # (4) Infer lifecycle state
+        info = _infer_gsd_lifecycle(state)
+        if info is None:
+            return None
+
+        # (6) Resolve glyphs from icon_set
+        icon_set = cfg.get("display", {}).get("icon_set", "nerd")
+        if icon_set == "nerd":
+            exec_glyph   = _NF_GSD_EXECUTING
+            verif_glyph  = _NF_GSD_VERIFYING
+            block_glyph  = _NF_GSD_BLOCKED
+            done_glyph   = _NF_GSD_DONE
+            idle_glyph   = _NF_GSD_IDLE
+        else:
+            # emoji/ascii fallbacks — distinct from nerd codepoints
+            exec_glyph   = "\u25b6"    # ▶
+            verif_glyph  = "\u2611"    # ☑
+            block_glyph  = "\u2298"    # ⊘
+            done_glyph   = "\u2713"    # ✓
+            idle_glyph   = "\u23f8"    # ⏸
+
+        # Map lifecycle state to its glyph and color (D-09)
+        lifecycle = info.get("state", "idle")
+        if lifecycle == "executing":
+            glyph = exec_glyph
+            color = GREEN
+        elif lifecycle == "verifying":
+            glyph = verif_glyph
+            color = YELLOW
+        elif lifecycle == "blocked":
+            glyph = block_glyph
+            color = RED
+        elif lifecycle == "done":
+            glyph = done_glyph
+            color = GREEN
+        else:  # idle
+            glyph = idle_glyph
+            color = DIM
+
+        # (8) Colored lifecycle glyph ONLY (D-09)
+        status_glyph = f"{color}{glyph}{RESET}"
+
+        # (7) Neutral label (D-09: no color wrap on plan id or task count)
+        plan_id     = info.get("plan_id")
+        tasks_done  = info.get("tasks_done")
+        total_tasks = info.get("total_tasks")
+        milestone   = info.get("milestone")
+        plans_done  = info.get("plans_done")
+        plans_total = info.get("plans_total")
+
+        if lifecycle == "done":
+            # D-07: explicit done state — show milestone label, not "None"
+            milestone_label = milestone or "done"
+            interior = f"{milestone_label} {status_glyph}"
+        else:
+            # Active / idle: plan id + task progress (neutral) + colored glyph
+            if plan_id is None:
+                return None   # no plan id in non-done state — omit silently
+            if tasks_done is not None and total_tasks is not None:
+                task_label = f"{plan_id} {tasks_done}/{total_tasks}"
+            else:
+                task_label = plan_id
+
+            # (9) Optional plan-of-total fragment (D-04) — neutral, no color
+            if plans_done is not None and plans_total is not None:
+                wave_part = f" ({plans_done}/{plans_total})"
+            else:
+                wave_part = ""
+
+            interior = f"{task_label}{wave_part} {status_glyph}"
+
+        return f"[{interior}]"
+    except Exception:
+        return None   # RUN-01/RUN-02: never raise, never traceback
+
 def _parse_git_status_v2(stdout: str) -> dict | None:
     """Parse ``status --porcelain=v2 --branch`` stdout → state dict, or None.
 
@@ -2226,6 +2339,9 @@ def render_top_line(data: dict, cfg: dict) -> str:
     Phase 04:   [project] [git] [model 💭] [<weather>]  (D-09 ordering)
                 git segment inserted between project and model (D-09).
                 Omitted when show_git=false, non-repo, timeout, or git absent.
+    Phase 05:   [project] [git] [gsd] [model 💭] [<weather>]  (D-10 ordering)
+                gsd segment inserted after git and before model (D-10).
+                Omitted when show_gsd=false, .planning/ absent, or any read error.
     """
     toggles = cfg.get("toggles", {})
     show_thinking_glyph = toggles.get("show_thinking_glyph", True)
@@ -2234,6 +2350,7 @@ def render_top_line(data: dict, cfg: dict) -> str:
     segments = [
         _project_segment(data),
         _git_segment(data, cfg),        # D-09: immediately after project, before model
+        _gsd_segment(data, cfg),        # D-10: immediately after git, before model
         _model_segment(data, show_thinking_glyph=show_thinking_glyph, icon_set=icon_set),
         _weather_segment(data, cfg),    # None-filtered by the existing space-join (D2-10)
     ]
