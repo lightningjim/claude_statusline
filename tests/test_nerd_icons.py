@@ -231,6 +231,18 @@ class TestBarPresets(unittest.TestCase):
         self.assertEqual(filled, "▓")
         self.assertEqual(empty, "░")
 
+    def test_bar_preset_non_hashable_falls_back_to_shade(self):
+        """_bar_preset must degrade to shade for non-string TOML values, never raise (RUN-02, WR-01).
+
+        A TOML array/table yields a list/dict — passing it straight to dict.get()
+        would raise TypeError (unhashable), get swallowed upstream, and drop the
+        whole context bar. The guard must return the shade pair instead.
+        """
+        shade = self.mod._BAR_PRESETS["shade"]
+        for bad in (["gradient"], {"x": 1}, 3, 4.2, None, ("solid",)):
+            with self.subTest(value=bad):
+                self.assertEqual(self.mod._bar_preset(bad), shade)
+
 
 # ---------------------------------------------------------------------------
 # Task 2 tests

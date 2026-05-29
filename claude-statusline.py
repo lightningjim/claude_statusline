@@ -107,11 +107,16 @@ _BAR_WIDTH = 20
 _GRADIENT_PARTIAL = ("▏", "▎", "▍", "▌", "▋", "▊", "▉")   # 7 glyphs, 1/8..7/8
 
 
-def _bar_preset(style: str) -> tuple[str, str]:
+def _bar_preset(style: object) -> tuple[str, str]:
     """Return (filled_glyph, empty_glyph) for *style*, falling back to shade (RUN-02).
 
     Never raises — an unknown/missing bar_style silently returns the shade pair.
+    A non-string value (e.g. a TOML array/table/number) is treated as unknown
+    and also falls back to shade, so dict.get() is never handed a non-hashable
+    key (RUN-02: malformed config must degrade, not drop the bar).
     """
+    if not isinstance(style, str):
+        return _BAR_PRESETS["shade"]
     return _BAR_PRESETS.get(style, _BAR_PRESETS["shade"])
 
 
