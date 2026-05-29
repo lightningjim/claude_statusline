@@ -102,13 +102,14 @@ Plans:
 
 ### Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** A config-selectable `bar_style` lets the user pick the context bar's fill look from four presets — `shade` (default, unchanged), `solid`, `solid-dim`, and `gradient` (1/8 sub-cell precision) — with filled cells in threshold color and empty cells dim gray, all degrading gracefully on unknown values.
+**Requirements**: None mapped (enhancement built on ENH-04; scope driven by CONTEXT.md D-01..D-10)
 **Depends on:** Phase 2
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 3 to break down)
+- [ ] 03-01-PLAN.md — `bar_style` config key + whole-cell presets (shade/solid/solid-dim), per-cell filled-color/empty-gray rule, silent fallback to shade (D-01,D-06,D-07,D-08,D-09,D-10)
+- [ ] 03-02-PLAN.md — Gradient preset: 1/8 sub-cell boundary-block render (left blocks) + blank empty track, with 0%/100% edge cases (D-02,D-04,D-05)
 
 ### Phase 4: git info including active worktree
 
@@ -140,6 +141,6 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5
 | 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
 | 2. Weather Layer | 3/3 | Complete   | 2026-05-29 |
 | 02.1. Nerd Font icon set | 3/3 | Complete    | 2026-05-29 |
-| 3. Presets for block fill | 0/TBD | Not started | - |
+| 3. Presets for block fill | 0/2 | Planned | - |
 | 4. git info incl. active worktree | 0/TBD | Not started | - |
 | 5. GSD status info | 0/TBD | Not started | - |
