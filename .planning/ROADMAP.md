@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Weather Layer** - NWS conditions/temp/precip, cached alerts, local sunrise/sunset via astral, weather degradation (completed 2026-05-28)
 - [x] **Phase 02.1: Nerd Font icon set (INSERTED)** - Nerd Font glyphs across four segments (weather conditions/alerts, sun events, thinking, rate-limit) behind a single icon_set toggle; emoji retained as fallback (completed 2026-05-29)
 - [x] **Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)** (completed 2026-05-29)
-- [ ] **Phase 03.1: Resolve default bar gradient vs shade test drift (INSERTED)** - Decide whether the default progress bar should render gradient or ▓ shade, then realign the two failing test_bottom_line.py tests with that decision
+- [x] **Phase 03.1: Resolve default bar gradient vs shade test drift (INSERTED)** - Decide whether the default progress bar should render gradient or ▓ shade, then realign the two failing test_bottom_line.py tests with that decision (completed 2026-05-29)
 - [x] **Phase 4: git info including active worktree** (completed 2026-05-29)
 - [x] **Phase 5: GSD status info especially the active Plan(s) being run** (completed 2026-05-29)
 
@@ -125,10 +125,10 @@ Plans:
 - `tests/test_bottom_line.py::TestBarStylePresets::test_default_no_config_shade_unchanged`
 **Requirements**: None mapped (CONTEXT-driven test-isolation fix; scope tracked against D-01..D-04).
 **Depends on:** Phase 3
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 03.1-01-PLAN.md — Isolate the two default-asserting tests from the user's live config (no-config HOME → DEFAULTS shade fallback) + audit/harden sibling full-run tests; production code unchanged (D-01,D-02,D-03,D-04)
+- [x] 03.1-01-PLAN.md — Isolate the two default-asserting tests from the user's live config (no-config HOME → DEFAULTS shade fallback) + audit/harden sibling full-run tests; production code unchanged (D-01,D-02,D-03,D-04)
 
 ### Phase 4: git info including active worktree
 
