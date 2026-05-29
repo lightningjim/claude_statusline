@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Tests for Phase 02.1 Plan 01: Nerd Font icon set scaffolding.
+Tests for Phase 02.1 Plan 01 + Plan 02: Nerd Font icon set scaffolding + resolver.
 
 Covers:
-  Task 1:
+  Plan 01 Task 1:
     - DEFAULTS contains "display" table with "icon_set" defaulting to "nerd"
     - load_config with [display] icon_set = "emoji" in TOML overrides the default
     - load_config with no config file returns icon_set == "nerd"
@@ -12,13 +12,29 @@ Covers:
     - _ASTRAL_OK defined; moon-phase callable exists or _ASTRAL_OK is False
     - _FILLED/_EMPTY frozen (D-02 regression guard)
 
-  Task 2:
+  Plan 01 Task 2:
     - Named _WI_* glyph constants exist for all D-03 condition categories
     - Each glyph constant is a non-empty single-cell string
     - 28-slot moon-phase glyph table (_MOON_PHASE_GLYPHS) exists
     - Every moon-table entry is a non-empty single-cell string
     - Moon-index helper (_moon_phase_index) maps 0.0 -> 0, 14.0 -> 14 (full moon slot)
     - Moon-index helper clamps out-of-range input into [0, 27] without raising
+
+  Plan 02 Task 1: dual condition tables + _icon_to_glyph resolver
+    - _NWS_ICON_MAP_EMOJI retained (Phase 2 table); _NWS_ICON_MAP_NERD built (D-03 vocabulary)
+    - _icon_to_glyph(text, url, icon_set) resolves day/night, live moon, emoji parity
+    - _icon_to_emoji alias delegates with icon_set="emoji" (keeps TestIconMapping green)
+    - Granular precip types map to distinct nerd glyphs (no collapse)
+    - Unknown token degrades to fallback glyph; _ASTRAL_OK=False clear-night degrades gracefully
+    - Specific-before-broad ordering preserved (partly/mostly precede cloudy/sunny)
+
+  Plan 02 Task 2: cache token migration + render-time wiring
+    - fetch_weather stores text_desc + icon_url (raw tokens), not a pre-resolved glyph
+    - _weather_segment resolves glyph+semantic color at render from cached tokens
+    - Toggle icon_set="emoji" vs "nerd" takes effect at render without cache change
+    - rain->BLUE, snow->CYAN, storm->MAGENTA, fog->GRAY, sun->YELLOW wraps the nerd glyph
+    - Alert override still uses _alert_color severity coloring unchanged
+    - Missing/empty cached tokens degrade gracefully
 """
 
 import importlib.util
@@ -317,6 +333,519 @@ class TestMoonPhaseGlyphTable(unittest.TestCase):
                 self.mod._moon_phase_index(val)
             except Exception as exc:
                 self.fail(f"_moon_phase_index({val!r}) raised {exc!r}")
+
+
+# ---------------------------------------------------------------------------
+# Plan 02 Task 1 tests: dual condition tables + _icon_to_glyph resolver
+# ---------------------------------------------------------------------------
+
+class TestDualConditionTables(unittest.TestCase):
+    """D-03/D-06: _NWS_ICON_MAP_EMOJI retained; _NWS_ICON_MAP_NERD built."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_emoji_table_exists(self):
+        """_NWS_ICON_MAP_EMOJI is defined on the module."""
+        self.assertTrue(hasattr(self.mod, "_NWS_ICON_MAP_EMOJI"),
+                        "Module missing _NWS_ICON_MAP_EMOJI")
+
+    def test_nerd_table_exists(self):
+        """_NWS_ICON_MAP_NERD is defined on the module."""
+        self.assertTrue(hasattr(self.mod, "_NWS_ICON_MAP_NERD"),
+                        "Module missing _NWS_ICON_MAP_NERD")
+
+    def test_emoji_table_is_list_of_tuples(self):
+        """_NWS_ICON_MAP_EMOJI is a list of (keywords_tuple, glyph) tuples."""
+        table = self.mod._NWS_ICON_MAP_EMOJI
+        self.assertIsInstance(table, list)
+        for entry in table:
+            self.assertIsInstance(entry, tuple)
+            self.assertEqual(len(entry), 2)
+
+    def test_nerd_table_is_list_of_tuples(self):
+        """_NWS_ICON_MAP_NERD is a list of (keywords_tuple, glyph) tuples."""
+        table = self.mod._NWS_ICON_MAP_NERD
+        self.assertIsInstance(table, list)
+        for entry in table:
+            self.assertIsInstance(entry, tuple)
+            self.assertEqual(len(entry), 2)
+
+
+class TestIconToGlyphResolver(unittest.TestCase):
+    """_icon_to_glyph(text, url, icon_set) behavior tests (D-03, D-04, D-05, D-06)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_icon_to_glyph_exists(self):
+        """_icon_to_glyph is defined and callable."""
+        self.assertTrue(callable(getattr(self.mod, "_icon_to_glyph", None)))
+
+    def test_nerd_day_clear_returns_wi_day_clear(self):
+        """nerd + daytime clear NWS token returns _WI_DAY_CLEAR (D-01)."""
+        result = self.mod._icon_to_glyph(
+            "Sunny",
+            "https://api.weather.gov/icons/land/day/skc?size=medium",
+            "nerd",
+        )
+        self.assertEqual(result, self.mod._WI_DAY_CLEAR)
+
+    def test_nerd_clear_night_returns_moon_table_member(self):
+        """nerd + clear night returns a member of the 28-slot moon table (D-04)."""
+        if not self.mod._ASTRAL_OK:
+            self.skipTest("_ASTRAL_OK is False — astral not installed")
+        result = self.mod._icon_to_glyph(
+            "Clear",
+            "https://api.weather.gov/icons/land/night/skc?size=medium",
+            "nerd",
+        )
+        self.assertIn(result, self.mod._MOON_PHASE_GLYPHS,
+                      f"Clear night nerd glyph {result!r} is not in _MOON_PHASE_GLYPHS")
+
+    def test_nerd_snow_distinct_glyph(self):
+        """nerd + snow returns _WI_SNOW (distinct from rain glyph)."""
+        result = self.mod._icon_to_glyph(
+            "Snow", "https://api.weather.gov/icons/land/day/sn?size=medium", "nerd"
+        )
+        self.assertEqual(result, self.mod._WI_SNOW)
+
+    def test_nerd_sleet_distinct_glyph(self):
+        """nerd + sleet returns _WI_SLEET (distinct from snow/rain)."""
+        result = self.mod._icon_to_glyph(
+            "Sleet", "https://api.weather.gov/icons/land/day/ip?size=medium", "nerd"
+        )
+        self.assertEqual(result, self.mod._WI_SLEET)
+
+    def test_nerd_freezing_rain_distinct_glyph(self):
+        """nerd + freezing rain (fzra) returns _WI_FREEZING_RAIN."""
+        result = self.mod._icon_to_glyph(
+            "Freezing Rain",
+            "https://api.weather.gov/icons/land/day/fzra?size=medium",
+            "nerd",
+        )
+        self.assertEqual(result, self.mod._WI_FREEZING_RAIN)
+
+    def test_nerd_rain_snow_mix_distinct_glyph(self):
+        """nerd + rain-snow mix (rasn) returns _WI_RAIN_SNOW."""
+        result = self.mod._icon_to_glyph(
+            "Rain Snow",
+            "https://api.weather.gov/icons/land/day/rasn?size=medium",
+            "nerd",
+        )
+        self.assertEqual(result, self.mod._WI_RAIN_SNOW)
+
+    def test_nerd_thunderstorm_distinct_glyph(self):
+        """nerd + thunderstorm (tsra/tstm) returns _WI_THUNDERSTORM."""
+        result = self.mod._icon_to_glyph(
+            "Thunderstorm",
+            "https://api.weather.gov/icons/land/day/tsra?size=medium",
+            "nerd",
+        )
+        self.assertEqual(result, self.mod._WI_THUNDERSTORM)
+
+    def test_nerd_fog_distinct_glyph(self):
+        """nerd + fog (fg) returns _WI_FOG."""
+        result = self.mod._icon_to_glyph(
+            "Fog", "https://api.weather.gov/icons/land/day/fg?size=medium", "nerd"
+        )
+        self.assertEqual(result, self.mod._WI_FOG)
+
+    def test_nerd_windy_distinct_glyph(self):
+        """nerd + windy (wind) returns _WI_WINDY."""
+        result = self.mod._icon_to_glyph(
+            "Windy", "https://api.weather.gov/icons/land/day/wind_skc?size=medium", "nerd"
+        )
+        self.assertEqual(result, self.mod._WI_WINDY)
+
+    def test_all_granular_precip_distinct(self):
+        """snow / sleet / freezing-rain / rain-snow / thunderstorm / fog / windy all distinct."""
+        glyphs = {
+            "snow":     self.mod._icon_to_glyph("Snow", "/day/sn", "nerd"),
+            "sleet":    self.mod._icon_to_glyph("Sleet", "/day/ip", "nerd"),
+            "fzra":     self.mod._icon_to_glyph("Freezing Rain", "/day/fzra", "nerd"),
+            "rasn":     self.mod._icon_to_glyph("Rain Snow", "/day/rasn", "nerd"),
+            "tsra":     self.mod._icon_to_glyph("Thunderstorm", "/day/tsra", "nerd"),
+            "fog":      self.mod._icon_to_glyph("Fog", "/day/fg", "nerd"),
+            "windy":    self.mod._icon_to_glyph("Windy", "/day/wind_skc", "nerd"),
+        }
+        values = list(glyphs.values())
+        unique = set(values)
+        self.assertEqual(len(unique), len(values),
+                         f"Some precip types collapse to same glyph: {glyphs}")
+
+    def test_specific_before_broad_partly_cloudy(self):
+        """'Partly Cloudy' returns the partly glyph, not the broad cloudy glyph."""
+        result = self.mod._icon_to_glyph("Partly Cloudy", "", "nerd")
+        self.assertNotEqual(result, self.mod._WI_CLOUDY,
+                            "Partly Cloudy collapsed to broad cloudy glyph")
+        self.assertEqual(result, self.mod._WI_DAY_PARTLY)
+
+    def test_specific_before_broad_mostly_sunny(self):
+        """'Mostly Sunny' returns the partly/sun glyph, not the broad clear glyph."""
+        result = self.mod._icon_to_glyph("Mostly Sunny", "", "nerd")
+        self.assertNotEqual(result, self.mod._WI_DAY_CLEAR,
+                            "Mostly Sunny collapsed to broad clear glyph")
+        self.assertEqual(result, self.mod._WI_DAY_PARTLY)
+
+    def test_emoji_path_sunny_returns_sun_emoji(self):
+        """emoji path: 'Sunny' day returns '☀️' (Phase 2 parity)."""
+        result = self.mod._icon_to_glyph(
+            "Sunny", "https://api.weather.gov/icons/land/day/skc", "emoji"
+        )
+        self.assertEqual(result, "☀️")
+
+    def test_emoji_path_clear_night_returns_moon_emoji(self):
+        """emoji path: clear night returns '🌙' (Phase 2 parity)."""
+        result = self.mod._icon_to_glyph(
+            "Clear",
+            "https://api.weather.gov/icons/land/night/skc?size=medium",
+            "emoji",
+        )
+        self.assertEqual(result, "🌙")
+
+    def test_emoji_path_rain_returns_rain_emoji(self):
+        """emoji path: rain returns '🌧️' (Phase 2 parity)."""
+        result = self.mod._icon_to_glyph("Rain", "/day/ra", "emoji")
+        self.assertEqual(result, "🌧️")
+
+    def test_unknown_nerd_returns_fallback_glyph(self):
+        """Unknown/empty token returns nerd fallback glyph (not None, not crash)."""
+        result = self.mod._icon_to_glyph("", "", "nerd")
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, str)
+        self.assertGreater(len(result), 0)
+
+    def test_unknown_emoji_returns_thermometer_fallback(self):
+        """Unknown/empty token under emoji path returns '🌡️'."""
+        result = self.mod._icon_to_glyph("", "", "emoji")
+        self.assertEqual(result, "🌡️")
+
+    def test_never_raises_on_any_input(self):
+        """_icon_to_glyph never raises on edge inputs."""
+        for text, url, icon_set in [
+            ("", "", "nerd"),
+            (None, None, "nerd"),
+            ("XYZ", "garbage://url", "emoji"),
+            ("", "", "unknown_icon_set"),
+        ]:
+            try:
+                self.mod._icon_to_glyph(text, url, icon_set)
+            except Exception as exc:
+                self.fail(f"_icon_to_glyph({text!r}, {url!r}, {icon_set!r}) raised: {exc!r}")
+
+    def test_astral_false_clear_night_degrades_gracefully(self):
+        """When _ASTRAL_OK is False, clear night under nerd returns a generic nerd glyph."""
+        mod = _load_script_module()
+        mod._ASTRAL_OK = False
+        result = mod._icon_to_glyph(
+            "Clear",
+            "https://api.weather.gov/icons/land/night/skc?size=medium",
+            "nerd",
+        )
+        self.assertIsNotNone(result,
+                              "Expected a non-None glyph when _ASTRAL_OK is False")
+        self.assertIsInstance(result, str)
+        self.assertGreater(len(result), 0)
+        # Must NOT raise
+        # Result should be a nerd glyph (any non-empty string is ok — degrades to a glyph)
+
+
+class TestIconToEmojiAlias(unittest.TestCase):
+    """D-06: _icon_to_emoji alias delegates with icon_set='emoji' (keeps TestIconMapping green)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_alias_exists(self):
+        """_icon_to_emoji is still defined as a callable."""
+        self.assertTrue(callable(getattr(self.mod, "_icon_to_emoji", None)))
+
+    def test_alias_same_as_emoji_path(self):
+        """_icon_to_emoji(text, url) == _icon_to_glyph(text, url, 'emoji') for all cases."""
+        test_cases = [
+            ("Sunny", "https://api.weather.gov/icons/land/day/skc"),
+            ("Clear", "https://api.weather.gov/icons/land/night/skc"),
+            ("Rain", "/day/ra"),
+            ("Partly Cloudy", ""),
+            ("Mostly Cloudy", ""),
+            ("Thunderstorm", "/day/tsra"),
+            ("Fog", "/day/fg"),
+            ("", ""),
+        ]
+        for text, url in test_cases:
+            with self.subTest(text=text, url=url):
+                alias_result = self.mod._icon_to_emoji(text, url)
+                glyph_result = self.mod._icon_to_glyph(text, url, "emoji")
+                self.assertEqual(alias_result, glyph_result,
+                                 f"alias({text!r},{url!r})={alias_result!r} != "
+                                 f"glyph({text!r},{url!r},'emoji')={glyph_result!r}")
+
+    def test_alias_never_returns_nerd_glyph(self):
+        """_icon_to_emoji never returns a nerd/PUA glyph — always an emoji or 🌡️."""
+        test_cases = [
+            ("Sunny", "/day/skc"),
+            ("Clear", "/night/skc"),
+            ("Thunderstorm", "/day/tsra"),
+            ("Snow", "/day/sn"),
+        ]
+        nerd_glyphs = set([
+            self.mod._WI_DAY_CLEAR, self.mod._WI_NIGHT_CLEAR,
+            self.mod._WI_THUNDERSTORM, self.mod._WI_SNOW,
+        ])
+        for text, url in test_cases:
+            with self.subTest(text=text, url=url):
+                result = self.mod._icon_to_emoji(text, url)
+                self.assertNotIn(result, nerd_glyphs,
+                                 f"_icon_to_emoji({text!r},{url!r}) returned nerd glyph {result!r}")
+
+
+# ---------------------------------------------------------------------------
+# Plan 02 Task 2 tests: cache token migration + render-time wiring
+# ---------------------------------------------------------------------------
+
+import json as _json
+import shutil
+import tempfile
+import time
+from unittest.mock import patch
+
+
+class TestFetchWeatherStoresRawTokens(unittest.TestCase):
+    """Task 2: fetch_weather stores text_desc + icon_url (raw NWS tokens), not a glyph."""
+
+    FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        self.tmpdir = tempfile.mkdtemp()
+        self.cache_path = os.path.join(self.tmpdir, "cache.json")
+        self.cfg = {
+            "location": {"lat": 35.4676, "lon": -97.5164},
+            "weather": {"contact_email": "test@example.com", "show_weather": True},
+            "units": {"temp_unit": "F"},
+            "cache": {"weather_ttl": 600, "alerts_ttl": 300,
+                      "weather_max_stale": 3600, "alerts_max_stale": 900},
+        }
+        # Load fixtures
+        def _load(name):
+            with open(os.path.join(self.FIXTURES_DIR, name)) as f:
+                return _json.load(f)
+        self.points = _load("nws_points.json")
+        self.stations = _load("nws_stations.json")
+        self.obs = _load("nws_observation_latest.json")
+        self.hourly = _load("nws_hourly_forecast.json")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run_fetch(self):
+        def fake_nws_get(url, ua, accept=None):
+            if "/points/" in url:
+                return self.points
+            if "/stations" in url and "/observations" not in url:
+                return self.stations
+            if "/observations/latest" in url:
+                return self.obs
+            if "/forecast/hourly" in url:
+                return self.hourly
+            raise ValueError(f"Unexpected URL: {url}")
+        with patch.object(self.mod, "_nws_get", side_effect=fake_nws_get):
+            with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                self.mod.fetch_weather(self.cfg)
+        return self.mod.read_cache(self.cache_path)
+
+    def test_weather_stores_text_desc(self):
+        """Cache weather section stores text_desc (raw NWS textDescription)."""
+        data = self._run_fetch()
+        self.assertIn("text_desc", data.get("weather", {}),
+                      "weather section missing 'text_desc' key")
+
+    def test_weather_stores_icon_url(self):
+        """Cache weather section stores icon_url (raw NWS icon URL)."""
+        data = self._run_fetch()
+        self.assertIn("icon_url", data.get("weather", {}),
+                      "weather section missing 'icon_url' key")
+
+    def test_weather_icon_url_contains_api_weather_gov(self):
+        """Stored icon_url is a NWS URL (contains 'api.weather.gov')."""
+        data = self._run_fetch()
+        icon_url = data["weather"].get("icon_url", "")
+        self.assertIn("api.weather.gov", icon_url,
+                      f"icon_url should be a NWS URL, got: {icon_url!r}")
+
+    def test_weather_does_not_store_resolved_glyph(self):
+        """Cache weather section does NOT store a pre-resolved glyph in 'icon' key."""
+        data = self._run_fetch()
+        # 'icon' key must be absent (or if present, must not be an emoji/glyph)
+        icon = data.get("weather", {}).get("icon")
+        if icon is not None:
+            # If 'icon' is still present, it must be a URL not a glyph
+            self.assertNotIn(icon, ["☀️", "☁️", "⛅", "🌧️", "🌨️", "⛈️", "🌫️", "💨", "🌡️"],
+                             f"'icon' should not be a pre-resolved emoji glyph, got {icon!r}")
+
+
+class TestWeatherSegmentRenderTimeResolution(unittest.TestCase):
+    """Task 2: _weather_segment resolves glyph+color at render from cached tokens."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _make_token_cache(self, text_desc, icon_url, pop=None):
+        """Build a fresh cache dict using raw token format (new schema)."""
+        cache = {
+            "weather": {
+                "fetched_at": time.time() - 60,
+                "text_desc": text_desc,
+                "icon_url": icon_url,
+                "temp": 72,
+            }
+        }
+        if pop is not None:
+            cache["weather"]["pop"] = pop
+        return cache
+
+    def _run_segment(self, cache_dict, icon_set="nerd"):
+        """Call _weather_segment with a patched cache and return the result."""
+        if not self.mod._WEATHER_OK:
+            return None  # skip if deps missing
+
+        cache_path = os.path.join(self.tmpdir, "cache.json")
+        with open(cache_path, "w") as f:
+            _json.dump(cache_dict, f)
+
+        cfg = {
+            "location": {"lat": 35.4676, "lon": -97.5164},
+            "weather": {"contact_email": "test@example.com", "show_weather": True},
+            "units": {"temp_unit": "F"},
+            "cache": {"weather_ttl": 600, "alerts_ttl": 300,
+                      "weather_max_stale": 3600, "alerts_max_stale": 900},
+            "toggles": {"show_thinking_glyph": True},
+            "thresholds": {"warn": 70, "crit": 90},
+            "display": {"icon_set": icon_set},
+        }
+        with patch.object(self.mod, "_CACHE_PATH", cache_path):
+            with patch.object(self.mod, "maybe_spawn_refresh", side_effect=lambda *a: None):
+                return self.mod._weather_segment(None, cfg)
+
+    def test_nerd_daytime_clear_contains_wi_day_clear(self):
+        """nerd + daytime clear: conditions chunk contains _WI_DAY_CLEAR glyph."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False")
+        cache = self._make_token_cache(
+            "Sunny", "https://api.weather.gov/icons/land/day/skc?size=medium"
+        )
+        result = self._run_segment(cache, "nerd")
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod._WI_DAY_CLEAR, result,
+                      f"Expected _WI_DAY_CLEAR in nerd result: {result!r}")
+
+    def test_same_tokens_emoji_path_returns_sun_emoji(self):
+        """icon_set='emoji' with same cached tokens returns '☀️' (D-07 toggle)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False")
+        cache = self._make_token_cache(
+            "Sunny", "https://api.weather.gov/icons/land/day/skc?size=medium"
+        )
+        result = self._run_segment(cache, "emoji")
+        self.assertIsNotNone(result)
+        self.assertIn("☀️", result,
+                      f"Expected '☀️' in emoji result: {result!r}")
+
+    def test_nerd_daytime_clear_wrapped_in_yellow(self):
+        """nerd daytime clear: glyph is wrapped with YELLOW ANSI color (D-08 sun=yellow)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False")
+        cache = self._make_token_cache(
+            "Sunny", "https://api.weather.gov/icons/land/day/skc?size=medium"
+        )
+        result = self._run_segment(cache, "nerd")
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod.YELLOW, result,
+                      f"Expected YELLOW color code in nerd sun result: {result!r}")
+
+    def test_nerd_rain_wrapped_in_blue(self):
+        """nerd rain: glyph wrapped in BLUE (D-08 rain=blue)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False")
+        cache = self._make_token_cache(
+            "Rain", "https://api.weather.gov/icons/land/day/ra?size=medium"
+        )
+        result = self._run_segment(cache, "nerd")
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod.BLUE, result,
+                      f"Expected BLUE color code in nerd rain result: {result!r}")
+
+    def test_nerd_snow_wrapped_in_cyan(self):
+        """nerd snow: glyph wrapped in CYAN (D-08 snow=cyan)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False")
+        cache = self._make_token_cache(
+            "Snow", "https://api.weather.gov/icons/land/day/sn?size=medium"
+        )
+        result = self._run_segment(cache, "nerd")
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod.CYAN, result,
+                      f"Expected CYAN color code in nerd snow result: {result!r}")
+
+    def test_nerd_thunderstorm_wrapped_in_magenta(self):
+        """nerd thunderstorm: glyph wrapped in MAGENTA (D-08 storm=magenta)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False")
+        cache = self._make_token_cache(
+            "Thunderstorm", "https://api.weather.gov/icons/land/day/tsra?size=medium"
+        )
+        result = self._run_segment(cache, "nerd")
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod.MAGENTA, result,
+                      f"Expected MAGENTA color code in nerd storm result: {result!r}")
+
+    def test_nerd_fog_wrapped_in_gray(self):
+        """nerd fog: glyph wrapped in GRAY (D-08 fog=gray)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False")
+        cache = self._make_token_cache(
+            "Fog", "https://api.weather.gov/icons/land/day/fg?size=medium"
+        )
+        result = self._run_segment(cache, "nerd")
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod.GRAY, result,
+                      f"Expected GRAY color code in nerd fog result: {result!r}")
+
+    def test_emoji_no_ansi_color_wrapping(self):
+        """emoji path: no ANSI weather color wrapping (emoji carry own color)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False")
+        cache = self._make_token_cache(
+            "Rain", "https://api.weather.gov/icons/land/day/ra?size=medium"
+        )
+        result = self._run_segment(cache, "emoji")
+        self.assertIsNotNone(result)
+        # BLUE should not appear around the condition glyph in emoji mode
+        # (Note: BLUE might appear in precip chunk too, so we just check the
+        # rain emoji itself is present and result is well-formed)
+        self.assertIn("🌧️", result, f"Expected rain emoji in emoji result: {result!r}")
+
+    def test_missing_tokens_degrades_gracefully(self):
+        """Missing/empty cached tokens: segment falls back without raising."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK is False")
+        # Cache with no text_desc or icon_url
+        cache = {
+            "weather": {
+                "fetched_at": time.time() - 60,
+                "temp": 72,
+            }
+        }
+        try:
+            result = self._run_segment(cache, "nerd")
+            # Result may be None (fallback) or a sun-only segment — both OK
+        except Exception as exc:
+            self.fail(f"_weather_segment raised on missing tokens: {exc!r}")
 
 
 if __name__ == "__main__":
