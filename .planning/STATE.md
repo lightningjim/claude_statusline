@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 2 complete (3/3) — ready to discuss Phase 03
-last_updated: 2026-05-28T23:31:45.423Z
-last_activity: 2026-05-28 -- Phase 2 Plan 2 executed (NWS cache + fetch + conditions render)
+status: planning
+stopped_at: Phase 02.1 context gathered
+last_updated: "2026-05-29T00:21:10.072Z"
+last_activity: 2026-05-28
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 2
   total_plans: 6
   completed_plans: 6
-  percent: 40
+  percent: 33
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Phase 03 — presets for the type of block fill for the progress bar incl
+**Current focus:** Phase 02.1 (INSERTED) — Nerd Font icon set across the statusline
 
 ## Current Position
 
-Phase: 03
+Phase: 02.1
 Plan: Not started
-Status: Ready to plan
+Status: Ready to plan (urgent insertion)
 Last activity: 2026-05-28
 
 Progress: [██████████] 100% (Phase 1) | [██████░░░░] 66% (Phase 2)
@@ -92,6 +92,7 @@ Recent decisions affecting current work:
 - Phase 3 added: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)
 - Phase 4 added: git info including active worktree
 - Phase 5 added: GSD status info especially the active Plan(s) being run
+- Phase 02.1 inserted after Phase 2: Nerd Font icon set — weather glyphs + other segment glyphs, pulled forward from v2 ENH-04 (URGENT)
 
 ### Pending Todos
 
@@ -111,6 +112,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-05-28T22:36:58.185Z
-Stopped at: Phase 2 wave 3 — plan 02-03 paused at meteorologist human-verify checkpoint (tasks 1-2 committed; awaiting live-NWS sign-off)
-Resume file: .planning/phases/02-weather-layer/02-03-PLAN.md
+Last session: 2026-05-29T00:21:10.062Z
+Stopped at: Phase 02.1 context gathered
+Resume file: .planning/phases/02.1-nerd-font-icon-set/02.1-CONTEXT.md
