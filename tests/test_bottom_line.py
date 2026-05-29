@@ -341,7 +341,10 @@ class TestBottomLineSynthetic(unittest.TestCase):
 
     def _run(self, data: dict) -> tuple[int, list[str]]:
         payload = json.dumps(data).encode()
-        result = run_script(payload)
+        # Use _NO_CONFIG_HOME so all assertions in this class run against the shipped
+        # DEFAULTS (bar_style="shade", icon_set="nerd") — not the developer's live config
+        # (D-04, T-03.1-01).  Structural and absence assertions pass regardless of bar_style.
+        result = run_script(payload, home=_NO_CONFIG_HOME)
         lines = result.stdout.decode().splitlines()
         return result.returncode, lines
 
