@@ -27,15 +27,18 @@ FIXTURE = os.path.join(
 # omitted, leaving exactly the Phase-1 top/bottom lines.
 _ISOLATED_HOME = tempfile.mkdtemp(prefix="gsd-statusline-test-home-")
 
-# Phase 04: a second isolated HOME that has a config with display.show_git=false,
-# so test_fixture_top_line_exact stays an exact-equality guard even after the git
-# segment was wired in (D-09).  The git segment is omitted when show_git=false,
-# so the asserted exact string [claude_statusline] [Opus 4.8 (1M context) ] stays valid.
+# Phase 04/05: a second isolated HOME that has a config with display.show_git=false
+# and display.show_gsd=false, so test_fixture_top_line_exact stays an exact-equality
+# guard even after the git (D-09) and gsd (D-10) segments were wired in.  Both
+# segments are omitted, so the asserted exact string
+# [claude_statusline] [Opus 4.8 (1M context) ] stays valid.
+# Phase 05 note: this repo has .planning/ — with show_gsd defaulting True a [gsd]
+# segment would render and break the exact-string assertion; show_gsd=false suppresses it.
 _NO_GIT_HOME = tempfile.mkdtemp(prefix="gsd-statusline-test-nogit-home-")
 _NO_GIT_CFG_DIR = os.path.join(_NO_GIT_HOME, ".claude", "claude-statusline")
 os.makedirs(_NO_GIT_CFG_DIR, exist_ok=True)
 with open(os.path.join(_NO_GIT_CFG_DIR, "claude-statusline.toml"), "w") as _fh:
-    _fh.write("[display]\nshow_git = false\n")
+    _fh.write("[display]\nshow_git = false\nshow_gsd = false\n")
 
 
 def run_script(stdin_bytes: bytes, home: str | None = None) -> subprocess.CompletedProcess:

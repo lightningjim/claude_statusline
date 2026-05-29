@@ -132,19 +132,21 @@ class TestRenderTopLineWeatherOmitted(unittest.TestCase):
         self.assertIn("Opus 4.8 (1M context)", top)
 
     def test_top_line_no_weather_equals_phase1_format(self):
-        """Top line with weather AND git omitted exactly matches [project] [model] format.
+        """Top line with weather, git, AND gsd omitted exactly matches [project] [model] format.
 
         Phase 04 update: the git segment (D-09) is now wired between project and model.
-        To keep this a "Phase-1 style" guard (exactly two segments), we also disable
-        show_git via cfg so only project and model remain.
+        Phase 05 update: the gsd segment (D-10) is now wired after git and before model.
+        This repo has .planning/, so with show_gsd defaulting True a [gsd] segment would
+        render and break the two-segment guard.  We disable both show_git and show_gsd
+        via cfg so only project and model remain.
         """
         orig_weather_ok = self.mod._WEATHER_OK
         try:
             self.mod._WEATHER_OK = False
             cfg = dict(self.cfg_no_weather)
             cfg["weather"] = {"show_weather": False}
-            # Phase 04: disable git segment so this remains a two-segment guard
-            cfg["display"] = {"show_git": False, "icon_set": "nerd", "bar_style": "shade"}
+            # Phase 04: disable git segment; Phase 05: also disable gsd segment
+            cfg["display"] = {"show_git": False, "show_gsd": False, "icon_set": "nerd", "bar_style": "shade"}
             top = self.mod.render_top_line(self.data, cfg)
             # Must not contain a third bracketed segment beyond project and model
             # The Phase-1 top line is exactly: "[project] [model ...]"
