@@ -118,14 +118,20 @@ Plans:
 
 ### Phase 4: git info including active worktree
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** A read-only git-info segment on the top line (immediately after the project name) surfaces the session repo's branch (or detached short-SHA), a single colored dirty marker, ahead/behind upstream, and — only when the session is inside a linked worktree — a worktree glyph + worktree-dir basename, all timeout-guarded so the bar never hangs and silently omitted on any non-repo/error (CONTEXT D-01..D-10).
+**Requirements**: None mapped (CONTEXT-driven enhancement; scope tracked against D-01..D-10. RUN-01/RUN-02 honored.)
 **Depends on:** Phase 3
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 4 to break down)
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — Git helper layer: `_run_git` (timeout-guarded, never-raises subprocess), `_parse_git_status_v2` (pure porcelain-v2 parser), `_detect_linked_worktree` (realpath divergence) + unit/integration tests (D-01,D-02,D-03,D-04,D-05,D-06,D-07)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04-02-PLAN.md — `_git_segment` builder + `display.show_git` default + nerd/emoji git glyphs (cmap-guarded) + wiring into `render_top_line` between project and model, neutral branch / colored state (D-01,D-02,D-03,D-04,D-08,D-09,D-10)
 
 ### Phase 5: GSD status info especially the active Plan(s) being run
 
@@ -149,5 +155,5 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5
 | 2. Weather Layer | 3/3 | Complete   | 2026-05-29 |
 | 02.1. Nerd Font icon set | 3/3 | Complete    | 2026-05-29 |
 | 3. Presets for block fill | 2/2 | Complete   | 2026-05-29 |
-| 4. git info incl. active worktree | 0/TBD | Not started | - |
+| 4. git info incl. active worktree | 0/2 | Planned | - |
 | 5. GSD status info | 0/TBD | Not started | - |
