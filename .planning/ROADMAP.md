@@ -15,6 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Statusline** - Colored two-line bar from stdin — project, model+thinking, context bar, rate limits with reset times, TOML config, graceful degradation — DONE 2026-05-28
 - [x] **Phase 2: Weather Layer** - NWS conditions/temp/precip, cached alerts, local sunrise/sunset via astral, weather degradation (completed 2026-05-28)
+- [ ] **Phase 02.1: Nerd Font icon set (INSERTED)** - Nerd Font glyphs across four segments (weather conditions/alerts, sun events, thinking, rate-limit) behind a single icon_set toggle; emoji retained as fallback
 - [ ] **Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)**
 - [ ] **Phase 4: git info including active worktree**
 - [ ] **Phase 5: GSD status info especially the active Plan(s) being run**
@@ -78,6 +79,27 @@ Plans:
 
 - [x] 02-03-PLAN.md — Active-alert override: references-chain dedup, severity color, highest-severity +N, sun fallback (WX-04)
 
+### Phase 02.1: Nerd Font icon set (INSERTED)
+
+**Goal:** Adopt Nerd Font glyphs across the statusline now that JetBrains + DejaVu Nerd Fonts are installed — starting with weather conditions/alerts (supersedes the emoji set from Phase 2) and extending to the other segment glyphs (model/thinking indicator, context, rate-limit, sun events) where a Nerd Font glyph reads better than the current emoji/ASCII.
+**Requirements**: ENH-04 (pulled forward from REQUIREMENTS.md v2)
+**Depends on:** Phase 2
+**Plans:** 3 plans
+
+Plans:
+
+**Wave 1**
+
+- [ ] 02.1-01-PLAN.md — Scaffolding: `icon_set` config toggle (default nerd), semantic weather color constants + `_wx_color`, `astral.moon.phase` import, `wi-*`/PUA glyph constants + 28-slot moon table (ENH-04)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02.1-02-PLAN.md — Weather conditions/alerts: dual emoji/nerd condition tables, `_icon_to_glyph` render-time resolver (day/night + live moon + semantic color), cache stores raw NWS tokens; alert coloring preserved (ENH-04)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02.1-03-PLAN.md — Sun/thinking/rate glyph swaps under the single `icon_set` switch + propagation, then a blocking human-verify checkpoint in a real Nerd Font terminal (ENH-04)
+
 ### Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)
 
 **Goal:** [To be planned]
@@ -111,12 +133,13 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
+Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
 | 2. Weather Layer | 3/3 | Complete    | 2026-05-28 |
+| 02.1. Nerd Font icon set | 0/3 | Planned | - |
 | 3. Presets for block fill | 0/TBD | Not started | - |
 | 4. git info incl. active worktree | 0/TBD | Not started | - |
 | 5. GSD status info | 0/TBD | Not started | - |
