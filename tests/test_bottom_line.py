@@ -513,5 +513,123 @@ class TestBarStylePresets(unittest.TestCase):
                 os.rename(backup_path, real_config)
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 Plan 02: gradient preset tests (D-02, D-04, D-07)
+# ---------------------------------------------------------------------------
+
+class TestGradientPreset(unittest.TestCase):
+    """gradient bar_style: eighth-block sub-cell rendering, blank empty track, edge cases."""
+
+    # Reuse the module-level import so we can call _context_segment directly (faster
+    # than subprocess; avoids TOML config harness for these unit-level assertions).
+    _mod = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls._mod = _load_script_module()
+
+    def _segment(self, pct: int | float) -> str:
+        """Return the raw (ANSI-coded) output of _context_segment at the given pct."""
+        return self._mod._context_segment(
+            {"context_window": {"used_percentage": pct}},
+            bar_style="gradient",
+        )
+
+    def _bar(self, pct: int | float) -> str:
+        """Return the ANSI-stripped 20-char bar content between '[' and ']'."""
+        import re
+        seg = self._segment(pct)
+        stripped = re.sub(r'\x1b\[[0-9;]*m', '', seg)
+        bar_start = stripped.index("[") + 1
+        bar_end = stripped.index("]")
+        return stripped[bar_start:bar_end]
+
+    # ---- edge cases -------------------------------------------------------
+
+    def test_gradient_0pct_all_blank(self):
+        """D-02/D-04: gradient at 0% → 20 spaces, no █, no partial-block glyph."""
+        bar = self._bar(0)
+        self.assertEqual(len(bar), 20, f"Bar must be 20 cells wide, got {len(bar)}: {bar!r}")
+        self.assertEqual(bar, " " * 20, f"0% gradient bar must be all spaces: {bar!r}")
+        self.assertNotIn("█", bar, "0% gradient bar must contain no full-block cell")
+        for g in "▏▎▍▌▋▊▉":
+            self.assertNotIn(g, bar, f"0% gradient bar must contain no partial glyph {g!r}")
+
+    def test_gradient_100pct_all_full_block(self):
+        """D-02/D-04: gradient at 100% → 20 × █, no partial glyph, no blank."""
+        bar = self._bar(100)
+        self.assertEqual(len(bar), 20, f"Bar must be 20 cells wide, got {len(bar)}: {bar!r}")
+        self.assertEqual(bar, "█" * 20, f"100% gradient bar must be all █: {bar!r}")
+        for g in "▏▎▍▌▋▊▉":
+            self.assertNotIn(g, bar, f"100% gradient bar must contain no partial glyph {g!r}")
+        self.assertNotIn(" ", bar, "100% gradient bar must contain no blank cell")
+
+    # ---- fractional mid-value ---------------------------------------------
+
+    def test_gradient_37pct_partial_glyph_and_count(self):
+        """D-02: gradient at 37% → correct █ count, exactly one '▍' boundary glyph, rest spaces.
+
+        Math: total_eighths = round(37/100 * 20 * 8) = round(59.2) = 59
+              full_cells = 59 // 8 = 7
+              remainder  = 59 % 8  = 3
+              boundary   = _GRADIENT_PARTIAL[2] = '▍'
+              blank_count = 20 - 7 - 1 = 12
+        """
+        _BAR_WIDTH = self._mod._BAR_WIDTH   # 20
+        pct = 37
+        total_eighths = round(pct / 100 * _BAR_WIDTH * 8)
+        full_cells = total_eighths // 8
+        remainder  = total_eighths % 8
+        expected_glyph = self._mod._GRADIENT_PARTIAL[remainder - 1]
+
+        bar = self._bar(pct)
+        self.assertEqual(len(bar), 20, f"Bar must be 20 cells wide, got {len(bar)}: {bar!r}")
+        self.assertEqual(bar.count("█"), full_cells,
+                         f"Expected {full_cells} full cells at {pct}%, got bar: {bar!r}")
+        # Exactly one boundary glyph and it is the expected one.
+        partial_glyphs_in_bar = [c for c in bar if c in "▏▎▍▌▋▊▉"]
+        self.assertEqual(len(partial_glyphs_in_bar), 1,
+                         f"Expected exactly one partial glyph, got {partial_glyphs_in_bar!r} in {bar!r}")
+        self.assertEqual(partial_glyphs_in_bar[0], expected_glyph,
+                         f"Expected boundary glyph {expected_glyph!r}, got {partial_glyphs_in_bar[0]!r}")
+        # The rest of the bar should be blank spaces.
+        blank_count = _BAR_WIDTH - full_cells - 1
+        self.assertEqual(bar.count(" "), blank_count,
+                         f"Expected {blank_count} blank cells, got {bar.count(' ')}: {bar!r}")
+        # Confirm the expected glyph is '▍' (self-documenting check for this specific pct).
+        self.assertEqual(expected_glyph, "▍",
+                         f"At 37%, expected boundary glyph '▍' (3/8), got {expected_glyph!r}")
+
+    # ---- D-07: blank track has no gray coloring ---------------------------
+
+    def test_gradient_blank_track_uncolored(self):
+        """D-07: gradient empty track is blank space — no GRAY (\\033[90m) escape wraps blanks.
+
+        Because the track is blank space there is nothing to color; D-06's gray rule is
+        moot for gradient and the blank run must not be preceded by the GRAY escape.
+        Verified by checking the raw (ANSI-coded) output: GRAY must not appear when the
+        bar is mostly empty (0% → all blank, so any gray would be purely from the blank track).
+        """
+        raw = self._segment(0)  # 0% → entire bar is blank track
+        self.assertNotIn("\033[90m", raw,
+                         "Gradient blank track must not be wrapped in GRAY (D-07); "
+                         "raw segment: " + repr(raw))
+
+    # ---- regression: default shade unaffected (D-04) ----------------------
+
+    def test_default_shade_regression_at_7pct(self):
+        """D-04/D-09: shade preset still renders 1 ▓ + 19 ░ at 7% (gradient-only sub-cell; shade unchanged)."""
+        mod = self._mod
+        import re
+        seg = mod._context_segment({"context_window": {"used_percentage": 7}}, bar_style="shade")
+        stripped = re.sub(r'\x1b\[[0-9;]*m', '', seg)
+        bar_start = stripped.index("[") + 1
+        bar_end = stripped.index("]")
+        bar = stripped[bar_start:bar_end]
+        self.assertEqual(len(bar), 20, f"Shade bar must be 20 cells wide: {bar!r}")
+        self.assertEqual(bar.count("▓"), 1, f"Shade at 7%: expected 1 ▓, got bar: {bar!r}")
+        self.assertEqual(bar.count("░"), 19, f"Shade at 7%: expected 19 ░, got bar: {bar!r}")
+
+
 if __name__ == "__main__":
     unittest.main()
