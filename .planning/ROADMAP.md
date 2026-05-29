@@ -123,12 +123,12 @@ Plans:
 **Affected tests:**
 - `tests/test_bottom_line.py::TestBottomLineFixture::test_bottom_line_bar_fill_cells`
 - `tests/test_bottom_line.py::TestBarStylePresets::test_default_no_config_shade_unchanged`
-**Requirements**: TBD
+**Requirements**: None mapped (CONTEXT-driven test-isolation fix; scope tracked against D-01..D-04).
 **Depends on:** Phase 3
-**Plans:** 0 plans
+**Plans:** 1 plan
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 03.1 to break down)
+- [ ] 03.1-01-PLAN.md — Isolate the two default-asserting tests from the user's live config (no-config HOME → DEFAULTS shade fallback) + audit/harden sibling full-run tests; production code unchanged (D-01,D-02,D-03,D-04)
 
 ### Phase 4: git info including active worktree
 
