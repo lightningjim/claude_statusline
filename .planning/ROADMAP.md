@@ -84,13 +84,13 @@ Plans:
 **Goal:** Adopt Nerd Font glyphs across the statusline now that JetBrains + DejaVu Nerd Fonts are installed — starting with weather conditions/alerts (supersedes the emoji set from Phase 2) and extending to the other segment glyphs (model/thinking indicator, context, rate-limit, sun events) where a Nerd Font glyph reads better than the current emoji/ASCII.
 **Requirements**: ENH-04 (pulled forward from REQUIREMENTS.md v2)
 **Depends on:** Phase 2
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 02.1-01-PLAN.md — Scaffolding: `icon_set` config toggle (default nerd), semantic weather color constants + `_wx_color`, `astral.moon.phase` import, `wi-*`/PUA glyph constants + 28-slot moon table (ENH-04)
+- [x] 02.1-01-PLAN.md — Scaffolding: `icon_set` config toggle (default nerd), semantic weather color constants + `_wx_color`, `astral.moon.phase` import, `wi-*`/PUA glyph constants + 28-slot moon table (ENH-04)
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -139,7 +139,7 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
 | 2. Weather Layer | 3/3 | Complete    | 2026-05-28 |
-| 02.1. Nerd Font icon set | 0/3 | Planned | - |
+| 02.1. Nerd Font icon set | 1/3 | In Progress|  |
 | 3. Presets for block fill | 0/TBD | Not started | - |
 | 4. git info incl. active worktree | 0/TBD | Not started | - |
 | 5. GSD status info | 0/TBD | Not started | - |
