@@ -1314,6 +1314,13 @@ class TestAllNerdGlyphConstantsInInstalledFont(unittest.TestCase):
         "_NF_GIT_DIRTY",
         "_NF_GIT_AHEAD",
         "_NF_GIT_BEHIND",
+        # Phase 05 GSD segment lifecycle / plan glyphs (Plan 02)
+        "_NF_GSD_EXECUTING",
+        "_NF_GSD_VERIFYING",
+        "_NF_GSD_BLOCKED",
+        "_NF_GSD_DONE",
+        "_NF_GSD_IDLE",
+        "_NF_GSD_PLAN",
     ]
 
     def setUp(self):

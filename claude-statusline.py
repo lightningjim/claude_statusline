@@ -170,6 +170,10 @@ DEFAULTS: dict = {
         # True (default) renders the git segment on the top line when in a git repo.
         # Set to false in [display] to suppress the segment (e.g. in test configs).
         "show_git": True,
+        # Phase 05: GSD segment toggle (D-08 discretion: display.show_gsd).
+        # True (default) renders the GSD segment when .planning/ exists under project_dir.
+        # Set to false in [display] to suppress the segment (e.g. in test configs).
+        "show_gsd": True,
     },
 }
 
@@ -421,6 +425,32 @@ _NF_GIT_AHEAD    = ""   # nf-fa-arrow_up      U+F062
 
 # Behind-upstream marker (arrow down — "you are behind")
 _NF_GIT_BEHIND   = ""   # nf-fa-arrow_down    U+F063
+
+# ---------------------------------------------------------------------------
+# GSD segment glyphs — Phase 05 lifecycle / plan indicators
+#
+# Codepoints validated against the installed JetBrains Nerd Font cmap
+# (test_nerd_icons.py installed-font cmap guard).
+# ---------------------------------------------------------------------------
+
+# Executing glyph (play button — actively running a plan right now)
+_NF_GSD_EXECUTING = ""   # nf-fa-play          U+F04B  (green: actively running)
+
+# Verifying glyph (checkbox square — verification step in progress)
+_NF_GSD_VERIFYING = ""   # nf-fa-check_square  U+F046  (yellow: verification step)
+
+# Blocked glyph (ban circle — blocked, cannot proceed)
+_NF_GSD_BLOCKED   = ""   # nf-fa-ban           U+F05E  (red: blocked)
+
+# Done glyph (check circle — milestone fully complete)
+_NF_GSD_DONE      = ""   # nf-fa-check_circle  U+F058  (green: milestone complete)
+
+# Idle glyph (pause button — parked / next-up, not actively executing)
+_NF_GSD_IDLE      = ""   # nf-fa-pause         U+F04C  (dim: parked / next-up)
+
+# Plan slot glyph (map — the plan/roadmap label icon)
+_NF_GSD_PLAN      = ""   # nf-fa-map           U+F278  (neutral: plan slot label)
+
 
 
 # ---------------------------------------------------------------------------
