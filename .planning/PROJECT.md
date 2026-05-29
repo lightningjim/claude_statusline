@@ -89,6 +89,8 @@ At a glance, the bottom of the terminal tells the truth about the current sessio
 | Color bands green<70 / yellow 70–90 / red>90 | Matches the bash predecessor's `perc_color` | — Pending |
 | Nerd Font icon set with `icon_set` toggle (default nerd, emoji fallback) | Installed Nerd Fonts unlock granular day/night + live moon-phase glyphs with semantic color; cmap-guarded | ✅ Phase 02.1 |
 | Context-bar fill presets via `display.bar_style` (shade default / solid / solid-dim / gradient) | Selectable fill styles incl. a sub-cell eighth-block gradient; filled=threshold color, empty=dim gray; independent of `icon_set`; unknown values degrade to shade | ✅ Phase 3 |
+| Read-only git segment via `display.show_git` (branch/dirty/ahead-behind + linked-worktree marker) | Timeout-guarded, runs every render (no cache), neutral label + colored state, scoped to `current_dir`; omits silently off-repo | ✅ Phase 4 |
+| Read-only GSD-status segment via `display.show_gsd` (active plan + task progress + lifecycle glyph) | Reads `.planning/` under `project_dir`; HANDOFF-first/roadmap-fallback with staleness window; milestone-complete confirmed from STATE `progress` (not a fall-through); untrusted labels sanitized; never blocks/crashes; omits silently off-GSD | ✅ Phase 5 |
 
 ## Evolution
 
@@ -108,4 +110,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-29 after Phase 3 (block-fill presets) completion*
+*Last updated: 2026-05-29 after Phase 5 (GSD-status segment) completion*
