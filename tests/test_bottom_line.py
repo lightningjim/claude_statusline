@@ -406,5 +406,112 @@ class TestBottomLineSynthetic(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr.decode())
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 Plan 01: bar_style preset tests (D-01, D-06, D-09, RUN-02)
+# ---------------------------------------------------------------------------
+
+class TestBarStylePresets(unittest.TestCase):
+    """bar_style config key selects glyph pairs; per-cell coloring; default = shade."""
+
+    def _run_with_toml(self, toml_bytes: bytes) -> tuple[int, list[str], str]:
+        """Write temp TOML config, run fixture, return (rc, lines, stderr)."""
+        config_dir = os.path.expanduser("~/.claude/claude-statusline")
+        real_config = os.path.join(config_dir, "claude-statusline.toml")
+        backup_path = real_config + ".barstyle_testbak"
+        os.makedirs(config_dir, exist_ok=True)
+        had_real = os.path.exists(real_config)
+        if had_real:
+            os.rename(real_config, backup_path)
+        with open(real_config, "wb") as f:
+            f.write(toml_bytes)
+        try:
+            with open(FIXTURE, "rb") as f:
+                fixture_bytes = f.read()
+            result = run_script(fixture_bytes)
+            lines = result.stdout.decode().splitlines()
+            return result.returncode, lines, result.stderr.decode()
+        finally:
+            os.unlink(real_config)
+            if had_real:
+                os.rename(backup_path, real_config)
+
+    def _extract_bar(self, bottom_raw: str) -> str:
+        """Return the stripped 20-char bar content between '[' and ']'."""
+        import re
+        stripped = re.sub(r'\x1b\[[0-9;]*m', '', bottom_raw)
+        bar_start = stripped.index("[") + 1
+        bar_end = stripped.index("]")
+        return stripped[bar_start:bar_end]
+
+    def test_default_no_config_shade_unchanged(self):
+        """D-09: with no bar_style config, bar still renders 1 ▓ + 19 ░ at 7% (shade default)."""
+        with open(FIXTURE, "rb") as f:
+            fixture_bytes = f.read()
+        result = run_script(fixture_bytes)
+        self.assertEqual(result.returncode, 0)
+        bottom = result.stdout.decode().splitlines()[1]
+        bar = self._extract_bar(bottom)
+        self.assertEqual(len(bar), 20)
+        self.assertEqual(bar.count("▓"), 1)
+        self.assertEqual(bar.count("░"), 19)
+
+    def test_solid_preset_uses_full_block_filled(self):
+        """bar_style=solid: filled cells use '█', empty cells use '░' (D-01)."""
+        toml = b"[display]\nbar_style = \"solid\"\n"
+        rc, lines, stderr = self._run_with_toml(toml)
+        self.assertEqual(rc, 0)
+        bottom = lines[1] if len(lines) > 1 else ""
+        bar = self._extract_bar(bottom)
+        self.assertEqual(len(bar), 20)
+        # At 7%: 1 filled block + 19 empty
+        self.assertEqual(bar.count("█"), 1, f"Expected 1 full block, bar={bar!r}")
+        self.assertEqual(bar.count("░"), 19, f"Expected 19 empty, bar={bar!r}")
+        self.assertNotIn("▓", bar, "solid preset must not use shade glyph")
+
+    def test_solid_dim_preset_uses_medium_shade_empty(self):
+        """bar_style=solid-dim: filled cells use '█', empty cells use '▒' (D-01)."""
+        toml = b"[display]\nbar_style = \"solid-dim\"\n"
+        rc, lines, stderr = self._run_with_toml(toml)
+        self.assertEqual(rc, 0)
+        bottom = lines[1] if len(lines) > 1 else ""
+        bar = self._extract_bar(bottom)
+        self.assertEqual(len(bar), 20)
+        self.assertEqual(bar.count("█"), 1, f"Expected 1 full block, bar={bar!r}")
+        self.assertEqual(bar.count("▒"), 19, f"Expected 19 medium-shade, bar={bar!r}")
+        self.assertNotIn("▓", bar, "solid-dim preset must not use shade glyph")
+        self.assertNotIn("░", bar, "solid-dim preset must not use light-shade glyph")
+
+    def test_per_cell_gray_color_present_for_solid_preset(self):
+        """D-06: raw (un-stripped) bottom line contains GRAY escape \\033[90m for empty cells."""
+        toml = b"[display]\nbar_style = \"solid\"\n"
+        rc, lines, stderr = self._run_with_toml(toml)
+        self.assertEqual(rc, 0)
+        bottom_raw = lines[1] if len(lines) > 1 else ""
+        # The raw line from splitlines() still has ANSI codes. However, if the line
+        # went through encoding, we need the raw bytes. Run subprocess and inspect directly.
+        with open(FIXTURE, "rb") as f:
+            fixture_bytes = f.read()
+        config_dir = os.path.expanduser("~/.claude/claude-statusline")
+        real_config = os.path.join(config_dir, "claude-statusline.toml")
+        backup_path = real_config + ".gray_testbak"
+        had_real = os.path.exists(real_config)
+        os.makedirs(config_dir, exist_ok=True)
+        if had_real:
+            os.rename(real_config, backup_path)
+        with open(real_config, "wb") as f:
+            f.write(toml)
+        try:
+            result = run_script(fixture_bytes)
+            raw_output = result.stdout.decode()
+            bottom_line = raw_output.splitlines()[1]
+            # GRAY = "\033[90m" — must appear in the empty-cell portion
+            self.assertIn("\033[90m", bottom_line,
+                          "GRAY escape (\\033[90m) must appear in bottom line for empty cells (D-06)")
+        finally:
+            os.unlink(real_config)
+            if had_real:
+                os.rename(backup_path, real_config)
+
+
 if __name__ == "__main__":
     unittest.main()

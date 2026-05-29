@@ -374,6 +374,23 @@ class TestPerSegmentToggles(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(len(lines), 2, f"Expected 2 lines, got {lines}")
 
+    def test_unknown_bar_style_falls_back_to_shade(self):
+        """RUN-02: unknown bar_style falls back to shade (1 ▓ + 19 ░), exits 0."""
+        import re
+        toml = b"[display]\nbar_style = \"diagonal\"\n"
+        rc, lines, stderr = self._run_with_toml(toml)
+        self.assertEqual(rc, 0, f"Expected exit 0, got rc={rc} stderr={stderr}")
+        bottom = lines[1] if len(lines) > 1 else ""
+        stripped = re.sub(r'\x1b\[[0-9;]*m', '', bottom)
+        # Extract bar between '[' and first ']'
+        bar_start = stripped.index("[") + 1
+        bar_end = stripped.index("]")
+        bar = stripped[bar_start:bar_end]
+        self.assertEqual(len(bar), 20, f"Bar should be 20 chars, got {bar!r}")
+        self.assertEqual(bar.count("▓"), 1, f"Expected 1 shade filled, got bar={bar!r}")
+        self.assertEqual(bar.count("░"), 19, f"Expected 19 shade empty, got bar={bar!r}")
+        self.assertNotIn("Traceback", stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

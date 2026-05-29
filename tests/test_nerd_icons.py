@@ -183,19 +183,53 @@ class TestAstralMoonImport(unittest.TestCase):
             pass
 
 
-class TestFrozenBarChars(unittest.TestCase):
-    """D-02: _FILLED/_EMPTY bar characters must not be changed."""
+class TestBarPresets(unittest.TestCase):
+    """Phase 3: _BAR_PRESETS table replaces the old _FILLED/_EMPTY constants (D-01, D-03)."""
 
     def setUp(self):
         self.mod = _load_script_module()
 
-    def test_filled_is_frozen(self):
-        """_FILLED == '▓' (Phase 3 territory — D-02)."""
-        self.assertEqual(self.mod._FILLED, "▓")
+    def _get_preset(self, style: str) -> tuple[str, str]:
+        """Return (filled_glyph, empty_glyph) for a given style via the preset resolver."""
+        table = self.mod._BAR_PRESETS
+        pair = table.get(style, table["shade"])
+        return pair
 
-    def test_empty_is_frozen(self):
-        """_EMPTY == '░' (Phase 3 territory — D-02)."""
-        self.assertEqual(self.mod._EMPTY, "░")
+    def test_preset_table_exists(self):
+        """_BAR_PRESETS dict exists on the module."""
+        self.assertTrue(hasattr(self.mod, "_BAR_PRESETS"))
+        self.assertIsInstance(self.mod._BAR_PRESETS, dict)
+
+    def test_preset_keys_closed_at_four(self):
+        """Preset table contains exactly the four D-03 keys (shade, solid, solid-dim, gradient)."""
+        self.assertEqual(
+            set(self.mod._BAR_PRESETS.keys()),
+            {"shade", "solid", "solid-dim", "gradient"},
+        )
+
+    def test_shade_glyphs(self):
+        """shade preset → filled='▓', empty='░'."""
+        filled, empty = self._get_preset("shade")
+        self.assertEqual(filled, "▓")
+        self.assertEqual(empty, "░")
+
+    def test_solid_glyphs(self):
+        """solid preset → filled='█', empty='░'."""
+        filled, empty = self._get_preset("solid")
+        self.assertEqual(filled, "█")
+        self.assertEqual(empty, "░")
+
+    def test_solid_dim_glyphs(self):
+        """solid-dim preset → filled='█', empty='▒'."""
+        filled, empty = self._get_preset("solid-dim")
+        self.assertEqual(filled, "█")
+        self.assertEqual(empty, "▒")
+
+    def test_unknown_style_falls_back_to_shade(self):
+        """An unknown bar_style key falls back to the shade pair without KeyError (RUN-02)."""
+        filled, empty = self._get_preset("diagonal")
+        self.assertEqual(filled, "▓")
+        self.assertEqual(empty, "░")
 
 
 # ---------------------------------------------------------------------------
