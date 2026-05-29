@@ -336,19 +336,19 @@ _WI_CLOUDY           = ""   # wi-cloudy              U+E312
 _WI_RAIN             = ""   # wi-rain                U+E318
 _WI_RAIN_SHOWERS     = ""   # wi-showers             U+E319
 _WI_SNOW             = ""   # wi-snow                U+E31A
-_WI_SLEET            = ""   # wi-sleet               U+E3AC
-_WI_FREEZING_RAIN    = ""   # wi-rain-mix            U+E311
-_WI_RAIN_SNOW        = ""   # wi-rain-mix (rain-snow U+E311 — same glyph)
+_WI_SLEET            = ""   # wi-sleet               U+E3AD
+_WI_FREEZING_RAIN    = ""   # wi-rain-mix            U+E316
+_WI_RAIN_SNOW        = ""   # wi-rain-mix (rain-snow U+E316 — same glyph)
 
 # --- Severe / thunderstorm ---
 _WI_THUNDERSTORM      = ""  # wi-thunderstorm        U+E31D
-_WI_THUNDERSTORM_RAIN = ""  # wi-storm-showers       U+E31E
+_WI_THUNDERSTORM_RAIN = ""  # wi-storm-showers       U+E31C
 
 # --- Low visibility ---
 _WI_FOG              = ""   # wi-fog                 U+E313
 
 # --- Wind ---
-_WI_WINDY            = ""   # wi-windy               U+E3BC  (nf-weather-windy)
+_WI_WINDY            = ""   # wi-windy               U+E31E
 
 # --- Sun events (used by _sun_segment in Plan 03) ---
 _WI_SUNRISE          = ""   # wi-sunrise             U+E34C
@@ -375,34 +375,34 @@ _WI_FALLBACK         = ""   # wi-thermometer         U+E33D
 # ---------------------------------------------------------------------------
 
 _MOON_PHASE_GLYPHS: list[str] = [
-    "",   # 0  wi-moon-new                U+E380
-    "",   # 1  wi-moon-waxing-crescent-1  U+E381
-    "",   # 2  wi-moon-waxing-crescent-2  U+E382
-    "",   # 3  wi-moon-waxing-crescent-3  U+E383
-    "",   # 4  wi-moon-waxing-crescent-4  U+E384
-    "",   # 5  wi-moon-waxing-crescent-5  U+E385
-    "",   # 6  wi-moon-waxing-crescent-6  U+E386
-    "",   # 7  wi-moon-first-quarter      U+E387
-    "",   # 8  wi-moon-waxing-gibbous-1   U+E388
-    "",   # 9  wi-moon-waxing-gibbous-2   U+E389
-    "",   # 10 wi-moon-waxing-gibbous-3   U+E38A
-    "",   # 11 wi-moon-waxing-gibbous-4   U+E38B
-    "",   # 12 wi-moon-waxing-gibbous-5   U+E38C
-    "",   # 13 wi-moon-waxing-gibbous-6   U+E38D
-    "",   # 14 wi-moon-full               U+E38E
-    "",   # 15 wi-moon-waning-gibbous-1   U+E38F
-    "",   # 16 wi-moon-waning-gibbous-2   U+E390
-    "",   # 17 wi-moon-waning-gibbous-3   U+E391
-    "",   # 18 wi-moon-waning-gibbous-4   U+E392
-    "",   # 19 wi-moon-waning-gibbous-5   U+E393
-    "",   # 20 wi-moon-waning-gibbous-6   U+E394
-    "",   # 21 wi-moon-third-quarter      U+E395
-    "",   # 22 wi-moon-waning-crescent-1  U+E396
-    "",   # 23 wi-moon-waning-crescent-2  U+E397
-    "",   # 24 wi-moon-waning-crescent-3  U+E398
-    "",   # 25 wi-moon-waning-crescent-4  U+E399
-    "",   # 26 wi-moon-waning-crescent-5  U+E39A
-    "",   # 27 wi-moon-waning-crescent-6  U+E39B
+    "",   # 0  wi-moon-new                U+E38D
+    "",   # 1  wi-moon-waxing-crescent-1  U+E38E
+    "",   # 2  wi-moon-waxing-crescent-2  U+E38F
+    "",   # 3  wi-moon-waxing-crescent-3  U+E390
+    "",   # 4  wi-moon-waxing-crescent-4  U+E391
+    "",   # 5  wi-moon-waxing-crescent-5  U+E392
+    "",   # 6  wi-moon-waxing-crescent-6  U+E393
+    "",   # 7  wi-moon-first-quarter      U+E394
+    "",   # 8  wi-moon-waxing-gibbous-1   U+E395
+    "",   # 9  wi-moon-waxing-gibbous-2   U+E396
+    "",   # 10 wi-moon-waxing-gibbous-3   U+E397
+    "",   # 11 wi-moon-waxing-gibbous-4   U+E398
+    "",   # 12 wi-moon-waxing-gibbous-5   U+E399
+    "",   # 13 wi-moon-waxing-gibbous-6   U+E39A
+    "",   # 14 wi-moon-full               U+E39B
+    "",   # 15 wi-moon-waning-gibbous-1   U+E39C
+    "",   # 16 wi-moon-waning-gibbous-2   U+E39D
+    "",   # 17 wi-moon-waning-gibbous-3   U+E39E
+    "",   # 18 wi-moon-waning-gibbous-4   U+E39F
+    "",   # 19 wi-moon-waning-gibbous-5   U+E3A0
+    "",   # 20 wi-moon-waning-gibbous-6   U+E3A1
+    "",   # 21 wi-moon-third-quarter      U+E3A2
+    "",   # 22 wi-moon-waning-crescent-1  U+E3A3
+    "",   # 23 wi-moon-waning-crescent-2  U+E3A4
+    "",   # 24 wi-moon-waning-crescent-3  U+E3A5
+    "",   # 25 wi-moon-waning-crescent-4  U+E3A6
+    "",   # 26 wi-moon-waning-crescent-5  U+E3A7
+    "",   # 27 wi-moon-waning-crescent-6  U+E3A8
 ]
 
 
