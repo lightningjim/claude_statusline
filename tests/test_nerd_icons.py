@@ -10,7 +10,7 @@ Covers:
     - Module exposes BLUE, CYAN, MAGENTA, GRAY ANSI constants
     - _wx_color category mapping (storm/rain/snow/fog/sun + unknown)
     - _ASTRAL_OK defined; moon-phase callable exists or _ASTRAL_OK is False
-    - _FILLED/_EMPTY frozen (D-02 regression guard)
+    - _BAR_PRESETS table exists with exactly four D-03 keys (Phase 3 Plan 01)
 
   Plan 01 Task 2:
     - Named _WI_* glyph constants exist for all D-03 condition categories
@@ -184,7 +184,7 @@ class TestAstralMoonImport(unittest.TestCase):
 
 
 class TestBarPresets(unittest.TestCase):
-    """Phase 3: _BAR_PRESETS table replaces the old _FILLED/_EMPTY constants (D-01, D-03)."""
+    """Phase 3 Plan 01: _BAR_PRESETS table — glyph pairs, closed key set, fallback (D-01, D-03)."""
 
     def setUp(self):
         self.mod = _load_script_module()

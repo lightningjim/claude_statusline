@@ -87,11 +87,29 @@ CYAN    = "\033[36m"   # snow / freezing rain
 MAGENTA = "\033[35m"   # thunderstorm
 GRAY    = "\033[90m"   # fog / haze (bright black)
 
-# Bar fill characters (▓ = filled block, ░ = light shade / empty)
-# Phase 3: DO NOT modify here — block-fill variations are Phase 3's scope (D-02).
-_FILLED = "▓"
-_EMPTY  = "░"
+# Bar fill characters — Phase 3 preset table (D-01, D-03, D-08/D-09).
+# _BAR_PRESETS maps bar_style name → (filled_glyph, empty_glyph).
+# Closed at exactly four entries per D-03: shade, solid, solid-dim, gradient.
+# ascii, dots, braille, and powerline fills are explicitly excluded.
+# gradient math (sub-cell boundary cell) is implemented in Plan 03-02.
+_BAR_PRESETS: dict[str, tuple[str, str]] = {
+    "shade":     ("▓", "░"),   # default — current look (D-09)
+    "solid":     ("█", "░"),   # full block + light shade
+    "solid-dim": ("█", "▒"),   # full block + medium shade
+    "gradient":  ("█", " "),   # Plan 03-02: sub-cell boundary cell + blank track
+}
+# Backward-compat references kept for any code that still uses the bare names.
+_FILLED = _BAR_PRESETS["shade"][0]   # "▓"
+_EMPTY  = _BAR_PRESETS["shade"][1]   # "░"
 _BAR_WIDTH = 20
+
+
+def _bar_preset(style: str) -> tuple[str, str]:
+    """Return (filled_glyph, empty_glyph) for *style*, falling back to shade (RUN-02).
+
+    Never raises — an unknown/missing bar_style silently returns the shade pair.
+    """
+    return _BAR_PRESETS.get(style, _BAR_PRESETS["shade"])
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +153,11 @@ DEFAULTS: dict = {
     # "emoji" falls back to the Phase 2 emoji tables (retained, not deleted).
     # A single global switch — one key flips all four converted segments (D-07).
     "display": {
-        "icon_set": "nerd",   # "nerd" (default) or "emoji"
+        "icon_set": "nerd",     # "nerd" (default) or "emoji"
+        # Phase 03: context-bar fill style (D-08/D-09).
+        # "shade" (default) keeps the existing ▓/░ look — zero change for existing installs.
+        # Other values: "solid", "solid-dim", "gradient".  Independent of icon_set (D-10).
+        "bar_style": "shade",   # "shade" | "solid" | "solid-dim" | "gradient"
     },
 }
 
@@ -1281,8 +1303,15 @@ def _context_segment(
     data: dict,
     warn: int | float = 70,
     crit: int | float = 90,
+    bar_style: str = "shade",
 ) -> str | None:
-    """[<20-wide bar>] <pct>% colored by threshold, or None if missing (CTX-01, CTX-02, D-05)."""
+    """[<20-wide bar>] <pct>% colored by threshold, or None if missing (CTX-01, CTX-02, D-05).
+
+    Phase 3: bar_style selects the filled/empty glyph pair from _BAR_PRESETS (D-01/D-08).
+    Per-cell color (D-06/D-07): filled cells are wrapped in the threshold color; empty cells
+    are wrapped in GRAY — sharpening the filled/empty contrast for all block presets.
+    Unknown bar_style silently falls back to "shade" via _bar_preset (RUN-02).
+    """
     try:
         ctx = data.get("context_window", {})
         pct = pct_int(ctx.get("used_percentage"))
@@ -1292,9 +1321,12 @@ def _context_segment(
         # can never overflow/underflow the 20-char bar (CR-01).
         filled = max(0, min(_BAR_WIDTH, math.floor(pct * _BAR_WIDTH / 100)))
         empty = _BAR_WIDTH - filled
-        bar_chars = _FILLED * filled + _EMPTY * empty
+        fill_glyph, empty_glyph = _bar_preset(bar_style)
         color = color_for(pct, warn, crit)
-        bar = f"[{color}{bar_chars}{RESET}]"
+        # D-06: filled run in threshold color, empty run in dim GRAY — per-cell color split.
+        filled_str = f"{color}{fill_glyph * filled}{RESET}" if filled else ""
+        empty_str  = f"{GRAY}{empty_glyph * empty}{RESET}"  if empty  else ""
+        bar = f"[{filled_str}{empty_str}]"
         pct_str = f"{color}{pct}%{RESET}"
         return f"{bar} {pct_str}"
     except Exception:
@@ -1598,8 +1630,12 @@ def render_bottom_line(data: dict, cfg: dict) -> str | None:
         warn = thresholds.get("warn", 70)
         crit = thresholds.get("crit", 90)
 
+        # Phase 03: resolve bar_style from config (D-08/D-10); mirrors icon_set resolution below.
+        _display = cfg.get("display", {})
+        _bar_style = _display.get("bar_style", "shade")
+
         ctx_seg = (
-            _context_segment(data, warn=warn, crit=crit)
+            _context_segment(data, warn=warn, crit=crit, bar_style=_bar_style)
             if toggles.get("show_context_bar", True)
             else None
         )
@@ -1610,7 +1646,7 @@ def render_bottom_line(data: dict, cfg: dict) -> str | None:
 
         # Resolve rate-limit glyphs from icon_set (D-01/D-07).
         # _rate_segment signature is UNCHANGED — glyph swap happens at the call site only.
-        _display = cfg.get("display", {})
+        # Note: _display already resolved above for bar_style; reuse it here.
         _icon_set = _display.get("icon_set", "nerd")
         if _icon_set == "nerd":
             _glyph_5h = _NF_HOURGLASS
