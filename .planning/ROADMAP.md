@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 03.1: Resolve default bar gradient vs shade test drift (INSERTED)** - Decide whether the default progress bar should render gradient or ▓ shade, then realign the two failing test_bottom_line.py tests with that decision (completed 2026-05-29)
 - [x] **Phase 4: git info including active worktree** (completed 2026-05-29)
 - [x] **Phase 5: GSD status info especially the active Plan(s) being run** (completed 2026-05-29)
-- [ ] **Phase 05.1: Fix TestGsdSegmentBuilder environment-leak test failures (INSERTED)** - Make the 9 failing TestGsdSegmentBuilder tests hermetic by refreshing the handoff timestamp to now at call time (mirroring _make_live_state) + add a wall-clock-independence guard test; test-only, source unchanged
+- [x] **Phase 05.1: Fix TestGsdSegmentBuilder environment-leak test failures (INSERTED)** - Make the 9 failing TestGsdSegmentBuilder tests hermetic by refreshing the handoff timestamp to now at call time (mirroring _make_live_state) + add a wall-clock-independence guard test; test-only, source unchanged (completed 2026-05-30)
 
 ## Phase Details
 
@@ -170,13 +170,13 @@ Plans:
 **Goal:** Make the 9 failing `TestGsdSegmentBuilder` tests in `tests/test_gsd_segment.py` hermetic. The failures are not a product bug — `_gsd_segment` is correct. The shared fixtures carry a hardcoded timestamp (`2026-05-29T20:00:00.000Z`) that ages past the 1-hour staleness window (`_GSD_HANDOFF_STALE_SECONDS = 3600`); once the suite runs >1 hour later, handoffs read as stale → roadmap fallback → empty roadmap → `None` → 9 `assertIsNotNone` failures. Refresh the handoff timestamp to `now` at call time inside `_call` (mirroring `TestInferGsdLifecycle._make_live_state`), keeping the real staleness path exercised, and add a wall-clock-independence guard test. Test-only; source unchanged.
 **Requirements**: None mapped (phase_req_ids null; scope tracked against CONTEXT D-01..D-03).
 **Depends on:** Phase 05
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 
 **Wave 1**
 
-- [ ] 05.1-01-PLAN.md — Refresh handoff timestamp to `now` inside `TestGsdSegmentBuilder._call.fake_read_gsd_state` (copy-before-mutate, mirrors `_make_live_state`) + add D-03 `test_builder_live_at_any_walltime` guard asserting live executing GREEN resolution; test-only, source untouched (D-01,D-02,D-03)
+- [x] 05.1-01-PLAN.md — Refresh handoff timestamp to `now` inside `TestGsdSegmentBuilder._call.fake_read_gsd_state` (copy-before-mutate, mirrors `_make_live_state`) + add D-03 `test_builder_live_at_any_walltime` guard asserting live executing GREEN resolution; test-only, source untouched (D-01,D-02,D-03)
 
 ## Progress
 
@@ -192,4 +192,4 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5 → 05.1
 | 03.1. Default bar gradient vs shade | 1/1 | Complete | 2026-05-29 |
 | 4. git info incl. active worktree | 2/2 | Complete   | 2026-05-29 |
 | 5. GSD status info | 2/2 | Complete   | 2026-05-29 |
-| 05.1. Fix TestGsdSegmentBuilder test failures | 0/1 | Planned | - |
+| 05.1. Fix TestGsdSegmentBuilder test failures | 1/1 | Complete   | 2026-05-30 |
