@@ -894,6 +894,21 @@ class TestGsdSegmentBuilder(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("05-02", result)
 
+    def test_builder_live_at_any_walltime(self):
+        """D-03 guard: a freshly-stamped (live) handoff resolves to a non-None
+        executing segment regardless of the ambient wall clock.
+
+        Reintroducing a fixed/stale fixture timestamp into _call must fail this
+        test loudly — the GREEN code assertion distinguishes a LIVE executing
+        resolution from the DIM idle fallback (\033[2m) that the stale-timestamp
+        bug produced. This test fails immediately rather than rotting silently
+        after _GSD_HANDOFF_STALE_SECONDS.
+        """
+        result = self._call(handoff=_VALID_HANDOFF)
+        self.assertIsNotNone(result, "Live handoff must resolve to a segment (D-03 guard)")
+        self.assertIn("05-02", result)       # executing plan id present
+        self.assertIn("\033[32m", result)    # GREEN executing glyph — confirms live/executing
+
     def test_executing_contains_green(self):
         """Executing state: GREEN ANSI code present for lifecycle glyph."""
         result = self._call(handoff=_VALID_HANDOFF)
