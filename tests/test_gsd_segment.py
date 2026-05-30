@@ -31,6 +31,11 @@ def _load_script_module():
 # Fixture helpers
 # ---------------------------------------------------------------------------
 
+# NOTE: timestamps below are fixed instants for readability. Tests that need a
+# LIVE handoff must restamp to now() at call time (see TestGsdSegmentBuilder._call
+# and TestInferGsdLifecycle._make_live_state). Do not rely on these values being
+# within the _GSD_HANDOFF_STALE_SECONDS window at runtime.
+
 _VALID_HANDOFF = {
     "version": "1.0",
     "timestamp": "2026-05-29T20:00:00.000Z",
@@ -833,8 +838,17 @@ class TestGsdSegmentBuilder(unittest.TestCase):
             def fake_read_gsd_state(_planning_dir):
                 if handoff is None:
                     return None
+                # D-01: stamp the handoff timestamp to NOW so the real staleness
+                # check (_GSD_HANDOFF_STALE_SECONDS) reads it as live, independent
+                # of the ambient wall clock. Mirrors TestInferGsdLifecycle._make_live_state.
+                # Uses dict(handoff) copy — never mutate shared module-level fixtures.
+                from datetime import datetime, timezone
+                live_handoff = dict(handoff)
+                live_handoff["timestamp"] = datetime.now(timezone.utc).strftime(
+                    "%Y-%m-%dT%H:%M:%S.000Z"
+                )
                 return {
-                    "handoff": handoff,
+                    "handoff": live_handoff,
                     "state": state_fm or {},
                     "roadmap": roadmap or "",
                 }
@@ -879,6 +893,21 @@ class TestGsdSegmentBuilder(unittest.TestCase):
         result = self._call(handoff=_VALID_HANDOFF)
         self.assertIsNotNone(result)
         self.assertIn("05-02", result)
+
+    def test_builder_live_at_any_walltime(self):
+        """D-03 guard: a freshly-stamped (live) handoff resolves to a non-None
+        executing segment regardless of the ambient wall clock.
+
+        Reintroducing a fixed/stale fixture timestamp into _call must fail this
+        test loudly — the GREEN code assertion distinguishes a LIVE executing
+        resolution from the DIM idle fallback (\033[2m) that the stale-timestamp
+        bug produced. This test fails immediately rather than rotting silently
+        after _GSD_HANDOFF_STALE_SECONDS.
+        """
+        result = self._call(handoff=_VALID_HANDOFF)
+        self.assertIsNotNone(result, "Live handoff must resolve to a segment (D-03 guard)")
+        self.assertIn("05-02", result)       # executing plan id present
+        self.assertIn("\033[32m", result)    # GREEN executing glyph — confirms live/executing
 
     def test_executing_contains_green(self):
         """Executing state: GREEN ANSI code present for lifecycle glyph."""
