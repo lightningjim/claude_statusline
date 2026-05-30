@@ -111,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-29 after Phase 03.1 (default-bar test-drift resolution) completion*
+*Last updated: 2026-05-29 after Phase 05.1 (TestGsdSegmentBuilder wall-clock test-leak fix) completion*
