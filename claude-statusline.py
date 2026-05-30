@@ -625,7 +625,8 @@ _NWS_ICON_MAP_NERD: list[tuple[tuple[str, ...], str, str]] = [
 _NERD_SUN_GLYPHS: frozenset = frozenset({_WI_DAY_CLEAR})
 
 
-def _icon_to_glyph(text_description: str, icon_url: str, icon_set: str = "nerd") -> str:
+def _icon_to_glyph(text_description: str, icon_url: str, icon_set: str = "nerd",
+                   is_night_override: bool | None = None) -> str:
     """Map NWS textDescription and/or icon URL to a condition glyph.
 
     When icon_set == "nerd" (default): iterates _NWS_ICON_MAP_NERD and returns the
@@ -637,6 +638,10 @@ def _icon_to_glyph(text_description: str, icon_url: str, icon_set: str = "nerd")
     When icon_set != "nerd": iterates _NWS_ICON_MAP_EMOJI and reproduces the Phase 2
     emoji behavior exactly, including "🌙" for clear nights (D-06).
 
+    is_night_override: when not None, overrides the URL-derived is_night flag.
+    Use this to supply locally-computed astral day/night so the condition icon
+    stays consistent with the sun-segment near sunset/sunrise.
+
     Tries text_description first (lowercase contains-match), then icon URL path.
     Falls back to _WI_FALLBACK (nerd) or "🌡️" (emoji) when no token matches.
 
@@ -646,7 +651,9 @@ def _icon_to_glyph(text_description: str, icon_url: str, icon_set: str = "nerd")
         desc = (text_description or "").lower()
         icon_path = (icon_url or "").lower()
         # D-05: preserve the is_night flag and text-then-URL dispatch order.
-        is_night = "/night/" in icon_path
+        # is_night_override (when not None) wins over the NWS URL-derived flag so
+        # the condition icon stays consistent with the astral sun segment near sunset.
+        is_night = is_night_override if is_night_override is not None else ("/night/" in icon_path)
 
         if icon_set == "nerd":
             for keywords, glyph, _category in _NWS_ICON_MAP_NERD:
@@ -695,7 +702,8 @@ def _icon_to_emoji(text_description: str, icon_url: str) -> str:
     return _icon_to_glyph(text_description, icon_url, "emoji")
 
 
-def _condition_category(text_description: str, icon_url: str) -> str:
+def _condition_category(text_description: str, icon_url: str,
+                        is_night_override: bool | None = None) -> str:
     """Return the semantic condition category string for a NWS token pair.
 
     Used by _weather_segment to select the _wx_color() argument (D-08).
@@ -704,11 +712,13 @@ def _condition_category(text_description: str, icon_url: str) -> str:
 
     The category is derived from the nerd table regardless of icon_set — it
     represents the meteorological nature of the condition.
+
+    is_night_override: when not None, overrides the URL-derived is_night flag.
     """
     try:
         desc = (text_description or "").lower()
         icon_path = (icon_url or "").lower()
-        is_night = "/night/" in icon_path
+        is_night = is_night_override if is_night_override is not None else ("/night/" in icon_path)
 
         for keywords, glyph, category in _NWS_ICON_MAP_NERD:
             for kw in keywords:
@@ -2307,6 +2317,27 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
         display = cfg.get("display", {})
         icon_set = display.get("icon_set", "nerd")
 
+        # Compute astral is_night override so the condition icon agrees with the
+        # sun segment near sunset.  NWS flips its /night/ URL path before the true
+        # local sunset; without the override a moon glyph appears while the sun
+        # segment still shows the upcoming sunset time.
+        # Fails silently (None) when _ASTRAL_OK is False or location is unset.
+        _astral_is_night: bool | None = None
+        if _ASTRAL_OK:
+            try:
+                _loc = cfg.get("location", {})
+                _lat, _lon = _loc.get("lat"), _loc.get("lon")
+                if (_lat is not None and _lon is not None
+                        and not (float(_lat) == 0.0 and float(_lon) == 0.0)):
+                    _now_dt = datetime.now().astimezone()
+                    _local_tz = _now_dt.tzinfo
+                    _loc_info = LocationInfo(name="", region="", timezone="UTC",
+                                            latitude=_lat, longitude=_lon)
+                    _s_today = sun(_loc_info.observer, date=_now_dt.date(), tzinfo=_local_tz)
+                    _astral_is_night = not (_s_today["sunrise"] <= _now_dt <= _s_today["sunset"])
+            except Exception:
+                pass  # Fall through: _astral_is_night remains None (use NWS URL flag)
+
         # Step 3a: Conditions chunk — only when within the max-stale ceiling (D2-12)
         conditions_chunk = None
         if section_within_ceiling(weather_section, max_stale=weather_max_stale, now=now):
@@ -2326,10 +2357,12 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
                 if text_desc or cached_icon_url:
                     # New token format: resolve glyph at render time
                     try:
-                        glyph = _icon_to_glyph(text_desc, cached_icon_url, icon_set)
+                        glyph = _icon_to_glyph(text_desc, cached_icon_url, icon_set,
+                                               is_night_override=_astral_is_night)
                         if icon_set == "nerd":
                             # D-08: wrap nerd glyph in semantic ANSI color (top-line only)
-                            category = _condition_category(text_desc, cached_icon_url)
+                            category = _condition_category(text_desc, cached_icon_url,
+                                                           is_night_override=_astral_is_night)
                             color = _wx_color(category)
                             colored_glyph = f"{color}{glyph}{RESET}"
                         else:

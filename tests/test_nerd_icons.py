@@ -609,6 +609,90 @@ class TestIconToGlyphResolver(unittest.TestCase):
         # Result should be a nerd glyph (any non-empty string is ok — degrades to a glyph)
 
 
+class TestIsNightOverride(unittest.TestCase):
+    """Regression for moon-shown-before-sunset: is_night_override=False on a NWS night URL
+    must return a daytime glyph, not a moon.  This covers the case where NWS has flipped
+    to a /night/ icon URL before the local astral sunset."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_night_url_override_false_returns_day_clear_glyph(self):
+        """is_night_override=False on a clear /night/ URL returns _WI_DAY_CLEAR, not a moon."""
+        result = self.mod._icon_to_glyph(
+            "Clear",
+            "https://api.weather.gov/icons/land/night/skc?size=medium",
+            "nerd",
+            is_night_override=False,
+        )
+        self.assertEqual(result, self.mod._WI_DAY_CLEAR,
+                         f"Expected _WI_DAY_CLEAR but got {result!r} (moon shown before sunset)")
+
+    def test_night_url_override_false_returns_day_glyph_for_partly_cloudy(self):
+        """is_night_override=False on a partly-cloudy /night/ URL returns _WI_DAY_PARTLY."""
+        result = self.mod._icon_to_glyph(
+            "Partly Cloudy",
+            "https://api.weather.gov/icons/land/night/sct?size=medium",
+            "nerd",
+            is_night_override=False,
+        )
+        self.assertEqual(result, self.mod._WI_DAY_PARTLY,
+                         f"Expected _WI_DAY_PARTLY but got {result!r}")
+
+    def test_night_url_override_none_preserves_url_derived_is_night(self):
+        """is_night_override=None (default) preserves original URL-derived behavior."""
+        if not self.mod._ASTRAL_OK:
+            self.skipTest("astral not installed — skipping moon path test")
+        # With override=None and /night/ URL, clear night should still yield a moon glyph
+        result = self.mod._icon_to_glyph(
+            "Clear",
+            "https://api.weather.gov/icons/land/night/skc?size=medium",
+            "nerd",
+            is_night_override=None,
+        )
+        self.assertIn(result, self.mod._MOON_PHASE_GLYPHS,
+                      f"Default (override=None) on /night/ clear should return moon glyph, got {result!r}")
+
+    def test_condition_category_override_false_on_clear_night_returns_sun(self):
+        """_condition_category with is_night_override=False on /night/ URL returns 'sun', not 'moon'."""
+        result = self.mod._condition_category(
+            "Clear",
+            "https://api.weather.gov/icons/land/night/skc?size=medium",
+            is_night_override=False,
+        )
+        self.assertEqual(result, "sun",
+                         f"Expected 'sun' category before sunset, got {result!r} (moon color before sunset)")
+
+    def test_condition_category_override_true_on_day_url_returns_moon(self):
+        """_condition_category with is_night_override=True on a /day/ URL returns 'moon'."""
+        result = self.mod._condition_category(
+            "Clear",
+            "https://api.weather.gov/icons/land/day/skc?size=medium",
+            is_night_override=True,
+        )
+        self.assertEqual(result, "moon",
+                         f"Expected 'moon' category with override=True, got {result!r}")
+
+    def test_override_never_raises_for_edge_inputs(self):
+        """is_night_override edge values never cause _icon_to_glyph to raise."""
+        for override in (True, False, None):
+            for text, url, icon_set in (
+                ("Clear", "/night/skc", "nerd"),
+                ("Sunny", "/day/skc", "nerd"),
+                ("Clear", "/night/skc", "emoji"),
+                ("", "", "nerd"),
+            ):
+                with self.subTest(override=override, text=text, icon_set=icon_set):
+                    try:
+                        self.mod._icon_to_glyph(text, url, icon_set,
+                                                is_night_override=override)
+                    except Exception as exc:
+                        self.fail(
+                            f"_icon_to_glyph({text!r},{url!r},{icon_set!r},"
+                            f"is_night_override={override!r}) raised: {exc!r}"
+                        )
+
+
 class TestIconToEmojiAlias(unittest.TestCase):
     """D-06: _icon_to_emoji alias delegates with icon_set='emoji' (keeps TestIconMapping green)."""
 
