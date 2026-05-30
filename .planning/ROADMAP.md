@@ -192,4 +192,4 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5 → 05.1
 | 03.1. Default bar gradient vs shade | 1/1 | Complete | 2026-05-29 |
 | 4. git info incl. active worktree | 2/2 | Complete   | 2026-05-29 |
 | 5. GSD status info | 2/2 | Complete   | 2026-05-29 |
-| 05.1. Fix TestGsdSegmentBuilder test failures | 1/1 | Complete   | 2026-05-30 |
+| 05.1. Fix TestGsdSegmentBuilder test failures | 1/1 | Complete    | 2026-05-30 |
