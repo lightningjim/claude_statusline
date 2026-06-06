@@ -5,7 +5,7 @@ milestone_name: milestone
 status: milestone_complete
 stopped_at: Milestone complete (Phase 05.1 was final phase)
 last_updated: 2026-05-30T00:42:42.899Z
-last_activity: 2026-05-30 -- Phase 05.1 execution started
+last_activity: 2026-06-06 -- Completed quick task 260606-kpt: D-10 GSD-fragment omit-not-fake fix
 progress:
   total_phases: 8
   completed_phases: 7
@@ -127,6 +127,12 @@ None yet.
 ### Blockers/Concerns
 
 None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260606-kpt | Commit the D-10 GSD-fragment omit-not-fake fix | 2026-06-06 | c5e394e | [260606-kpt-commit-the-d-10-gsd-fragment-omit-not-fa](./quick/260606-kpt-commit-the-d-10-gsd-fragment-omit-not-fa/) |
 
 ## Deferred Items
 
