@@ -937,6 +937,50 @@ class TestGsdSegmentBuilder(unittest.TestCase):
         # _VALID_HANDOFF has completed_tasks=["task1","task2"], total_tasks=3 -> "2/3"
         self.assertIn("2/3", result)
 
+    def test_wave_part_rendered_when_plans_consistent(self):
+        """Positive control: when completed_plans <= total_plans (and total>0),
+        the (done/total) wave_part is rendered (D-04)."""
+        result = self._call(
+            handoff=_VALID_HANDOFF,
+            state_fm={"milestone": "v1.0", "progress": {
+                "total_phases": 7, "completed_phases": 5,
+                "total_plans": 15, "completed_plans": 13, "percent": 86,
+            }},
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("(13/15)", result)
+
+    def test_wave_part_omitted_when_done_exceeds_total(self):
+        """Regression (plans-done-exceeds-total): an internally-inconsistent
+        STATE.md with completed_plans > total_plans (the real WxDesktopPy 51/47
+        case) must NOT render a logically-impossible "(51/47)" fragment. Per
+        D-10 the fragment is omitted silently; the plan id still renders."""
+        result = self._call(
+            handoff=_VALID_HANDOFF,
+            state_fm={"milestone": "v1.0", "progress": {
+                "total_phases": 9, "completed_phases": 4,
+                "total_plans": 47, "completed_plans": 51, "percent": 100,
+            }},
+        )
+        self.assertIsNotNone(result)
+        self.assertNotIn("(51/47)", result)
+        self.assertNotIn("/47", result, "no plan-of-total fragment when done > total")
+        # Segment still renders the plan id — only the bad fragment is dropped.
+        self.assertIn("05-02", result)
+
+    def test_wave_part_omitted_when_total_is_zero(self):
+        """A non-positive total_plans must not render a "(N/0)" fragment."""
+        result = self._call(
+            handoff=_VALID_HANDOFF,
+            state_fm={"milestone": "v1.0", "progress": {
+                "total_phases": 1, "completed_phases": 0,
+                "total_plans": 0, "completed_plans": 0, "percent": 0,
+            }},
+        )
+        self.assertIsNotNone(result)
+        self.assertNotIn("/0)", result)
+        self.assertIn("05-02", result)
+
     def test_blocked_contains_red(self):
         """Blocked state: RED ANSI code present for lifecycle glyph."""
         result = self._call(handoff=_BLOCKED_HANDOFF)

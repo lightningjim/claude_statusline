@@ -1838,8 +1838,17 @@ def _gsd_segment(data: dict, cfg: dict) -> str | None:
             else:
                 task_label = label_id
 
-            # (9) Optional plan-of-total fragment (D-04) — neutral, no color
-            if plans_done is not None and plans_total is not None:
+            # (9) Optional plan-of-total fragment (D-04) — neutral, no color.
+            # Omit when the source STATE.md is internally inconsistent
+            # (completed_plans > total_plans, or non-positive total): a
+            # logically impossible "(51/47)" would mislead, so per D-10 we
+            # drop the fragment silently rather than show or clamp a false ratio.
+            if (
+                plans_done is not None
+                and plans_total is not None
+                and plans_total > 0
+                and plans_done <= plans_total
+            ):
                 wave_part = f" ({plans_done}/{plans_total})"
             else:
                 wave_part = ""
