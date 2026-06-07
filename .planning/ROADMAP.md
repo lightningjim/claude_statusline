@@ -81,6 +81,23 @@ Plans:
 
 - [x] 02-03-PLAN.md — Active-alert override: references-chain dedup, severity color, highest-severity +N, sun fallback (WX-04)
 
+### Phase 02.2: Differentiate between watches, warnings, and advisories (INSERTED)
+
+**Goal:** The top-line alert override distinguishes the three NWS hazard classes (Warning/Watch/Advisory, plus a Statement/Other bucket) as a dimension distinct from CAP severity — classifying each active alert by VTEC significance with an event-name fallback (never raising), giving each class a distinct cmap-guarded glyph and hue (Warning=red, Watch=yellow, Advisory=cyan, Statement=neutral), folding urgency+certainty into a bold/normal/dim intensity axis, selecting the primary alert class-first (Warning>Watch>Advisory) with a severity->urgency->certainty tie-break, and rendering the remainder as a per-class tally — all width-conscious, with NWS event text ANSI-sanitized and the bar never crashing (extends D2-11/WX-04; CONTEXT D-01..D-08).
+**Requirements**: WX-04 (refined; phase scope tracked against CONTEXT D-01..D-08)
+**Depends on:** Phase 2
+**Plans:** 2 plans
+
+Plans:
+
+**Wave 1**
+
+- [ ] 02.2-01-PLAN.md — Classification + color + selection layer: BOLD constant, cmap-guarded `_WI_ALERT_*` class glyphs + paired class-glyph tables, `_classify_alert_class` (VTEC-significance primary + event-name fallback + Statement/Other default), `_alert_intensity` (bold/normal/dim), reshaped `_alert_color(alert)` (class hue + intensity) and `select_alert` (class-first composite, `(best, remaining_list)` contract) + unit tests (D-01,D-02,D-03,D-04,D-05,D-06,D-07)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02.2-02-PLAN.md — Render wiring: `_build_alert_tally` per-class remainder helper + reshaped `_weather_segment` alert-override block (class glyph via icon_set toggle, `_alert_color(best)` call site, inline ANSI-sanitized + 64-char-bounded event text, per-class tally) + updated override/E2E tests (D-04,D-08; security T-02.2-04/05/06)
+
 ### Phase 02.1: Nerd Font icon set (INSERTED)
 
 **Goal:** Adopt Nerd Font glyphs across the statusline now that JetBrains + DejaVu Nerd Fonts are installed — starting with weather conditions/alerts (supersedes the emoji set from Phase 2) and extending to the other segment glyphs (model/thinking indicator, context, rate-limit, sun events) where a Nerd Font glyph reads better than the current emoji/ASCII.
@@ -181,12 +198,13 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 02.1 → 3 → 4 → 5 → 05.1
+Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 → 05.1
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
 | 2. Weather Layer | 3/3 | Complete   | 2026-05-29 |
+| 02.2. Watch/Warning/Advisory differentiation | 0/2 | Planned | - |
 | 02.1. Nerd Font icon set | 3/3 | Complete    | 2026-05-29 |
 | 3. Presets for block fill | 2/2 | Complete   | 2026-05-29 |
 | 03.1. Default bar gradient vs shade | 1/1 | Complete | 2026-05-29 |
