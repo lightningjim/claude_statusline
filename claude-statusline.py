@@ -2447,9 +2447,10 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
            else the sun event (always computed offline, D2-12)
       4. Pipe-delimit present chunks and return bracketed string.
 
-    Alert override (D2-11, WX-04):
+    Alert override (D2-11, WX-04, D-04/D-05/D-06/D-08):
       - Read alerts cache section; if within alerts_max_stale and non-empty survivors:
-        run select_alert → render "⚠ <event>", severity-colored via _alert_color, + " +N".
+        run select_alert → render per-class glyph + sanitized event, class-hue colored
+        via _alert_color(best), + per-class tally (_build_alert_tally) for remainder.
       - Otherwise: fall back to _sun_segment(cfg).
 
     Degradation (D2-12):
@@ -2579,19 +2580,32 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
             if section_within_ceiling(alerts_section, max_stale=alerts_max_stale, now=now):
                 active = alerts_section.get("active") or []
                 if active:
-                    best, remaining = select_alert(active)
+                    best, remaining_alerts = select_alert(active)
                     if best is not None:
                         try:
                             props = best.get("properties") or best
                             event = props.get("event", "Unknown Alert")
-                            severity = props.get("severity", "Unknown")
                         except Exception:
                             event = "Unknown Alert"
-                            severity = "Unknown"
-                        color = _alert_color(severity)
-                        detail = f"⚠ {event}"
-                        if remaining > 0:
-                            detail += f" +{remaining}"
+                        # D-05/D-06: class-driven hue + urgency/certainty intensity
+                        color = _alert_color(best)
+                        # D-04: class glyph resolved via icon_set toggle
+                        best_class = _classify_alert_class(best)
+                        if icon_set == "nerd":
+                            class_glyph = _ALERT_CLASS_GLYPHS_NERD.get(best_class, _WI_ALERT_STATEMENT)
+                        else:
+                            class_glyph = _ALERT_CLASS_GLYPHS_EMOJI.get(best_class, "ℹ️")
+                        # Sanitize event text — strip ESC/control seqs, truncate to 64 (T-02.2-04)
+                        safe_event = "".join(
+                            ch for ch in str(event)
+                            if ch == " " or (ch.isprintable() and ch != "\x1b")
+                        )[:64]
+                        detail = f"{class_glyph} {safe_event}"
+                        # D-08: per-class tally of remaining alerts (not flat +N)
+                        if remaining_alerts:
+                            tally = _build_alert_tally(remaining_alerts, icon_set)
+                            if tally:
+                                detail += f"  {tally}"
                         trailing_detail = f"{color}{detail}{RESET}"
         except Exception:
             pass  # alert override failed: fall through to sun event

@@ -21,6 +21,7 @@ Task 2 covers:
 import importlib.util
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -969,16 +970,22 @@ class TestWeatherSegmentAlertOverride(unittest.TestCase):
         self.assertIn(self.mod.YELLOW, result,
                       f"YELLOW color expected for Moderate alert: {result!r}")
 
-    def test_multiple_alerts_plus_n_suffix(self):
-        """Multiple active alerts: +N suffix appears for N remaining alerts."""
+    def test_multiple_alerts_per_class_tally(self):
+        """Multiple active alerts: remainder renders as per-class tally, NOT '+N'."""
         if not self.mod._WEATHER_OK:
             self.skipTest("_WEATHER_OK False — astral/requests not installed")
-        # 1 Extreme + 2 extra = 3 total, remaining=2
+        # 1 Extreme Tornado Warning + 2 extra Flood Watch = 3 total
+        # select_alert picks the Warning as primary; 2 Watches remain
         cache = self._make_cache_with_alert(severity="Extreme", event="Tornado Warning", extra_alerts=2)
         result = self._run_segment_with_cache(cache)
         self.assertIsNotNone(result)
-        self.assertIn("+2", result,
-                      f"Expected '+2' suffix for 2 remaining alerts: {result!r}")
+        # Per-class tally: Watch glyph + count 2 must appear (not "+2")
+        watch_glyph = self.mod._ALERT_CLASS_GLYPHS_EMOJI["Watch"]
+        self.assertIn(watch_glyph + "2", result,
+                      f"Watch glyph+2 tally expected for 2 remaining Watch alerts: {result!r}")
+        # Flat '+N' form is gone
+        self.assertNotIn("+2", result,
+                         f"Flat '+2' suffix must NOT appear after tally refactor: {result!r}")
 
     def test_conditions_still_present_with_alert(self):
         """Icon+temp are still shown in the segment alongside the alert."""
@@ -1041,16 +1048,20 @@ class TestWeatherSegmentAlertOverride(unittest.TestCase):
             f"Sun glyph expected with cold alerts: {result!r}"
         )
 
-    def test_warning_glyph_in_alert_detail(self):
-        """The alert trailing detail includes the warning glyph (⚠)."""
+    def test_warning_class_glyph_in_alert_detail(self):
+        """The alert trailing detail shows the per-class Warning glyph (not the single ⚠)."""
         if not self.mod._WEATHER_OK:
             self.skipTest("_WEATHER_OK False — astral/requests not installed")
         cache = self._make_cache_with_alert(severity="Extreme", event="Tornado Warning")
         result = self._run_segment_with_cache(cache)
         self.assertIsNotNone(result)
-        # warning glyph U+26A0 ⚠ must appear in the alert detail
-        self.assertIn("⚠", result,
-                      f"Warning glyph ⚠ must appear in alert detail: {result!r}")
+        # Per-class Warning emoji glyph must appear (icon_set=emoji pinned in helper)
+        warn_glyph = self.mod._ALERT_CLASS_GLYPHS_EMOJI["Warning"]
+        self.assertIn(warn_glyph, result,
+                      f"Warning class glyph {warn_glyph!r} must appear in alert detail: {result!r}")
+        # Single ⚠ U+26A0 is replaced by the class glyph — must NOT appear
+        self.assertNotIn("⚠", result,
+                         f"Old single-glyph ⚠ must NOT appear after class-glyph refactor: {result!r}")
 
 
 class TestBuildAlertTally(unittest.TestCase):
@@ -1161,6 +1172,188 @@ class TestBuildAlertTally(unittest.TestCase):
         # The good Warning should still appear
         warn_glyph = self.mod._ALERT_CLASS_GLYPHS_NERD["Warning"]
         self.assertIn(warn_glyph, result)
+
+
+# ---------------------------------------------------------------------------
+# Task 2: _weather_segment alert-override — per-class glyph + hue + tally (D-04..D-08)
+# ---------------------------------------------------------------------------
+
+class TestWeatherSegmentAlertOverrideV2(unittest.TestCase):
+    """_weather_segment alert-override: class glyph, class hue, per-class tally, sanitization."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        self.tmpdir = tempfile.mkdtemp()
+        self.cfg_emoji = {
+            "location": {"lat": 35.4676, "lon": -97.5164},
+            "weather": {"contact_email": "test@example.com", "show_weather": True},
+            "units": {"temp_unit": "F"},
+            "cache": {
+                "weather_ttl": 600,
+                "alerts_ttl": 300,
+                "weather_max_stale": 3600,
+                "alerts_max_stale": 900,
+            },
+            "toggles": {"show_thinking_glyph": True},
+            "thresholds": {"warn": 70, "crit": 90},
+            "display": {"icon_set": "emoji"},
+        }
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run_segment(self, cache_dict, cfg=None):
+        cache_path = os.path.join(self.tmpdir, "cache.json")
+        with open(cache_path, "w") as f:
+            json.dump(cache_dict, f)
+        cfg = cfg or self.cfg_emoji
+
+        def no_op_spawn(cfg_, cache_):
+            pass
+
+        with patch.object(self.mod, "_CACHE_PATH", cache_path):
+            with patch.object(self.mod, "maybe_spawn_refresh", side_effect=no_op_spawn):
+                return self.mod._weather_segment(None, cfg)
+
+    def _make_active_cache(self, alerts, age_seconds=60):
+        now = time.time()
+        return {
+            "weather": {"fetched_at": now - age_seconds, "icon": "☀️", "temp": 72, "pop": 0},
+            "alerts": {"fetched_at": now - age_seconds, "active": alerts},
+        }
+
+    def test_advisory_is_cyan(self):
+        """A Wind Advisory renders CYAN (Advisory class hue, D-05)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        alert = _make_alert("a1", "Wind Advisory", "Minor",
+                            vtec=["/O.NEW.KLZK.WI.Y.0001.000000T0000Z-000000T0000Z/"])
+        cache = self._make_active_cache([alert])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod.CYAN, result,
+                      f"CYAN expected for Advisory class alert: {result!r}")
+        adv_glyph = self.mod._ALERT_CLASS_GLYPHS_EMOJI["Advisory"]
+        self.assertIn(adv_glyph, result,
+                      f"Advisory class glyph {adv_glyph!r} expected: {result!r}")
+
+    def test_watch_is_yellow_with_glyph(self):
+        """A Flood Watch renders YELLOW and the Watch class glyph (D-05)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        alert = _make_alert("w1", "Flood Watch", "Moderate",
+                            vtec=["/O.NEW.KOUN.FF.A.0001.000000T0000Z-000000T0000Z/"])
+        cache = self._make_active_cache([alert])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod.YELLOW, result,
+                      f"YELLOW expected for Watch class alert: {result!r}")
+        watch_glyph = self.mod._ALERT_CLASS_GLYPHS_EMOJI["Watch"]
+        self.assertIn(watch_glyph, result,
+                      f"Watch class glyph {watch_glyph!r} expected: {result!r}")
+
+    def test_severe_tstm_warning_plus_flood_watch_e2e(self):
+        """With a Severe Tstm Warning + Flood Watch active, Warning is primary; Watch in tally."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        warning = _make_alert("w1", "Severe Thunderstorm Warning", "Severe",
+                               vtec=["/O.NEW.KOUN.SV.W.0001.000000T0000Z-000000T0000Z/"])
+        watch = _make_alert("f1", "Flood Watch", "Moderate",
+                             vtec=["/O.NEW.KOUN.FF.A.0001.000000T0000Z-000000T0000Z/"])
+        cache = self._make_active_cache([warning, watch])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result)
+        # Primary event text must be the Warning's
+        self.assertIn("Severe Thunderstorm Warning", result,
+                      f"Warning event text expected in detail: {result!r}")
+        # Watch contributes to per-class tally (Watch glyph + count 1)
+        watch_glyph = self.mod._ALERT_CLASS_GLYPHS_EMOJI["Watch"]
+        self.assertIn(watch_glyph + "1", result,
+                      f"Watch glyph+1 tally expected: {result!r}")
+        # Flat '+N' form is absent
+        self.assertNotIn("+1", result,
+                         f"Flat '+1' must not appear in tally form: {result!r}")
+        # Warning event not duplicated in tally (tally has glyph+count, not event names)
+        # Just verify only 1 occurrence of the event text
+        self.assertEqual(result.count("Severe Thunderstorm Warning"), 1,
+                         f"Warning event text must appear exactly once: {result!r}")
+
+    def test_event_text_sanitized_no_esc_byte(self):
+        """An event string with embedded ESC sequence renders with no raw \\x1b byte, <= 64 chars."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        # Build an alert with a malicious event string
+        dirty_event = "\x1b[31mTornado Warning\x1b[0m" + "X" * 60
+        alert = {
+            "id": "s1",
+            "properties": {
+                "id": "s1",
+                "event": dirty_event,
+                "severity": "Extreme",
+                "messageType": "Alert",
+                "references": [],
+                "sent": "2026-05-28T20:00:00Z",
+                "expires": "2099-12-31T23:59:59Z",
+            }
+        }
+        cache = self._make_active_cache([alert])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result)
+        # No raw ESC byte (T-02.2-04)
+        self.assertNotIn("\x1b[31m", result,
+                         f"Raw ESC sequence must be stripped from event text: {result!r}")
+        # The event text portion is truncated to at most 64 chars (ignoring ANSI codes around it)
+        # Extract event text between glyph and RESET
+        ansi_re = re.compile(r'\x1b\[[0-9;]*m')
+        stripped = ansi_re.sub("", result)
+        # Find "Tornado Warning" fragment (the ESC bytes are stripped, clean text remains)
+        self.assertIn("Tornado Warning", stripped,
+                      f"Cleaned event text must appear after sanitization: {stripped!r}")
+
+    def test_malformed_alert_override_falls_through_to_sun(self):
+        """A malformed alert in the override block does not crash _weather_segment."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        # Inject a deliberately broken active list (not a list but a string)
+        # via a custom cache that makes the outer try/except catch
+        now = time.time()
+        cache = {
+            "weather": {"fetched_at": now - 60, "icon": "☀️", "temp": 72, "pop": 0},
+            "alerts": {
+                "fetched_at": now - 60,
+                # Non-dict active entry that will break select_alert safely
+                "active": [None, {"id": "bad", "properties": None}],
+            },
+        }
+        try:
+            result = self._run_segment(cache)
+            # Should return a string (either the sun event or None); must not raise
+            self.assertIsInstance(result, (str, type(None)),
+                                  f"_weather_segment must return str or None on malformed alert: {result!r}")
+        except Exception as e:
+            self.fail(f"_weather_segment raised on malformed alert override: {e}")
+
+    def test_warning_immediate_observed_bold_red(self):
+        """Immediate+Observed Tornado Warning renders BOLD + RED (D-05, D-06)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        alert = _make_alert("t1", "Tornado Warning", "Extreme",
+                            urgency="Immediate", certainty="Observed",
+                            vtec=["/O.NEW.KTLX.TO.W.0001.000000T0000Z-000000T0000Z/"])
+        cache = self._make_active_cache([alert])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result)
+        self.assertIn(self.mod.BOLD, result,
+                      f"BOLD expected for Immediate+Observed Warning: {result!r}")
+        self.assertIn(self.mod.RED, result,
+                      f"RED expected for Warning class: {result!r}")
+        # Per-class Warning glyph present (emoji)
+        warn_glyph = self.mod._ALERT_CLASS_GLYPHS_EMOJI["Warning"]
+        self.assertIn(warn_glyph, result,
+                      f"Warning class glyph {warn_glyph!r} expected: {result!r}")
+        # Old single ⚠ must be absent
+        self.assertNotIn("⚠", result,
+                         f"Old single-glyph ⚠ must not appear: {result!r}")
 
 
 if __name__ == "__main__":
