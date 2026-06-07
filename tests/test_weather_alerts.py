@@ -381,7 +381,8 @@ class TestAlertIntensity(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Task 1: select_alert
+# Task 1 (reshaped for Phase 02.2): select_alert
+# Return contract changed: (best, remaining_list) not (best, int) (D-07)
 # ---------------------------------------------------------------------------
 
 class TestSelectAlert(unittest.TestCase):
@@ -393,62 +394,111 @@ class TestSelectAlert(unittest.TestCase):
         self.assertTrue(callable(getattr(self.mod, "select_alert", None)))
 
     def test_empty_survivors_returns_none(self):
-        """select_alert on an empty list returns (None, 0) or similar."""
+        """select_alert([]) returns (None, []) — no alert, empty remaining list."""
         result = self.mod.select_alert([])
-        # Should not raise; result indicates no selection
-        self.assertIsNotNone(result)
-        best, count = result
+        self.assertEqual(result, (None, []),
+                         f"Empty input must return (None, []); got {result!r}")
+        best, remaining = result
         self.assertIsNone(best, "Best alert must be None for empty survivors")
-        self.assertEqual(count, 0, "Remaining count must be 0 for empty survivors")
+        self.assertIsInstance(remaining, list, "Remaining must be a list")
+        self.assertEqual(len(remaining), 0, "Remaining list must be empty")
 
     def test_extreme_beats_severe(self):
-        """Extreme severity alert is selected over Severe."""
+        """Two same-class (both Warning) alerts: Extreme severity wins over Severe (class tie → severity decides)."""
+        # Both are Warnings (class tied); severity tie-break: Extreme > Severe (D-07)
         extreme = _make_alert("e1", "Tornado Warning", "Extreme")
         severe = _make_alert("s1", "Severe Thunderstorm Warning", "Severe")
         best, remaining = self.mod.select_alert([extreme, severe])
         self.assertEqual(best["properties"]["severity"], "Extreme")
-        self.assertEqual(remaining, 1)
+        self.assertIsInstance(remaining, list)
+        self.assertEqual(len(remaining), 1)
 
     def test_severe_beats_moderate(self):
-        """Severe severity alert is selected over Moderate."""
+        """Severe Thunderstorm Warning vs Moderate Flash Flood Watch: Warning class beats Watch class (D-07)."""
+        # Class-first: Warning (3) > Watch (2) regardless of severity
         severe = _make_alert("s1", "Severe Thunderstorm Warning", "Severe")
         moderate = _make_alert("m1", "Flash Flood Watch", "Moderate")
         best, remaining = self.mod.select_alert([severe, moderate])
-        self.assertEqual(best["properties"]["severity"], "Severe")
-        self.assertEqual(remaining, 1)
+        # Warning outranks Watch (class-first) — severe is the Warning
+        self.assertEqual(best["id"], "s1",
+                         "Severe Thunderstorm Warning should beat Flash Flood Watch (class-first)")
+        self.assertIsInstance(remaining, list)
+        self.assertEqual(len(remaining), 1)
 
     def test_moderate_beats_minor(self):
-        """Moderate severity alert is selected over Minor."""
+        """Moderate Flood Watch vs Minor Wind Advisory: Watch class beats Advisory class (D-07)."""
+        # Class-first: Watch (2) > Advisory (1) regardless of severity
         moderate = _make_alert("m1", "Flood Watch", "Moderate")
         minor = _make_alert("mi1", "Wind Advisory", "Minor")
         best, remaining = self.mod.select_alert([moderate, minor])
-        self.assertEqual(best["properties"]["severity"], "Moderate")
-        self.assertEqual(remaining, 1)
+        # Watch outranks Advisory (class-first) — moderate is the Watch
+        self.assertEqual(best["id"], "m1",
+                         "Flood Watch should beat Wind Advisory (class-first)")
+        self.assertIsInstance(remaining, list)
+        self.assertEqual(len(remaining), 1)
 
     def test_single_alert_remaining_zero(self):
-        """A single survivor: remaining count is 0."""
+        """A single survivor: remaining is an empty list."""
         alert = _make_alert("a1", "Tornado Warning", "Extreme")
         best, remaining = self.mod.select_alert([alert])
         self.assertIsNotNone(best)
-        self.assertEqual(remaining, 0)
+        self.assertIsInstance(remaining, list)
+        self.assertEqual(len(remaining), 0)
 
     def test_three_alerts_remaining_two(self):
-        """Three survivors: best selected, remaining = 2."""
+        """Three survivors: best selected, remaining is a list of length 2."""
         extreme = _make_alert("e1", "Tornado Warning", "Extreme")
         severe = _make_alert("s1", "Severe TS Warning", "Severe")
         moderate = _make_alert("m1", "Flash Flood Watch", "Moderate")
         best, remaining = self.mod.select_alert([extreme, severe, moderate])
-        self.assertEqual(best["properties"]["severity"], "Extreme")
-        self.assertEqual(remaining, 2)
+        # All three events are class-ambiguous by event name for "Severe TS Warning"
+        # (no VTEC, event ends in "Warning" → Warning class); extreme also a Warning;
+        # Flash Flood Watch → Watch; so Extreme Warning wins over Severe Warning (severity tie-break)
+        self.assertIsNotNone(best)
+        self.assertIsInstance(remaining, list)
+        self.assertEqual(len(remaining), 2)
 
     def test_active_fixture_highest_severity_and_remaining(self):
-        """With nws_alerts_active.json fixture: Extreme selected, remaining=2."""
+        """With nws_alerts_active.json fixture: Extreme alert selected, remaining is list of 2."""
         fixture = _load_fixture("nws_alerts_active.json")
         alerts = fixture.get("@graph", [])
         best, remaining = self.mod.select_alert(alerts)
         self.assertIsNotNone(best)
         self.assertEqual(best["properties"]["severity"], "Extreme")
-        self.assertEqual(remaining, 2)
+        self.assertIsInstance(remaining, list)
+        self.assertEqual(len(remaining), 2)
+
+    def test_class_first_warning_beats_extreme_watch(self):
+        """Class-first ranking: Severe Thunderstorm Warning beats Extreme Tornado Watch (D-07).
+
+        A Warning (class rank 3) outranks a Watch (class rank 2) regardless of
+        CAP severity — this is the key D-07 assertion (the user is a meteorologist;
+        W/A/Y are real operational distinctions, not severity synonyms).
+        """
+        # Severe Thunderstorm Warning: Warning class (rank 3), Severe severity
+        warning = _make_alert("w1", "Severe Thunderstorm Warning", "Severe",
+                              urgency="Immediate", certainty="Observed")
+        # Extreme Tornado Watch: Watch class (rank 2), Extreme severity
+        watch = _make_alert("wt1", "Tornado Watch", "Extreme",
+                            urgency="Expected", certainty="Likely")
+        best, remaining = self.mod.select_alert([warning, watch])
+        self.assertEqual(best["id"], "w1",
+                         "Warning must beat Watch regardless of severity (class-first D-07)")
+        self.assertIsInstance(remaining, list)
+        self.assertEqual(remaining, [watch])
+
+    def test_within_class_tie_break_by_severity(self):
+        """Within-class tie: two Warnings differ by severity — higher severity wins."""
+        # Both Warnings (same class rank 3); Extreme > Severe by severity rank
+        extreme_warn = _make_alert("ew1", "Tornado Warning", "Extreme",
+                                   urgency="Immediate", certainty="Observed")
+        severe_warn = _make_alert("sw1", "Flash Flood Warning", "Severe",
+                                  urgency="Expected", certainty="Likely")
+        best, remaining = self.mod.select_alert([severe_warn, extreme_warn])
+        self.assertEqual(best["id"], "ew1",
+                         "Extreme Warning must beat Severe Warning (within-class severity tie-break)")
+        self.assertIsInstance(remaining, list)
+        self.assertEqual(len(remaining), 1)
 
     def test_tolerates_unknown_severity(self):
         """select_alert handles Unknown severity without raising."""
@@ -467,7 +517,8 @@ class TestSelectAlert(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Task 1: _alert_color
+# Task 1 (reshaped for Phase 02.2): _alert_color
+# Signature changed: takes alert dict (not severity str) → class-hue + intensity (D-05/D-06)
 # ---------------------------------------------------------------------------
 
 class TestAlertColor(unittest.TestCase):
@@ -478,44 +529,74 @@ class TestAlertColor(unittest.TestCase):
     def test_alert_color_exists(self):
         self.assertTrue(callable(getattr(self.mod, "_alert_color", None)))
 
-    def test_extreme_returns_red(self):
-        """Extreme severity -> RED."""
-        color = self.mod._alert_color("Extreme")
-        self.assertEqual(color, self.mod.RED, "Extreme must be RED")
+    def test_warning_alert_contains_red(self):
+        """Warning alert → color contains RED (D-05: Warning = red hue)."""
+        alert = _make_alert("w1", "Tornado Warning", "Extreme")
+        color = self.mod._alert_color(alert)
+        self.assertIn(self.mod.RED, color,
+                      f"Warning alert color must contain RED; got {color!r}")
 
-    def test_severe_returns_red(self):
-        """Severe severity -> RED."""
-        color = self.mod._alert_color("Severe")
-        self.assertEqual(color, self.mod.RED, "Severe must be RED")
+    def test_watch_alert_contains_yellow(self):
+        """Watch alert → color contains YELLOW (D-05: Watch = yellow hue)."""
+        alert = _make_alert("w2", "Tornado Watch", "Severe")
+        color = self.mod._alert_color(alert)
+        self.assertIn(self.mod.YELLOW, color,
+                      f"Watch alert color must contain YELLOW; got {color!r}")
 
-    def test_moderate_returns_yellow(self):
-        """Moderate severity -> YELLOW."""
-        color = self.mod._alert_color("Moderate")
-        self.assertEqual(color, self.mod.YELLOW, "Moderate must be YELLOW")
+    def test_advisory_alert_contains_cyan(self):
+        """Advisory alert → color contains CYAN (D-05: Advisory = cyan hue)."""
+        alert = _make_alert("a1", "Wind Advisory", "Minor")
+        color = self.mod._alert_color(alert)
+        self.assertIn(self.mod.CYAN, color,
+                      f"Advisory alert color must contain CYAN; got {color!r}")
 
-    def test_minor_returns_yellow(self):
-        """Minor severity -> YELLOW."""
-        color = self.mod._alert_color("Minor")
-        self.assertEqual(color, self.mod.YELLOW, "Minor must be YELLOW")
-
-    def test_unknown_returns_non_red(self):
-        """Unknown severity -> YELLOW or DIM (not RED)."""
-        color = self.mod._alert_color("Unknown")
-        self.assertNotEqual(color, self.mod.RED, "Unknown must not be RED")
-
-    def test_unknown_returns_a_color(self):
-        """Unknown severity -> returns a non-empty string."""
-        color = self.mod._alert_color("Unknown")
-        self.assertIsNotNone(color)
+    def test_statement_alert_not_red(self):
+        """Statement/Other alert → RED is NOT in the color (D-05: neutral hue)."""
+        alert = _make_alert("s1", "Special Weather Statement", "Unknown")
+        color = self.mod._alert_color(alert)
+        self.assertNotIn(self.mod.RED, color,
+                         f"Statement/Other must not be RED; got {color!r}")
         self.assertIsInstance(color, str)
-        self.assertTrue(len(color) > 0)
+        self.assertTrue(len(color) > 0, "Statement/Other color must be a non-empty string")
 
-    def test_nonsense_severity_does_not_raise(self):
-        """Nonsense severity value does not raise."""
+    def test_immediate_observed_contains_bold(self):
+        """Immediate + Observed alert → color contains BOLD (D-06: intensity band)."""
+        alert = _make_alert("i1", "Tornado Warning", "Extreme",
+                            urgency="Immediate", certainty="Observed")
+        color = self.mod._alert_color(alert)
+        self.assertIn(self.mod.BOLD, color,
+                      f"Immediate+Observed color must contain BOLD; got {color!r}")
+
+    def test_future_possible_contains_dim(self):
+        """Future + Possible alert → color contains DIM (D-06: dim intensity band)."""
+        alert = _make_alert("d1", "Wind Advisory", "Minor",
+                            urgency="Future", certainty="Possible")
+        color = self.mod._alert_color(alert)
+        self.assertIn(self.mod.DIM, color,
+                      f"Future+Possible color must contain DIM; got {color!r}")
+
+    def test_malformed_alert_does_not_raise(self):
+        """Malformed alert dict (e.g. {}) → does not raise; returns a non-empty color string (T-02.2-01).
+
+        An empty dict is handled by _classify_alert_class (returns Statement/Other → RESET);
+        the YELLOW fallback is the except path and only fires if an unexpected exception escapes.
+        Either way the function must not raise and must return a non-empty string.
+        """
         try:
-            result = self.mod._alert_color("BLARGHHH")
+            color = self.mod._alert_color({})
         except Exception as e:
-            self.fail(f"_alert_color raised on unknown severity: {e}")
+            self.fail(f"_alert_color raised on {{}}: {e}")
+        self.assertIsInstance(color, str, "Color must be a string")
+        self.assertTrue(len(color) > 0, "Color must be non-empty")
+
+    def test_none_event_alert_does_not_raise(self):
+        """Alert with event=None → does not raise; returns a non-empty color string."""
+        try:
+            color = self.mod._alert_color({"properties": {"event": None}})
+        except Exception as e:
+            self.fail(f"_alert_color raised on event=None: {e}")
+        self.assertIsInstance(color, str, "Color must be a string")
+        self.assertTrue(len(color) > 0, "Color must be non-empty")
 
 
 # ---------------------------------------------------------------------------

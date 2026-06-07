@@ -1131,50 +1131,71 @@ def dedup_alerts(alerts: list, now=None) -> list:
 
 
 def select_alert(survivors: list) -> tuple:
-    """Select the highest-severity alert from the survivor list.
+    """Select the primary alert using class-first composite ranking (D-07).
 
-    Severity rank: Extreme > Severe > Moderate > Minor > Unknown (D2-11).
+    Rank: Warning > Watch > Advisory > Statement/Other,
+    ties broken by severity → urgency → certainty.
 
     Returns
     -------
-    (best_alert, remaining_count) where:
-      - best_alert is the alert dict with the highest severity (or None if empty).
-      - remaining_count is len(survivors) - 1 (others after the best).
+    (best_alert, remaining_alerts) where:
+      - best_alert: highest-ranked alert dict (or None if empty).
+      - remaining_alerts: list of the other survivors (for per-class tally, D-08).
 
     Tolerates missing/malformed fields (no raise).
     """
     if not survivors:
-        return (None, 0)
+        return (None, [])
     try:
-        def _severity_rank(alert):
+        def _composite_key(alert):
             try:
+                cls   = _classify_alert_class(alert)
                 props = alert.get("properties") or alert
-                sev = props.get("severity", "Unknown")
-                return _SEVERITY_RANK.get(sev, 0)
+                sev   = _SEVERITY_RANK.get(props.get("severity", "Unknown"), 0)
+                urg   = {"Immediate": 2, "Expected": 1, "Future": 0}.get(
+                            props.get("urgency", "Unknown"), 0)
+                cert  = {"Observed": 2, "Likely": 1, "Possible": 0}.get(
+                            props.get("certainty", "Unknown"), 0)
+                return (_ALERT_CLASS_RANK.get(cls, 0), sev, urg, cert)
             except Exception:
-                return 0
+                return (0, 0, 0, 0)
 
-        best = max(survivors, key=_severity_rank)
-        remaining = len(survivors) - 1
+        best = max(survivors, key=_composite_key)
+        remaining = [a for a in survivors if a is not best]
         return (best, remaining)
     except Exception:
-        return (None, 0)
+        return (None, [])
 
 
-def _alert_color(severity: str) -> str:
-    """Return the ANSI color for a CAP severity level (D2-11).
+def _alert_color(alert: dict) -> str:
+    """Return the ANSI color+intensity for a CAP alert dict (D-05, D-06).
 
-    Mirrors color_for's shape but maps severity strings instead of percentages.
-      Extreme / Severe  → RED
-      Moderate / Minor  → YELLOW
-      Unknown or other  → YELLOW (visible but not alarming; per plan discretion)
+    Hue from alert class (D-05):
+      Warning         → RED
+      Watch           → YELLOW
+      Advisory        → CYAN
+      Statement/Other → RESET (visible neutral)
+
+    Intensity from urgency+certainty (D-06) — prepended before hue:
+      Immediate + Observed → BOLD + hue
+      Future / Possible    → DIM + hue
+      Expected / Likely    → hue (no modifier)
+
+    Never raises — falls back to YELLOW on any parse error.
     """
-    if severity in ("Extreme", "Severe"):
-        return RED
-    if severity in ("Moderate", "Minor"):
+    try:
+        cls       = _classify_alert_class(alert)
+        intensity = _alert_intensity(alert)
+        hue_map   = {
+            "Warning":         RED,
+            "Watch":           YELLOW,
+            "Advisory":        CYAN,
+            "Statement/Other": RESET,
+        }
+        hue = hue_map.get(cls, YELLOW)
+        return f"{intensity}{hue}"
+    except Exception:
         return YELLOW
-    # Unknown or any unrecognized severity: YELLOW (safe visible default)
-    return YELLOW
 
 
 def _wx_color(condition_type: str) -> str:
