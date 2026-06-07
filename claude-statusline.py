@@ -930,6 +930,89 @@ _SEVERITY_RANK: dict = {
     "Unknown":  0,
 }
 
+# VTEC significance letter → hazard class (D-01).
+# W = Warning, A = Watch, Y = Advisory, S/F/O/N = Statement/Other.
+_VTEC_SIG_TO_CLASS: dict = {
+    "W": "Warning",
+    "A": "Watch",
+    "Y": "Advisory",
+    "S": "Statement/Other",
+    "F": "Statement/Other",
+    "O": "Statement/Other",
+    "N": "Statement/Other",
+}
+
+# Hazard class rank for class-first selection (D-07).
+_ALERT_CLASS_RANK: dict = {
+    "Warning":         3,
+    "Watch":           2,
+    "Advisory":        1,
+    "Statement/Other": 0,
+}
+
+
+def _classify_alert_class(alert: dict) -> str:
+    """Classify a CAP alert dict as Warning/Watch/Advisory/Statement/Other.
+
+    Primary: VTEC significance letter from properties.parameters.VTEC (D-01).
+      The significance letter is the 5th dot-delimited field of the VTEC string,
+      after stripping leading/trailing "/".  W→Warning, A→Watch, Y→Advisory,
+      S/F/O/N→Statement/Other.
+    Fallback: trailing word of properties.event (D-02).
+      "Tornado Warning" → Warning, "Flash Flood Watch" → Watch, etc.
+    Default: "Statement/Other" (D-03, omit-not-fake — never raises, never None).
+    """
+    try:
+        props = alert.get("properties") or alert
+        # D-01: VTEC significance letter (5th dot-delimited field of each VTEC string)
+        vtec_list = (props.get("parameters") or {}).get("VTEC") or []
+        if isinstance(vtec_list, str):
+            vtec_list = [vtec_list]
+        for vtec_str in vtec_list:
+            try:
+                fields = vtec_str.strip("/").split(".")
+                if len(fields) >= 5:
+                    sig = fields[4].upper()
+                    cls = _VTEC_SIG_TO_CLASS.get(sig)
+                    if cls:
+                        return cls
+            except Exception:
+                pass
+        # D-02: event-name trailing word fallback
+        event = (props.get("event") or "").strip()
+        for word in ("Warning", "Watch", "Advisory"):
+            if event.endswith(word):
+                return word
+    except Exception:
+        pass
+    return "Statement/Other"   # D-03: unclassifiable or any error → Statement/Other
+
+
+def _alert_intensity(alert: dict) -> str:
+    """Return ANSI intensity modifier for an alert's urgency+certainty (D-06).
+
+    Three bands (locked):
+      Immediate + Observed  → BOLD   (act now, high confidence)
+      Expected  / Likely    → ""     (normal, no modifier)
+      Future    / Possible  → DIM    (lower immediacy or confidence)
+
+    Never raises — returns "" (normal) on any parse failure.
+    """
+    try:
+        props = alert.get("properties") or alert
+        urgency   = (props.get("urgency")   or "").strip()
+        certainty = (props.get("certainty") or "").strip()
+        # Immediate + Observed → bold/bright (highest immediacy, confirmed)
+        if urgency == "Immediate" and certainty == "Observed":
+            return BOLD
+        # Future urgency or Possible/Unlikely certainty → dim (lower signal)
+        if urgency in ("Future",) or certainty in ("Possible", "Unlikely"):
+            return DIM
+        # Expected / Likely (or anything else) → normal (no modifier)
+    except Exception:
+        pass
+    return ""
+
 
 def dedup_alerts(alerts: list, now=None) -> list:
     """Dedup a CAP alert list via the references-chain algorithm.

@@ -54,20 +54,25 @@ def _make_alert(
     references: list | None = None,
     sent: str = "2026-05-28T20:00:00Z",
     expires: str = "2099-12-31T23:59:59Z",
+    urgency: str = "Unknown",
+    certainty: str = "Unknown",
+    vtec: list | None = None,
 ) -> dict:
     """Build a minimal NWS alert dict (feature.properties shape)."""
-    return {
+    props = {
         "id": identifier,
-        "properties": {
-            "id": identifier,
-            "event": event,
-            "severity": severity,
-            "messageType": msg_type,
-            "references": references if references is not None else [],
-            "sent": sent,
-            "expires": expires,
-        }
+        "event": event,
+        "severity": severity,
+        "messageType": msg_type,
+        "references": references if references is not None else [],
+        "sent": sent,
+        "expires": expires,
+        "urgency": urgency,
+        "certainty": certainty,
     }
+    if vtec is not None:
+        props["parameters"] = {"VTEC": vtec}
+    return {"id": identifier, "properties": props}
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +203,181 @@ class TestDedupAlerts(unittest.TestCase):
             result = self.mod.dedup_alerts([alert])  # no now= argument
         except Exception as e:
             self.fail(f"dedup_alerts raised when now=None: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Phase 02.2 Task 2: _classify_alert_class
+# ---------------------------------------------------------------------------
+
+class TestClassifyAlertClass(unittest.TestCase):
+    """Unit tests for _classify_alert_class — VTEC significance primary, event-name fallback,
+    Statement/Other default (D-01, D-02, D-03)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_classify_alert_class_exists(self):
+        self.assertTrue(callable(getattr(self.mod, "_classify_alert_class", None)))
+
+    def test_vtec_w_gives_warning(self):
+        """VTEC significance W → Warning (D-01)."""
+        alert = _make_alert("t1", "Tornado Warning", "Extreme",
+                            vtec=["/O.NEW.KTLX.TO.W.0001.000000T0000Z-000000T0000Z/"])
+        self.assertEqual(self.mod._classify_alert_class(alert), "Warning")
+
+    def test_vtec_a_gives_watch(self):
+        """VTEC significance A → Watch (D-01)."""
+        alert = _make_alert("t2", "Tornado Watch", "Severe",
+                            vtec=["/O.NEW.KTOR.TO.A.0002.000000T0000Z-000000T0000Z/"])
+        self.assertEqual(self.mod._classify_alert_class(alert), "Watch")
+
+    def test_vtec_y_gives_advisory(self):
+        """VTEC significance Y → Advisory (D-01)."""
+        alert = _make_alert("t3", "Wind Advisory", "Minor",
+                            vtec=["/O.NEW.KOUN.WI.Y.0003.000000T0000Z-000000T0000Z/"])
+        self.assertEqual(self.mod._classify_alert_class(alert), "Advisory")
+
+    def test_vtec_s_gives_statement(self):
+        """VTEC significance S → Statement/Other (D-01)."""
+        alert = _make_alert("t4", "Special Weather Statement", "Unknown",
+                            vtec=["/O.NEW.KOUN.SP.S.0001.000000T0000Z-000000T0000Z/"])
+        self.assertEqual(self.mod._classify_alert_class(alert), "Statement/Other")
+
+    def test_vtec_f_gives_statement(self):
+        """VTEC significance F → Statement/Other (D-01)."""
+        alert = _make_alert("t5", "Flood Statement", "Unknown",
+                            vtec=["/O.NEW.KOUN.FL.F.0001.000000T0000Z-000000T0000Z/"])
+        self.assertEqual(self.mod._classify_alert_class(alert), "Statement/Other")
+
+    def test_event_name_fallback_warning(self):
+        """No VTEC present + event ending in 'Warning' → Warning (D-02)."""
+        alert = _make_alert("t6", "Tornado Warning", "Extreme")
+        self.assertEqual(self.mod._classify_alert_class(alert), "Warning")
+
+    def test_event_name_fallback_watch(self):
+        """No VTEC present + event ending in 'Watch' → Watch (D-02)."""
+        alert = _make_alert("t7", "Flash Flood Watch", "Severe")
+        self.assertEqual(self.mod._classify_alert_class(alert), "Watch")
+
+    def test_event_name_fallback_advisory(self):
+        """No VTEC present + event ending in 'Advisory' → Advisory (D-02)."""
+        alert = _make_alert("t8", "Wind Advisory", "Minor")
+        self.assertEqual(self.mod._classify_alert_class(alert), "Advisory")
+
+    def test_unclassifiable_gives_statement(self):
+        """Event 'Special Weather Statement' (no trailing Warning/Watch/Advisory) → Statement/Other (D-03)."""
+        alert = _make_alert("t9", "Special Weather Statement", "Minor")
+        self.assertEqual(self.mod._classify_alert_class(alert), "Statement/Other")
+
+    def test_vtec_with_fewer_than_5_fields_falls_through_to_event_name(self):
+        """A malformed VTEC with <5 fields does not crash and falls back to event name."""
+        alert = _make_alert("t10", "Tornado Warning", "Extreme",
+                            vtec=["MALFORMED"])
+        self.assertEqual(self.mod._classify_alert_class(alert), "Warning")
+
+    def test_never_raises_on_empty_dict(self):
+        """_classify_alert_class({}) returns Statement/Other without raising (D-03)."""
+        try:
+            result = self.mod._classify_alert_class({})
+        except Exception as e:
+            self.fail(f"_classify_alert_class raised on {{}}: {e}")
+        self.assertEqual(result, "Statement/Other")
+
+    def test_never_raises_loop(self):
+        """_classify_alert_class never raises on malformed inputs (D-03, T-02.2-01)."""
+        bad_inputs = [
+            {},
+            {"properties": {}},
+            {"properties": {"event": None}},
+            {"properties": {"event": 42}},
+            {"properties": {"parameters": {"VTEC": None}}},
+            {"properties": {"parameters": {"VTEC": []}}},
+        ]
+        for bad in bad_inputs:
+            with self.subTest(input=bad):
+                try:
+                    result = self.mod._classify_alert_class(bad)
+                    self.assertIsInstance(result, str,
+                                         f"Expected str, got {type(result)} for {bad}")
+                except Exception as e:
+                    self.fail(f"_classify_alert_class raised on {bad!r}: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Phase 02.2 Task 2: _alert_intensity
+# ---------------------------------------------------------------------------
+
+class TestAlertIntensity(unittest.TestCase):
+    """Unit tests for _alert_intensity — three-band bold/normal/dim model (D-06)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_alert_intensity_exists(self):
+        self.assertTrue(callable(getattr(self.mod, "_alert_intensity", None)))
+
+    def test_immediate_observed_returns_bold(self):
+        """Immediate urgency + Observed certainty → BOLD (D-06 top band)."""
+        alert = _make_alert("i1", "Tornado Warning", "Extreme",
+                            urgency="Immediate", certainty="Observed")
+        result = self.mod._alert_intensity(alert)
+        self.assertEqual(result, self.mod.BOLD,
+                         f"Immediate+Observed should be BOLD, got {result!r}")
+
+    def test_expected_likely_returns_empty(self):
+        """Expected urgency + Likely certainty → "" (normal, no modifier) (D-06 middle band)."""
+        alert = _make_alert("i2", "Flash Flood Watch", "Severe",
+                            urgency="Expected", certainty="Likely")
+        result = self.mod._alert_intensity(alert)
+        self.assertEqual(result, "",
+                         f"Expected+Likely should be '' (normal), got {result!r}")
+
+    def test_future_urgency_returns_dim(self):
+        """Future urgency → DIM (D-06 low band)."""
+        alert = _make_alert("i3", "Wind Advisory", "Minor",
+                            urgency="Future", certainty="Possible")
+        result = self.mod._alert_intensity(alert)
+        self.assertEqual(result, self.mod.DIM,
+                         f"Future urgency should be DIM, got {result!r}")
+
+    def test_possible_certainty_returns_dim(self):
+        """Possible certainty (any urgency) → DIM (D-06 low band)."""
+        alert = _make_alert("i4", "Tornado Watch", "Severe",
+                            urgency="Expected", certainty="Possible")
+        result = self.mod._alert_intensity(alert)
+        self.assertEqual(result, self.mod.DIM,
+                         f"Possible certainty should be DIM, got {result!r}")
+
+    def test_unlikely_certainty_returns_dim(self):
+        """Unlikely certainty → DIM (D-06 low band)."""
+        alert = _make_alert("i5", "Wind Advisory", "Minor",
+                            urgency="Expected", certainty="Unlikely")
+        result = self.mod._alert_intensity(alert)
+        self.assertEqual(result, self.mod.DIM,
+                         f"Unlikely certainty should be DIM, got {result!r}")
+
+    def test_unknown_urgency_certainty_returns_empty(self):
+        """Unknown urgency and certainty (default) → "" (normal, no modifier)."""
+        alert = _make_alert("i6", "Test Alert", "Moderate")  # defaults: Unknown/Unknown
+        result = self.mod._alert_intensity(alert)
+        self.assertEqual(result, "",
+                         f"Unknown/Unknown should be '' (normal), got {result!r}")
+
+    def test_never_raises_on_malformed(self):
+        """_alert_intensity never raises and returns '' on malformed input (T-02.2-01)."""
+        bad_inputs = [{}, {"properties": {}}, {"properties": {"urgency": None}}, None]
+        for bad in bad_inputs:
+            with self.subTest(input=bad):
+                try:
+                    if bad is None:
+                        # _alert_intensity expects a dict; pass empty dict as None substitute
+                        result = self.mod._alert_intensity({})
+                    else:
+                        result = self.mod._alert_intensity(bad)
+                    self.assertIsInstance(result, str,
+                                         f"Expected str return, got {type(result)} for {bad!r}")
+                except Exception as e:
+                    self.fail(f"_alert_intensity raised on {bad!r}: {e}")
 
 
 # ---------------------------------------------------------------------------
