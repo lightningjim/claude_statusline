@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: milestone_complete
-stopped_at: Milestone complete (Phase 05.1 was final phase)
-last_updated: 2026-05-30T00:42:42.899Z
-last_activity: 2026-06-06 -- Completed quick task 260606-kpt: D-10 GSD-fragment omit-not-fake fix
+status: executing
+stopped_at: Phase 2.2 context gathered
+last_updated: "2026-06-07T04:26:51.457Z"
+last_activity: 2026-05-30
 progress:
-  total_phases: 8
-  completed_phases: 7
+  total_phases: 9
+  completed_phases: 8
   total_plans: 17
   completed_plans: 17
-  percent: 88
+  percent: 89
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Milestone complete
+**Current focus:** Phase 02.2 inserted (urgent) — watch/warning/advisory differentiation
 
 ## Current Position
 
-Phase: 05.1
+Phase: 02.2
 Plan: Not started
-Status: Milestone complete
+Status: In progress
 Last activity: 2026-05-30
 
-Progress: [██████████] 100%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -119,6 +119,7 @@ Recent decisions affecting current work:
 - Phase 02.1 inserted after Phase 2: Nerd Font icon set — weather glyphs + other segment glyphs, pulled forward from v2 ENH-04 (URGENT)
 - Phase 03.1 inserted after Phase 3: Resolve default bar gradient vs shade test drift (URGENT)
 - Phase 05.1 inserted after Phase 05: Fix TestGsdSegmentBuilder environment-leak test failures (URGENT)
+- Phase 02.2 inserted after Phase 2: Differentiate between watches, warnings, and advisories (URGENT)
 
 ### Pending Todos
 
@@ -144,6 +145,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-05-29T23:57:06.231Z
-Stopped at: Phase 05.1 context gathered
-Resume file: .planning/phases/05.1-fix-testgsdsegmentbuilder-environment-leak-test-failures/05.1-CONTEXT.md
+Last session: 2026-06-07T04:26:51.446Z
+Stopped at: Phase 2.2 context gathered
+Resume file: .planning/phases/02.2-differentiate-between-watches-warnings-and-advisories/02.2-CONTEXT.md
