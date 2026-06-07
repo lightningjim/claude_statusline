@@ -1,21 +1,34 @@
 {
   "version": "1.0",
-  "timestamp": "2026-05-28T20:42:54.387Z",
-  "source": "auto-postool",
-  "partial": true,
-  "phase": null,
-  "phase_name": null,
-  "phase_dir": null,
-  "plan": null,
-  "task": null,
-  "total_tasks": null,
-  "status": "auto-checkpoint",
-  "completed_tasks": [],
-  "remaining_tasks": [],
-  "blockers": [],
+  "timestamp": "2026-06-07T05:29:16.743Z",
+  "phase": "02.2",
+  "phase_name": "differentiate-between-watches-warnings-and-advisories",
+  "phase_dir": ".planning/phases/02.2-differentiate-between-watches-warnings-and-advisories",
+  "plan": "02.2-02",
+  "task": 1,
+  "total_tasks": 2,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": "02.2-01", "name": "Classification + class color + class-first selection layer (Wave 1, whole plan)", "status": "done", "commit": "d5fc5ac"},
+    {"id": "02.2-02-T1", "name": "Plan 02 Task 1: _build_alert_tally RED tests written", "status": "in_progress", "progress": "8 RED tests (TestBuildAlertTally) appended to tests/test_weather_alerts.py, UNCOMMITTED. _build_alert_tally NOT yet implemented. GREEN step not done."}
+  ],
+  "remaining_tasks": [
+    {"id": "02.2-02-T1", "name": "Implement _build_alert_tally to make the 8 RED tests pass (GREEN), then commit", "status": "in_progress"},
+    {"id": "02.2-02-T2", "name": "Wire render path: per-class glyph (icon_set-aware), class hue + intensity via _alert_color(best), sanitize+width-bound NWS event text, per-class tally replacing flat +N; update test_warning_glyph_in_alert_detail and test_multiple_alerts_plus_n_suffix", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "Working tree RED: tests/test_weather_alerts.py has uncommitted TestBuildAlertTally (8 failing) referencing _build_alert_tally which is not yet in claude-statusline.py. Expected TDD RED state for Plan 02.2-02 Task 1.", "type": "technical", "workaround": "Resume implements _build_alert_tally (GREEN), OR git checkout tests/test_weather_alerts.py to reset and let execute-phase re-run plan 02.2-02 cleanly."}
+  ],
   "human_actions_pending": [],
-  "decisions": [],
-  "uncommitted_files": [],
-  "next_action": null,
-  "context_notes": ""
+  "decisions": [
+    {"decision": "Executors ran sequentially on main tree (no worktree isolation) despite use_worktrees=true", "rationale": "Single-plan sequential waves sharing files: worktrees add merge-back risk for zero parallelism gain.", "phase": "02.2"},
+    {"decision": "Phase is 02.2 not 2.1", "rationale": "02.1 (Nerd Font icon set) already existed; SDK assigned next decimal.", "phase": "02.2"},
+    {"decision": "Reopened completed milestone v1.0 to in-progress for this inserted phase", "rationale": "User chose reopen at insert.", "phase": "02.2"}
+  ],
+  "uncommitted_files": [
+    "tests/test_weather_alerts.py (Plan 02.2-02 Task 1 RED tests, +110 lines, 8 failing — intentional TDD RED)",
+    ".planning/config.json (workflow._auto_chain_active toggled false — not real work)"
+  ],
+  "next_action": "Re-run /gsd:execute-phase 02.2 — skips completed 02.2-01, resumes at 02.2-02 (GREEN _build_alert_tally, then Task 2 render wiring). For a clean slate, git checkout tests/test_weather_alerts.py first.",
+  "context_notes": "Plan 02.2-01 (Wave 1) fully shipped/committed: _classify_alert_class, _alert_intensity, _alert_color(alert), class-first select_alert returning (best, remaining_list), cmap-guarded per-class glyph tables, BOLD. 162 tests passed end of Wave 1. Plan 02.2-02 wires that layer into _weather_segment. Both plans passed plan-checker. D-01..D-08 covered. claude-statusline.py NOT modified by Wave 2."
 }
