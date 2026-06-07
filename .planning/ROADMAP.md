@@ -204,7 +204,7 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 →
 |-------|----------------|--------|-----------|
 | 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
 | 2. Weather Layer | 3/3 | Complete   | 2026-05-29 |
-| 02.2. Watch/Warning/Advisory differentiation | 2/2 | Complete   | 2026-06-07 |
+| 02.2. Watch/Warning/Advisory differentiation | 2/2 | Complete    | 2026-06-07 |
 | 02.1. Nerd Font icon set | 3/3 | Complete    | 2026-05-29 |
 | 3. Presets for block fill | 2/2 | Complete   | 2026-05-29 |
 | 03.1. Default bar gradient vs shade | 1/1 | Complete | 2026-05-29 |
