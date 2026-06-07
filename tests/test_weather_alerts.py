@@ -1053,5 +1053,115 @@ class TestWeatherSegmentAlertOverride(unittest.TestCase):
                       f"Warning glyph ⚠ must appear in alert detail: {result!r}")
 
 
+class TestBuildAlertTally(unittest.TestCase):
+    """_build_alert_tally groups remaining alerts by class glyph in fixed order."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_empty_list_returns_empty_string(self):
+        """No remaining alerts -> empty string."""
+        result = self.mod._build_alert_tally([], "nerd")
+        self.assertEqual(result, "")
+
+    def test_empty_list_emoji_returns_empty_string(self):
+        """No remaining alerts (emoji icon_set) -> empty string."""
+        result = self.mod._build_alert_tally([], "emoji")
+        self.assertEqual(result, "")
+
+    def test_one_warning_and_two_advisories_nerd(self):
+        """1 Warning + 2 Advisory: Warning glyph+1 appears before Advisory glyph+2."""
+        warning = _make_alert("w1", "Tornado Warning", "Extreme",
+                              vtec=["/O.NEW.KTLX.TO.W.0001.000000T0000Z-000000T0000Z/"])
+        adv1 = _make_alert("a1", "Wind Advisory", "Minor",
+                           vtec=["/O.NEW.KLZK.WI.Y.0001.000000T0000Z-000000T0000Z/"])
+        adv2 = _make_alert("a2", "Wind Advisory", "Minor",
+                           vtec=["/O.NEW.KLZK.WI.Y.0002.000000T0000Z-000000T0000Z/"])
+        result = self.mod._build_alert_tally([warning, adv1, adv2], "nerd")
+        # Warning glyph present with count 1
+        warn_glyph = self.mod._ALERT_CLASS_GLYPHS_NERD["Warning"]
+        adv_glyph = self.mod._ALERT_CLASS_GLYPHS_NERD["Advisory"]
+        self.assertIn(warn_glyph + "1", result,
+                      f"Warning glyph + count 1 expected in: {result!r}")
+        self.assertIn(adv_glyph + "2", result,
+                      f"Advisory glyph + count 2 expected in: {result!r}")
+        # Warning must appear before Advisory
+        self.assertLess(result.index(warn_glyph), result.index(adv_glyph),
+                        f"Warning group must precede Advisory group: {result!r}")
+
+    def test_one_warning_and_two_advisories_emoji(self):
+        """Emoji icon_set: Warning emoji+1 before Advisory emoji+2."""
+        warning = _make_alert("w1", "Tornado Warning", "Extreme",
+                              vtec=["/O.NEW.KTLX.TO.W.0001.000000T0000Z-000000T0000Z/"])
+        adv1 = _make_alert("a1", "Wind Advisory", "Minor",
+                           vtec=["/O.NEW.KLZK.WI.Y.0001.000000T0000Z-000000T0000Z/"])
+        adv2 = _make_alert("a2", "Wind Advisory", "Minor",
+                           vtec=["/O.NEW.KLZK.WI.Y.0002.000000T0000Z-000000T0000Z/"])
+        result = self.mod._build_alert_tally([warning, adv1, adv2], "emoji")
+        warn_glyph = self.mod._ALERT_CLASS_GLYPHS_EMOJI["Warning"]
+        adv_glyph = self.mod._ALERT_CLASS_GLYPHS_EMOJI["Advisory"]
+        self.assertIn(warn_glyph + "1", result)
+        self.assertIn(adv_glyph + "2", result)
+        self.assertLess(result.index(warn_glyph), result.index(adv_glyph))
+
+    def test_zero_count_classes_omitted(self):
+        """Classes with zero remaining alerts do not appear in the tally."""
+        watch = _make_alert("w1", "Flood Watch", "Moderate",
+                            vtec=["/O.NEW.KOUN.FF.A.0001.000000T0000Z-000000T0000Z/"])
+        result = self.mod._build_alert_tally([watch], "nerd")
+        # Warning class is absent — glyph should not appear
+        warn_glyph = self.mod._ALERT_CLASS_GLYPHS_NERD["Warning"]
+        adv_glyph = self.mod._ALERT_CLASS_GLYPHS_NERD["Advisory"]
+        self.assertNotIn(warn_glyph, result,
+                         f"Warning glyph must not appear (no Warnings): {result!r}")
+        self.assertNotIn(adv_glyph, result,
+                         f"Advisory glyph must not appear (no Advisories): {result!r}")
+        # Watch class IS present
+        watch_glyph = self.mod._ALERT_CLASS_GLYPHS_NERD["Watch"]
+        self.assertIn(watch_glyph + "1", result)
+
+    def test_ordering_warning_before_watch_before_advisory(self):
+        """Fixed class order: Warning > Watch > Advisory."""
+        warning = _make_alert("w1", "Tornado Warning", "Extreme",
+                              vtec=["/O.NEW.KTLX.TO.W.0001.000000T0000Z-000000T0000Z/"])
+        watch = _make_alert("wa1", "Tornado Watch", "Severe",
+                            vtec=["/O.NEW.KTLX.TO.A.0001.000000T0000Z-000000T0000Z/"])
+        adv = _make_alert("a1", "Wind Advisory", "Minor",
+                          vtec=["/O.NEW.KLZK.WI.Y.0001.000000T0000Z-000000T0000Z/"])
+        result = self.mod._build_alert_tally([adv, watch, warning], "nerd")
+        warn_g = self.mod._ALERT_CLASS_GLYPHS_NERD["Warning"]
+        watch_g = self.mod._ALERT_CLASS_GLYPHS_NERD["Watch"]
+        adv_g = self.mod._ALERT_CLASS_GLYPHS_NERD["Advisory"]
+        self.assertLess(result.index(warn_g), result.index(watch_g))
+        self.assertLess(result.index(watch_g), result.index(adv_g))
+
+    def test_malformed_alert_does_not_raise(self):
+        """A malformed alert dict in the remainder list must not raise."""
+        bad_inputs = [
+            {},
+            {"properties": None},
+            {"properties": {"event": None}},
+            None,  # None in list should be handled gracefully
+        ]
+        for bad in bad_inputs:
+            remainder = [bad] if bad is not None else [{}]
+            try:
+                result = self.mod._build_alert_tally(remainder, "nerd")
+                self.assertIsInstance(result, str,
+                                      f"Expected str from _build_alert_tally({bad!r}), got {type(result)}")
+            except Exception as e:
+                self.fail(f"_build_alert_tally raised on malformed input {bad!r}: {e}")
+
+    def test_malformed_single_bad_item_in_mixed_list(self):
+        """A malformed item mixed with valid ones: result is still a valid string."""
+        good = _make_alert("g1", "Tornado Warning", "Extreme",
+                           vtec=["/O.NEW.KTLX.TO.W.0001.000000T0000Z-000000T0000Z/"])
+        result = self.mod._build_alert_tally([good, {}], "nerd")
+        self.assertIsInstance(result, str)
+        # The good Warning should still appear
+        warn_glyph = self.mod._ALERT_CLASS_GLYPHS_NERD["Warning"]
+        self.assertIn(warn_glyph, result)
+
+
 if __name__ == "__main__":
     unittest.main()

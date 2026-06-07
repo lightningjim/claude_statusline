@@ -1198,6 +1198,37 @@ def _alert_color(alert: dict) -> str:
         return YELLOW
 
 
+def _build_alert_tally(remaining: list, icon_set: str) -> str:
+    """Build a per-class tally string for the non-primary alerts (D-08).
+
+    Groups remaining alerts by class and returns a compact string like:
+      "<warn-glyph>1 <adv-glyph>2"
+    Classes with zero remaining are omitted. Order: Warning > Watch > Advisory > Statement/Other.
+    Never raises — returns "" on any failure.
+    """
+    try:
+        counts: dict = {}
+        for a in remaining:
+            try:
+                cls = _classify_alert_class(a)
+            except Exception:
+                cls = "Statement/Other"
+            counts[cls] = counts.get(cls, 0) + 1
+        parts = []
+        for cls in ("Warning", "Watch", "Advisory", "Statement/Other"):
+            n = counts.get(cls, 0)
+            if n == 0:
+                continue
+            if icon_set == "nerd":
+                g = _ALERT_CLASS_GLYPHS_NERD.get(cls, _WI_ALERT_STATEMENT)
+            else:
+                g = _ALERT_CLASS_GLYPHS_EMOJI.get(cls, "ℹ️")
+            parts.append(f"{g}{n}")
+        return " ".join(parts)
+    except Exception:
+        return ""
+
+
 def _wx_color(condition_type: str) -> str:
     """Return semantic ANSI color for a weather condition category (D-08).
 
