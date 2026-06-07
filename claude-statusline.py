@@ -78,6 +78,7 @@ GREEN  = "\033[32m"
 YELLOW = "\033[33m"
 RED    = "\033[31m"
 DIM    = "\033[2m"    # dim/neutral — used for reset times (D-04)
+BOLD   = "\033[1m"    # bold/bright — used for Immediate+Observed alert intensity (D-06)
 RESET  = "\033[0m"
 
 # Semantic weather colors (Phase 02.1, D-08) — TOP-LINE ONLY.
@@ -452,6 +453,40 @@ _NF_GSD_IDLE      = ""   # nf-fa-pause         U+F04C  (dim: parked / next-up
 # Plan slot glyph (map — the plan/roadmap label icon)
 _NF_GSD_PLAN      = ""   # nf-fa-map           U+F278  (neutral: plan slot label)
 
+# ---------------------------------------------------------------------------
+# Alert-class glyph constants (Phase 02.2, D-04)
+#
+# One nerd codepoint per hazard class — replaces the single ⚠ hardcode.
+# Codepoints chosen from the nf-fa-* (U+F0xx) range, all validated against
+# the installed JetBrains Nerd Font cmap (test_nerd_icons.py cmap guard).
+#
+# Semantic rationale:
+#   Warning    → fa-warning     (U+F071): glyph name literally "fa-warning" — act now
+#   Watch      → fa-eye         (U+F06E): watching/observing — be prepared
+#   Advisory   → fa-info_circle (U+F05A): information/advisory — be aware
+#   Statement  → fa-bell        (U+F0F3): general notification — neutral
+# ---------------------------------------------------------------------------
+
+_WI_ALERT_WARNING   = ""   # nf-fa-warning       U+F071  (Warning: act now)
+_WI_ALERT_WATCH     = ""   # nf-fa-eye           U+F06E  (Watch: be prepared)
+_WI_ALERT_ADVISORY  = ""   # nf-fa-info_circle   U+F05A  (Advisory: be aware)
+_WI_ALERT_STATEMENT = ""   # nf-fa-bell          U+F0F3  (Statement/Other: neutral)
+
+# Nerd Font glyph per alert class — resolved at render time via icon_set (D-04).
+_ALERT_CLASS_GLYPHS_NERD: dict = {
+    "Warning":         _WI_ALERT_WARNING,
+    "Watch":           _WI_ALERT_WATCH,
+    "Advisory":        _WI_ALERT_ADVISORY,
+    "Statement/Other": _WI_ALERT_STATEMENT,
+}
+
+# Emoji fallback glyph per alert class — used when icon_set != "nerd" (D-04).
+_ALERT_CLASS_GLYPHS_EMOJI: dict = {
+    "Warning":         "🔴",
+    "Watch":           "🟡",
+    "Advisory":        "🔵",
+    "Statement/Other": "ℹ️",
+}
 
 
 # ---------------------------------------------------------------------------

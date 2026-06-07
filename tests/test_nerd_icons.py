@@ -1405,6 +1405,11 @@ class TestAllNerdGlyphConstantsInInstalledFont(unittest.TestCase):
         "_NF_GSD_DONE",
         "_NF_GSD_IDLE",
         "_NF_GSD_PLAN",
+        # Phase 02.2 alert class glyphs (Plan 01)
+        "_WI_ALERT_WARNING",
+        "_WI_ALERT_WATCH",
+        "_WI_ALERT_ADVISORY",
+        "_WI_ALERT_STATEMENT",
     ]
 
     def setUp(self):
@@ -1515,6 +1520,71 @@ class TestMoonPhaseGlyphsAreMoonGlyphs(unittest.TestCase):
             "moon_full", glyph_name.lower(),
             f"Slot [14] U+{cp:04X} glyph name {glyph_name!r} does not contain 'moon_full'"
         )
+
+
+class TestAlertClassGlyphsAreClassAppropriate(unittest.TestCase):
+    """Phase 02.2 guard: each alert-class glyph codepoint must map to a class-appropriate
+    font glyph name — not a moon, clock, or unrelated symbol.
+
+    Mirrors TestMoonPhaseGlyphsAreMoonGlyphs for the alert-class glyph constants.
+    """
+
+    # Expected keyword fragments in the font glyph name for each constant.
+    # At least one keyword must appear (case-insensitive) in the glyph name.
+    ALERT_CLASS_GLYPH_NAMES: dict = {
+        "_WI_ALERT_WARNING":   ("warning", "exclamation", "alert"),
+        "_WI_ALERT_WATCH":     ("eye", "watch", "binocular"),
+        "_WI_ALERT_ADVISORY":  ("info", "advisory", "circle"),
+        "_WI_ALERT_STATEMENT": ("bell", "notification", "note", "comment"),
+    }
+
+    def setUp(self):
+        try:
+            from fontTools.ttLib import TTFont  # noqa: F401
+        except ImportError:
+            self.skipTest("fontTools not installed — skipping alert glyph cmap guard")
+
+        self.font_path = _find_nerd_font_path()
+        if self.font_path is None:
+            self.skipTest("No JetBrains Nerd Font file found — skipping alert glyph cmap guard")
+
+        from fontTools.ttLib import TTFont
+        font = TTFont(self.font_path)
+        self.cmap = font.getBestCmap()
+        self.mod = _load_script_module()
+
+    def test_alert_glyphs_are_in_font(self):
+        """Each alert-class nerd glyph codepoint is present in the installed font cmap."""
+        for name in self.ALERT_CLASS_GLYPH_NAMES:
+            with self.subTest(constant=name):
+                val = getattr(self.mod, name, None)
+                self.assertIsNotNone(val, f"{name} is not defined on the module")
+                cp = ord(val)
+                self.assertIn(
+                    cp, self.cmap,
+                    f"{name} (U+{cp:04X}) is NOT in the installed font cmap — "
+                    f"would render as tofu. Font: {self.font_path}"
+                )
+
+    def test_alert_glyphs_have_class_appropriate_names(self):
+        """Each alert-class glyph's font glyph name contains a class-appropriate keyword.
+
+        This guards against accidental use of moon/clock/direction codepoints
+        (the same class of bug TestMoonPhaseGlyphsAreMoonGlyphs was created to catch).
+        """
+        for name, keywords in self.ALERT_CLASS_GLYPH_NAMES.items():
+            with self.subTest(constant=name):
+                val = getattr(self.mod, name, None)
+                if val is None:
+                    self.skipTest(f"{name} not defined — skipping semantic name check")
+                cp = ord(val)
+                glyph_name = self.cmap.get(cp, "").lower()
+                self.assertTrue(
+                    any(kw in glyph_name for kw in keywords),
+                    f"{name} (U+{cp:04X}) maps to font glyph name {glyph_name!r}, "
+                    f"which does not contain any of {keywords!r} — "
+                    f"likely a wrong codepoint (clock-face bug variant)"
+                )
 
 
 # ---------------------------------------------------------------------------
