@@ -80,6 +80,8 @@ RED    = "\033[31m"
 DIM    = "\033[2m"    # dim/neutral — used for reset times (D-04)
 BOLD   = "\033[1m"    # bold/bright — used for Immediate+Observed alert intensity (D-06)
 RESET  = "\033[0m"
+DEFAULT_FG = "\033[39m"  # default foreground only — neutral hue that preserves BOLD/DIM
+                         # (unlike RESET, which cancels intensity); see _alert_color (WR-01/D-06)
 
 # Semantic weather colors (Phase 02.1, D-08) — TOP-LINE ONLY.
 # Do NOT use these on the bottom line; GREEN/YELLOW/RED there carry
@@ -1174,7 +1176,7 @@ def _alert_color(alert: dict) -> str:
       Warning         → RED
       Watch           → YELLOW
       Advisory        → CYAN
-      Statement/Other → RESET (visible neutral)
+      Statement/Other → DEFAULT_FG (neutral default foreground; preserves intensity)
 
     Intensity from urgency+certainty (D-06) — prepended before hue:
       Immediate + Observed → BOLD + hue
@@ -1190,7 +1192,11 @@ def _alert_color(alert: dict) -> str:
             "Warning":         RED,
             "Watch":           YELLOW,
             "Advisory":        CYAN,
-            "Statement/Other": RESET,
+            # Neutral default-foreground hue so the prepended BOLD/DIM intensity band
+            # survives (WR-01/D-06). RESET here (\x1b[0m) would cancel the intensity,
+            # flattening the entire Statement/Other class; DEFAULT_FG (\x1b[39m) only
+            # sets foreground, leaving bold/dim intact, and avoids upstream color bleed.
+            "Statement/Other": DEFAULT_FG,
         }
         hue = hue_map.get(cls, YELLOW)
         return f"{intensity}{hue}"
@@ -2599,7 +2605,11 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
                         safe_event = "".join(
                             ch for ch in str(event)
                             if ch == " " or (ch.isprintable() and ch != "\x1b")
-                        )[:64]
+                        )[:64].strip()
+                        # D-10: never emit a hollow glyph — if sanitization left nothing
+                        # (e.g. an all-control-char event), fall back to the class name (WR-02).
+                        if not safe_event:
+                            safe_event = best_class
                         detail = f"{class_glyph} {safe_event}"
                         # D-08: per-class tally of remaining alerts (not flat +N)
                         if remaining_alerts:

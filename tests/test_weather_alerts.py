@@ -599,6 +599,30 @@ class TestAlertColor(unittest.TestCase):
         self.assertIsInstance(color, str, "Color must be a string")
         self.assertTrue(len(color) > 0, "Color must be non-empty")
 
+    def test_statement_intensity_band_survives(self):
+        """Statement/Other's intensity axis is not flattened by the neutral hue (WR-01/D-06).
+
+        Regression: the neutral hue was RESET (\\x1b[0m), which cancels the prepended
+        BOLD/DIM intensity, so every Statement/Other rendered identically. The neutral
+        hue must preserve the intensity band — Immediate+Observed keeps BOLD, and an
+        Immediate+Observed statement must be visually distinct from a Future+Possible one.
+        """
+        immediate = _make_alert("st-i", "Special Weather Statement", "Unknown",
+                                 urgency="Immediate", certainty="Observed")
+        future = _make_alert("st-f", "Special Weather Statement", "Unknown",
+                             urgency="Future", certainty="Possible")
+        ci = self.mod._alert_color(immediate)
+        cf = self.mod._alert_color(future)
+        self.assertIn(self.mod.BOLD, ci,
+                      f"Statement/Other Immediate+Observed must keep BOLD; got {ci!r}")
+        self.assertNotIn(self.mod.RED, ci,
+                         f"Statement/Other must not be RED; got {ci!r}")
+        self.assertIn(self.mod.DIM, cf,
+                      f"Statement/Other Future+Possible must keep DIM; got {cf!r}")
+        self.assertNotEqual(ci, cf,
+                            "Statement/Other intensity band must distinguish "
+                            f"Immediate+Observed from Future+Possible; both were {ci!r}")
+
 
 # ---------------------------------------------------------------------------
 # Task 2: fetch_alerts
@@ -1354,6 +1378,44 @@ class TestWeatherSegmentAlertOverrideV2(unittest.TestCase):
         # Old single ⚠ must be absent
         self.assertNotIn("⚠", result,
                          f"Old single-glyph ⚠ must not appear: {result!r}")
+
+    def test_all_control_char_event_falls_back_to_class_name(self):
+        """An event that sanitizes to empty falls back to the class name, not a hollow glyph (WR-02/D-10).
+
+        Regression: if the NWS event string is entirely characters the sanitizer strips,
+        safe_event became '' and the detail rendered as 'GLYPH ' — a bare class glyph plus a
+        dangling space. D-10 (omit-not-fake) requires a meaningful fallback instead.
+        """
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        # Event is all control chars (stripped to nothing); VTEC fixes the class to Warning.
+        alert = {
+            "id": "ctl-1",
+            "properties": {
+                "id": "ctl-1",
+                "event": "\x01\x02\x03\x04",
+                "severity": "Extreme",
+                "messageType": "Alert",
+                "references": [],
+                "sent": "2026-05-28T20:00:00Z",
+                "expires": "2099-12-31T23:59:59Z",
+                "parameters": {"VTEC": ["/O.NEW.KOUN.SV.W.0001.000000T0000Z-000000T0000Z/"]},
+            },
+        }
+        cache = self._make_active_cache([alert])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result)
+        warn_glyph = self.mod._ALERT_CLASS_GLYPHS_EMOJI["Warning"]
+        # Fallback class name is rendered as the detail text…
+        self.assertIn("Warning", result,
+                      f"Empty-sanitized event must fall back to class name 'Warning': {result!r}")
+        # …and the detail is NOT a hollow 'glyph + trailing space' with nothing after it.
+        self.assertNotIn(f"{warn_glyph} {self.mod.RESET}", result,
+                         f"Detail must not be a bare glyph + dangling space: {result!r}")
+        # No leftover raw control bytes leaked into the rendered string.
+        for ctl in ("\x01", "\x02", "\x03", "\x04"):
+            self.assertNotIn(ctl, result,
+                             f"Raw control byte {ctl!r} must not appear in output: {result!r}")
 
 
 if __name__ == "__main__":
