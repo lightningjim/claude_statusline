@@ -1265,6 +1265,173 @@ def _claude_status_color(severity: object) -> str:
         return YELLOW
 
 
+# ---------------------------------------------------------------------------
+# Claude service-health derivation (Phase 06, D-01/D-02/D-03/D-04)
+# ---------------------------------------------------------------------------
+
+# Tracked components: only these trigger the status indicator (D-02).
+# Must match the component names verbatim as they appear in the status.claude.com feed.
+_CLAUDE_TRACKED_COMPONENTS: frozenset = frozenset({
+    "Claude Code",
+    "claude.ai",
+    "Claude Cowork",
+})
+
+# Human-readable state labels for degraded component statuses (D-03 fallback)
+_CLAUDE_STATUS_LABELS: dict = {
+    "degraded_performance": "degraded",
+    "partial_outage":       "partial outage",
+    "major_outage":         "major outage",
+    "under_maintenance":    "maintenance",
+}
+
+# Impact → severity mapping for incidents (D-03)
+_CLAUDE_IMPACT_SEVERITY: dict = {
+    "critical": "critical",
+    "major":    "major",
+    "minor":    "minor",
+    # "none" impact on an unresolved incident → fall back to "minor"
+    "none":     "minor",
+}
+
+
+def _derive_claude_status(summary: object) -> dict | None:
+    """Derive a status trigger result from a Statuspage.io summary.json dict.
+
+    Returns None (quiet-when-healthy, D-01) when all tracked components
+    (Claude Code, claude.ai, Claude Cowork) are operational and there is no
+    relevant incident or maintenance window.
+
+    Returns a dict with the shape:
+        {"severity": str, "label": str, "kind": str}
+    when something noteworthy is found.  The label is stored RAW (unsanitized)
+    so the cache is a faithful record — sanitization is the render path's job (Plan 02).
+
+    Derivation priority (first match wins):
+      1. Unresolved incident whose components[] intersect the tracked set → kind="incident"
+      2. Scheduled/in-progress maintenance touching a tracked component → kind="maintenance"
+      3. Tracked component with a non-operational status and no incident → kind="degraded"
+      4. All healthy → None
+
+    Do NOT use the top-level status.indicator rollup as the trigger (confirmed
+    D-02 hazard: indicator fires on any component, including untracked ones).
+
+    Whole body in try/except returning None — never raises (D-10 / T-06-02).
+    """
+    try:
+        if not isinstance(summary, dict):
+            return None
+
+        # Build a name→status map for all components in the feed
+        components_raw = summary.get("components", [])
+        if not isinstance(components_raw, list):
+            components_raw = []
+        comp_status: dict = {}
+        for comp in components_raw:
+            if not isinstance(comp, dict):
+                continue
+            name = comp.get("name", "")
+            status = comp.get("status", "operational")
+            if isinstance(name, str) and name:
+                comp_status[name] = status
+
+        def _tracked_component_names(component_refs: object) -> set:
+            """Return the subset of tracked component names from a component refs list."""
+            if not isinstance(component_refs, list):
+                return set()
+            result = set()
+            for ref in component_refs:
+                if not isinstance(ref, dict):
+                    continue
+                name = ref.get("name", "")
+                if isinstance(name, str) and name in _CLAUDE_TRACKED_COMPONENTS:
+                    result.add(name)
+            return result
+
+        # --- Rule 1: Unresolved incidents touching tracked components (D-03) ---
+        incidents_raw = summary.get("incidents", [])
+        if not isinstance(incidents_raw, list):
+            incidents_raw = []
+
+        triggered_incidents = []
+        for inc in incidents_raw:
+            if not isinstance(inc, dict):
+                continue
+            # An incident is "unresolved" if its status is investigating/identified/monitoring
+            inc_status = inc.get("status", "")
+            if not isinstance(inc_status, str):
+                continue
+            if inc_status not in ("investigating", "identified", "monitoring"):
+                continue
+            tracked = _tracked_component_names(inc.get("components", []))
+            if not tracked:
+                continue
+            triggered_incidents.append(inc)
+
+        if triggered_incidents:
+            # Pick the highest-impact incident
+            impact_rank = {"critical": 3, "major": 2, "minor": 1, "none": 0}
+            best = max(
+                triggered_incidents,
+                key=lambda i: impact_rank.get(i.get("impact", "none"), 0),
+            )
+            impact = best.get("impact", "none")
+            severity = _CLAUDE_IMPACT_SEVERITY.get(impact, "minor")
+            label = best.get("name", "")
+            if not isinstance(label, str):
+                label = ""
+            return {"severity": severity, "label": label, "kind": "incident"}
+
+        # --- Rule 2: Scheduled/in-progress maintenance touching tracked components (D-04) ---
+        maintenances_raw = summary.get("scheduled_maintenances", [])
+        if not isinstance(maintenances_raw, list):
+            maintenances_raw = []
+
+        for maint in maintenances_raw:
+            if not isinstance(maint, dict):
+                continue
+            maint_status = maint.get("status", "")
+            if not isinstance(maint_status, str):
+                continue
+            if maint_status not in ("scheduled", "in_progress"):
+                continue
+            tracked = _tracked_component_names(maint.get("components", []))
+            if not tracked:
+                continue
+            label = maint.get("name", "")
+            if not isinstance(label, str):
+                label = ""
+            return {"severity": "maintenance", "label": label, "kind": "maintenance"}
+
+        # --- Rule 3: Tracked component degraded with no associated incident (D-03 fallback) ---
+        non_operational = (
+            "degraded_performance",
+            "partial_outage",
+            "major_outage",
+            "under_maintenance",
+        )
+        for comp_name in sorted(_CLAUDE_TRACKED_COMPONENTS):  # deterministic order
+            status = comp_status.get(comp_name, "operational")
+            if status in non_operational:
+                human_state = _CLAUDE_STATUS_LABELS.get(status, status.replace("_", " "))
+                label = f"{comp_name}: {human_state}"
+                # Map component status to severity tier
+                severity_map = {
+                    "degraded_performance": "minor",
+                    "partial_outage":       "major",
+                    "major_outage":         "critical",
+                    "under_maintenance":    "maintenance",
+                }
+                severity = severity_map.get(status, "minor")
+                return {"severity": severity, "label": label, "kind": "degraded"}
+
+        # --- Rule 4: All healthy (D-01) ---
+        return None
+
+    except Exception:
+        return None
+
+
 def _build_alert_tally(remaining: list, icon_set: str) -> str:
     """Build a per-class tally string for the non-primary alerts (D-08).
 
