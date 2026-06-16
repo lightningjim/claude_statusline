@@ -3091,9 +3091,19 @@ def render_top_line(data: dict, cfg: dict) -> str:
 def render_bottom_line(data: dict, cfg: dict) -> str | None:
     """Assemble the bottom line; return None if no segments are present.
 
-    Layout (D-03): [bar] pct%   ⏳ 5h%[ reset]   🗓 wk%[ reset]
-    Three spaces separate the context block, the 5h block, and the weekly block.
+    Layout (D-03): [bar] pct%   ⏳ 5h%[ reset]   🗓 wk%[ reset]   <status>
+    Three spaces separate each block (D-06).
     Per-segment toggles from cfg suppress individual segments (D-08).
+
+    Phase 06: Claude service-health status segment appended after weekly_seg (D-06).
+    The status segment is built by _claude_status_segment, which reads the
+    "claude_status" cache section silently (no network I/O on render path).
+
+    Render-path refresh trigger (Phase 06): maybe_spawn_refresh is called here so
+    the status cache stays fresh even when weather is disabled / no location is
+    configured — the weather segment's own maybe_spawn_refresh call is unreachable
+    when _WEATHER_OK is False or location is unconfigured (T-06-06 / D-05).
+    The single O_CREAT|O_EXCL lock prevents a double-spawn if weather also triggers.
     """
     try:
         toggles    = cfg.get("toggles", {})
@@ -3137,7 +3147,19 @@ def render_bottom_line(data: dict, cfg: dict) -> str | None:
             else None
         )
 
-        parts = [s for s in [ctx_seg, five_hour_seg, weekly_seg] if s is not None]
+        # Phase 06: Claude service-health segment, appended AFTER weekly_seg (D-06).
+        # Build + trigger the render-path refresh here so status stays fresh even when
+        # weather is disabled (weather segment's spawn call is unreachable in that case).
+        # The fire-and-forget spawn is idempotent: the existing O_CREAT|O_EXCL lock
+        # prevents a double-refresh if the weather segment also spawns one.
+        try:
+            _render_cache = read_cache(_CACHE_PATH)
+            maybe_spawn_refresh(cfg, _render_cache)
+        except Exception:
+            pass  # never-crash: spawn failure must not block render
+        status_seg = _claude_status_segment(data, cfg)
+
+        parts = [s for s in [ctx_seg, five_hour_seg, weekly_seg, status_seg] if s is not None]
         if not parts:
             return None
         return "   ".join(parts)
