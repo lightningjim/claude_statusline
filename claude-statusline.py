@@ -153,6 +153,9 @@ DEFAULTS: dict = {
         "alerts_ttl":         300,    # 5 min
         "weather_max_stale":  3600,   # 1 hour ceiling before dropping stale obs
         "alerts_max_stale":   900,    # 15 min ceiling before dropping stale alerts
+        # Phase 06: Claude status cache TTL (D-05 — same cadence as alerts)
+        "status_ttl":         300,    # 5 min
+        "status_max_stale":   900,    # 15 min ceiling before dropping stale status
     },
     # Phase-2 weather settings (D2-12)
     "weather": {
@@ -178,6 +181,10 @@ DEFAULTS: dict = {
         # True (default) renders the GSD segment when .planning/ exists under project_dir.
         # Set to false in [display] to suppress the segment (e.g. in test configs).
         "show_gsd": True,
+        # Phase 06: Claude service-health segment toggle (D-08 discretion: display.show_claude_status).
+        # True (default) renders the Claude status segment when a noteworthy event is detected.
+        # Quiet when all tracked components are healthy (D-01). Set to false to suppress.
+        "show_claude_status": True,
     },
 }
 
@@ -454,6 +461,28 @@ _NF_GSD_IDLE      = ""   # nf-fa-pause         U+F04C  (dim: parked / next-up
 
 # Plan slot glyph (map — the plan/roadmap label icon)
 _NF_GSD_PLAN      = ""   # nf-fa-map           U+F278  (neutral: plan slot label)
+
+# ---------------------------------------------------------------------------
+# Claude service-health glyph constants (Phase 06, D-03/D-04)
+#
+# Two codepoints — incident severity and maintenance — following the same
+# literal-codepoint-per-state + intent-comment pattern as _NF_GSD_* above.
+# Codepoints from the nf-fa-* (U+F0xx) range for consistency.
+#
+# Semantic rationale:
+#   Incident  -> fa-exclamation-circle  (U+F06A): urgent problem -- act now
+#   Maint     -> fa-wrench              (U+F0AD): maintenance/repair -- planned work
+#
+# DISTINCT glyphs for incident vs. maintenance (D-04): maintenance uses a neutral
+# wrench glyph rather than a severity exclamation; this prevents conflating
+# scheduled maintenance with an unplanned outage.
+# ---------------------------------------------------------------------------
+
+# Incident glyph (exclamation circle -- unresolved incident on a tracked component)
+_NF_CLAUDE_INCIDENT = ""   # nf-fa-exclamation_circle  U+F06A  (severity: problem active)
+
+# Maintenance glyph (wrench -- scheduled or in-progress maintenance window)
+_NF_CLAUDE_MAINT    = ""   # nf-fa-wrench               U+F0AD  (neutral: planned work)
 
 # ---------------------------------------------------------------------------
 # Alert-class glyph constants (Phase 02.2, D-04)
@@ -1200,6 +1229,38 @@ def _alert_color(alert: dict) -> str:
         }
         hue = hue_map.get(cls, YELLOW)
         return f"{intensity}{hue}"
+    except Exception:
+        return YELLOW
+
+
+def _claude_status_color(severity: object) -> str:
+    """Return the ANSI color+intensity for a Statuspage.io severity token (Phase 06, D-03/D-04).
+
+    Maps status severity tokens from summary.json to band hues:
+      minor       -> YELLOW             (minor disruption — be aware)
+      major       -> RED                (major outage — significant impact)
+      critical    -> BOLD + RED         (critical outage — service down)
+      maintenance -> DIM                (planned maintenance — neutral, NOT a severity hue, D-04)
+      <other>     -> YELLOW             (safe default on unknown/None/garbage input)
+
+    The function is intentionally symmetric with _alert_color: whole body in
+    try/except, returning YELLOW on any parse error (D-10 never-raises contract).
+
+    Do NOT route through color_for() — that is the usage-threshold band function
+    and is not applicable to status severity (see PATTERNS.md).
+    """
+    try:
+        hue_map = {
+            "minor":       YELLOW,
+            "major":       RED,
+            "critical":    f"{BOLD}{RED}",
+            # Neutral hue for maintenance: DIM, not a severity color (D-04).
+            # Using DIM (not DEFAULT_FG) so scheduled maintenance reads as low-key/informational.
+            "maintenance": DIM,
+        }
+        if not isinstance(severity, str):
+            return YELLOW
+        return hue_map.get(severity, YELLOW)
     except Exception:
         return YELLOW
 
