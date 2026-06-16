@@ -2966,6 +2966,97 @@ def _rate_segment(
 
 
 # ---------------------------------------------------------------------------
+# Claude status segment — Phase 06, Plan 02 (render path)
+# ---------------------------------------------------------------------------
+
+# Maximum visible characters for a sanitized incident/maintenance label.
+# Narrower than the alert-override bound (64) since status titles are short
+# and the segment appears at the trailing end of an already-busy bottom line.
+_CLAUDE_STATUS_LABEL_MAXLEN: int = 50
+
+
+def _claude_status_segment(data: object, cfg: object) -> str | None:
+    """Return a severity-colored glyph + sanitized incident/maintenance title, or None.
+
+    Reads the "claude_status" cache section written by fetch_claude_status (Plan 01).
+    Never blocks on the network — all I/O is a single cache read.
+
+    Return rules (first match):
+      - show_claude_status=False → None
+      - cache absent / section stale past status_max_stale → None  (cold-cache silent, D-01)
+      - noteworthy=False (healthy) → None  (quiet-when-healthy, D-01)
+      - kind=="maintenance" → neutral glyph (_NF_CLAUDE_MAINT) + DIM color (D-04)
+      - kind=="incident" or "degraded" → severity glyph + _claude_status_color(severity)
+      - Sanitization (T-06-04): ANSI-strip + width-bound + hollow-glyph fallback (WR-02)
+      - Any exception → return None (D-10 never-crash)
+
+    Shape identical to _rate_segment / _gsd_segment: body wrapped in try/except.
+    """
+    try:
+        # Step 1: toggle guard (mirrors show_gsd / show_weather pattern)
+        _cfg = cfg if isinstance(cfg, dict) else {}
+        if not _cfg.get("display", {}).get("show_claude_status", True):
+            return None
+
+        # Step 2: read cache section + freshness gate
+        import time as _time
+        now = _time.time()
+        cache_cfg = _cfg.get("cache", {})
+        status_max_stale = float(cache_cfg.get("status_max_stale", 900))
+
+        cache = read_cache(_CACHE_PATH)
+        sec = cache.get("claude_status", {})
+        if not isinstance(sec, dict):
+            return None
+        if not section_within_ceiling(sec, max_stale=status_max_stale, now=now):
+            return None  # cold / too-stale → silent omit (D-01)
+
+        # Step 3: healthy check — noteworthy=False means all-clear (D-01)
+        noteworthy = sec.get("noteworthy")
+        if not noteworthy:
+            return None
+
+        # Step 4: resolve severity, label, kind from section
+        severity = sec.get("severity", "minor")
+        label    = sec.get("label", "")
+        kind     = sec.get("kind", "incident")
+
+        # Step 5: resolve icon_set and glyph (D-04 distinct glyphs for incident vs maintenance)
+        icon_set = _cfg.get("display", {}).get("icon_set", "nerd")
+        if kind == "maintenance":
+            # Neutral maintenance path (D-04): wrench glyph + DIM color
+            if icon_set == "nerd":
+                glyph = _NF_CLAUDE_MAINT
+            else:
+                glyph = "\U0001f527"   # 🔧 emoji fallback (wrench)
+            color = _claude_status_color("maintenance")  # DIM (neutral, not severity)
+        else:
+            # Incident / degraded path: exclamation glyph + severity color (D-03)
+            if icon_set == "nerd":
+                glyph = _NF_CLAUDE_INCIDENT
+            else:
+                glyph = "\U0001f534"   # 🔴 emoji fallback
+            color = _claude_status_color(severity)
+
+        # Step 6: sanitize label — strip ESC / non-printable, width-bound, hollow-glyph guard
+        # VERBATIM from _weather_segment alert-override sanitizer (:2906-2913, T-02.2-04/T-06-04)
+        safe_label = "".join(
+            ch for ch in str(label)
+            if ch == " " or (ch.isprintable() and ch != "\x1b")
+        )[:_CLAUDE_STATUS_LABEL_MAXLEN].strip()
+        # WR-02 / D-03 fallback: never emit a bare glyph when label is empty after sanitization
+        if not safe_label:
+            safe_label = kind or "incident"  # kind is already a safe string
+
+        # Step 7: assemble and return (matches alert-override assembly, :2915-2921)
+        detail = f"{glyph} {safe_label}"
+        return f"{color}{detail}{RESET}"
+
+    except Exception:
+        return None  # D-10 never-crash — render path must not blow up
+
+
+# ---------------------------------------------------------------------------
 # Line renderers (accept config dict forwarded from main)
 # ---------------------------------------------------------------------------
 
