@@ -3023,7 +3023,13 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
 
         # Step 5: resolve icon_set and glyph (D-04 distinct glyphs for incident vs maintenance)
         icon_set = _cfg.get("display", {}).get("icon_set", "nerd")
-        if kind == "maintenance":
+        # WR-01 / D-04: key the maintenance glyph off the maintenance SIGNAL, not only
+        # `kind`. A tracked component in `under_maintenance` with no scheduled_maintenances
+        # entry falls through _derive_claude_status Rule 3 with severity=="maintenance" but
+        # kind=="degraded"; branching on `kind` alone wrongly emitted the INCIDENT glyph,
+        # conflating maintenance with an outage. Branch on severity=="maintenance" too so
+        # the wrench glyph stays consistent with the DIM color and "maintenance" label.
+        if kind == "maintenance" or severity == "maintenance":
             # Neutral maintenance path (D-04): wrench glyph + DIM color
             if icon_set == "nerd":
                 glyph = _NF_CLAUDE_MAINT

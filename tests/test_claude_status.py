@@ -297,6 +297,34 @@ class TestDeriveClaudeStatus(unittest.TestCase):
         self.assertEqual(result.get("severity"), "maintenance",
                          f"Maintenance severity must be 'maintenance'; got {result.get('severity')!r}")
 
+    # ---- WR-01: under_maintenance component, no scheduled_maintenances event ----
+    # Statuspage.io allows a component status to be set to under_maintenance
+    # WITHOUT an associated scheduled_maintenances entry. Rule 2 (maintenance
+    # events) does not fire, so execution falls through to Rule 3, which must
+    # still classify this as maintenance severity (not an outage). The render
+    # path keys off severity=="maintenance" to pick the wrench glyph (D-04).
+
+    def test_under_maintenance_no_event_severity_is_maintenance(self):
+        """under_maintenance component, no event → severity == 'maintenance' (Rule 3, WR-01)."""
+        summary = _load_fixture("status_component_under_maintenance_no_event.json")
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result,
+                             "under_maintenance tracked component must return a non-None dict")
+        self.assertEqual(result.get("severity"), "maintenance",
+                         f"under_maintenance Rule-3 severity must be 'maintenance'; "
+                         f"got {result.get('severity')!r}")
+
+    def test_under_maintenance_no_event_label_has_maintenance(self):
+        """under_maintenance component, no event → label reflects maintenance state (D-03/D-04)."""
+        summary = _load_fixture("status_component_under_maintenance_no_event.json")
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result)
+        label = result.get("label", "")
+        self.assertTrue(label.startswith("claude.ai"),
+                        f"Rule-3 label must start with the component name; got {label!r}")
+        self.assertIn("maintenance", label,
+                      f"Rule-3 under_maintenance label must mention maintenance; got {label!r}")
+
     def test_empty_dict_returns_none(self):
         """Empty dict → None, never raises (T-06-02)."""
         try:
@@ -930,6 +958,41 @@ class TestClaudeStatusSegmentBuilder(unittest.TestCase):
         self.assertNotEqual(inc_glyph, maint_glyph,
                             f"Incident glyph {inc_glyph!r} and maintenance glyph {maint_glyph!r} "
                             "must be distinct (D-04)")
+
+    # ---- WR-01: under_maintenance component, no scheduled_maintenances event ----
+    # A tracked component set to status=="under_maintenance" with NO matching
+    # scheduled_maintenances entry falls through _derive_claude_status Rule 3,
+    # producing severity=="maintenance" but kind=="degraded". The render path
+    # must still emit the DISTINCT maintenance (wrench) glyph + neutral color,
+    # NOT the incident exclamation glyph (D-04: never conflate maintenance with
+    # an outage). Before the fix the glyph keyed off `kind` alone, so this case
+    # wrongly rendered the incident glyph.
+
+    def test_under_maintenance_degraded_kind_uses_maintenance_glyph(self):
+        """severity='maintenance' + kind='degraded' → wrench glyph, not incident (WR-01, D-04)."""
+        # The exact Rule-3 under_maintenance shape: maintenance severity carried
+        # on a degraded-kind section.
+        sec = self._fresh_section(noteworthy=True, severity="maintenance",
+                                  label="claude.ai: maintenance", kind="degraded")
+        result = self._segment(sec)
+        self.assertIsNotNone(result, "under_maintenance degraded section must return a segment")
+        self.assertIn(self.mod._NF_CLAUDE_MAINT, result,
+                      f"under_maintenance (kind=degraded, severity=maintenance) must render the "
+                      f"maintenance wrench glyph; got {result!r}")
+        self.assertNotIn(self.mod._NF_CLAUDE_INCIDENT, result,
+                         f"under_maintenance must NOT render the incident exclamation glyph "
+                         f"(D-04 conflation); got {result!r}")
+
+    def test_under_maintenance_degraded_kind_uses_neutral_color(self):
+        """severity='maintenance' + kind='degraded' → neutral color, not RED/YELLOW (WR-01, D-04)."""
+        sec = self._fresh_section(noteworthy=True, severity="maintenance",
+                                  label="claude.ai: maintenance", kind="degraded")
+        result = self._segment(sec)
+        self.assertIsNotNone(result)
+        self.assertNotIn(self.mod.RED, result,
+                         f"under_maintenance degraded must not use RED; got {result!r}")
+        self.assertNotIn(self.mod.YELLOW, result,
+                         f"under_maintenance degraded must not use YELLOW; got {result!r}")
 
     # ---- emoji icon_set ----
 
