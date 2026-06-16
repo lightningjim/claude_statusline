@@ -21,6 +21,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: git info including active worktree** (completed 2026-05-29)
 - [x] **Phase 5: GSD status info especially the active Plan(s) being run** (completed 2026-05-29)
 - [x] **Phase 05.1: Fix TestGsdSegmentBuilder environment-leak test failures (INSERTED)** - Make the 9 failing TestGsdSegmentBuilder tests hermetic by refreshing the handoff timestamp to now at call time (mirroring _make_live_state) + add a wall-clock-independence guard test; test-only, source unchanged (completed 2026-05-30)
+- [ ] **Phase 6: Add Claude Status onto the right end of the Claude usage line** - A quiet-when-healthy Claude service-health indicator at the right end of the bottom line — triggered only by the tracked components (Claude Code / claude.ai / Claude Cowork), surfacing unresolved incidents (severity glyph + sanitized title) and scheduled maintenance (neutral glyph), on the existing detached ~5min cache, omitting silently when healthy/cold — not yet started
 
 ## Phase Details
 
@@ -195,10 +196,27 @@ Plans:
 
 - [x] 05.1-01-PLAN.md — Refresh handoff timestamp to `now` inside `TestGsdSegmentBuilder._call.fake_read_gsd_state` (copy-before-mutate, mirrors `_make_live_state`) + add D-03 `test_builder_live_at_any_walltime` guard asserting live executing GREEN resolution; test-only, source untouched (D-01,D-02,D-03)
 
+### Phase 6: Add Claude Status onto the right end of the Claude usage line
+
+**Goal:** A quiet-when-healthy Claude service-health indicator at the right end of the bottom line (after the 🗓 weekly segment, 3-space separator) that triggers ONLY on the tracked components this user runs — Claude Code, claude.ai, Claude Cowork (D-02, deriving from the components' own statuses + scoped incident/maintenance refs, never the page-wide rollup) — surfacing unresolved incidents as a severity-colored glyph + ANSI-sanitized incident title (with a component+state fallback when no title) and scheduled-maintenance windows as a distinct neutral glyph (D-03/D-04), all on the existing detached ~5-minute sectioned-cache + render-never-blocks machinery, omitting silently (return None) when healthy, cold, or on any parse/network error (D-01/D-05/D-06).
+**Requirements**: None mapped to REQUIREMENTS.md IDs (v2-style enhancement; scope tracked against CONTEXT D-01..D-06 + Claude's Discretion; labels STATUS-DATA/STATUS-RENDER used internally).
+**Depends on:** Phase 5
+**Plans:** 2 plans
+
+Plans:
+
+**Wave 1**
+
+- [ ] 06-01-PLAN.md — Data layer: `display.show_claude_status` + `cache.status_ttl/status_max_stale` defaults, `_NF_CLAUDE_*` glyphs, `_claude_status_color`, pure `_derive_claude_status` tracked-component trigger (D-01/D-02/D-03/D-04), `fetch_claude_status` (status.claude.com summary.json + FAKE_STATUS fixture override) + run_refresh/maybe_spawn_refresh wiring + fixtures/unit tests (D-02,D-03,D-04,D-05)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06-02-PLAN.md — Render wiring: `_claude_status_segment` builder (cache read, quiet-when-healthy/cold omit, VERBATIM ANSI-sanitized title, severity/neutral glyph via icon_set) appended after the weekly segment in `render_bottom_line` + render-path spawn (independent of weather) + render/E2E/ANSI-injection tests (D-01,D-03,D-04,D-06; security T-06-04)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 → 05.1
+Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 → 05.1 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -211,3 +229,4 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 →
 | 4. git info incl. active worktree | 2/2 | Complete   | 2026-05-29 |
 | 5. GSD status info | 2/2 | Complete   | 2026-05-29 |
 | 05.1. Fix TestGsdSegmentBuilder test failures | 1/1 | Complete    | 2026-05-30 |
+| 6. Add Claude Status to usage line | 0/2 | Planned | — |
