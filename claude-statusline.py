@@ -1599,6 +1599,13 @@ def fetch_claude_status(cfg: dict) -> None:
             except Exception:
                 return  # bad fake file: leave cache unchanged
         else:
+            # WR-03: mirror the _WEATHER_OK guards used by the weather/alerts fetch
+            # path. _nws_get references the module-level `requests`; when it failed
+            # to import (_REQUESTS_OK False) the network branch would raise NameError
+            # (swallowed by the outer try/except) after doing pointless work. Bail
+            # early instead, leaving the cache section unchanged.
+            if not _REQUESTS_OK:
+                return  # requests unavailable — leave cache unchanged
             # Live fetch: GET status.claude.com/api/v2/summary.json (plain JSON)
             # URL is a hardcoded constant — no user/config interpolation (T-06-04)
             url = "https://status.claude.com/api/v2/summary.json"

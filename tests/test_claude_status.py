@@ -497,6 +497,34 @@ class TestFetchClaudeStatus(unittest.TestCase):
                 except Exception as e:
                     self.fail(f"fetch_claude_status raised on network error: {e}")
 
+    # ---- WR-03: _REQUESTS_OK guard on the live-fetch branch ----
+
+    def test_requests_unavailable_skips_network(self):
+        """_REQUESTS_OK False (no fake path) → _nws_get not called, cache unchanged (WR-03)."""
+        nws_get_calls = []
+
+        def spy_nws_get(url, ua, accept=None):
+            nws_get_calls.append(url)
+            return {}
+
+        # Ensure no fake-status env override so the live branch is taken.
+        env = dict(os.environ)
+        env.pop("CLAUDE_STATUSLINE_FAKE_STATUS", None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch.object(self.mod, "_REQUESTS_OK", False):
+                with patch.object(self.mod, "_nws_get", side_effect=spy_nws_get):
+                    with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                        try:
+                            self.mod.fetch_claude_status(self.cfg)
+                        except Exception as e:
+                            self.fail(f"fetch_claude_status raised when _REQUESTS_OK False: {e}")
+
+        self.assertEqual(nws_get_calls, [],
+                         "_nws_get must NOT be called when _REQUESTS_OK is False (WR-03)")
+        data = self.mod.read_cache(self.cache_path)
+        self.assertNotIn("claude_status", data,
+                         "Early bail must leave the cache unchanged when requests is unavailable")
+
 
 # ---------------------------------------------------------------------------
 # Task 3: run_refresh calls fetch_claude_status
