@@ -477,10 +477,15 @@ class TestRunRefresh(unittest.TestCase):
         lock_path = os.path.join(self.tmpdir, "refresh.lock")
         cache_path = os.path.join(self.tmpdir, "cache.json")
 
-        with patch.object(self.mod, "fetch_weather", side_effect=mock_fetch):
-            with patch.object(self.mod, "_CACHE_PATH", cache_path):
-                with patch.object(self.mod, "_LOCK_PATH", lock_path):
-                    self.mod.run_refresh(self.cfg)
+        # WR-02: fetch_weather now gates on _WEATHER_OK (+ show_weather + a
+        # configured location). The cfg supplies both; force _WEATHER_OK True so
+        # this asserts the "weather configured" path regardless of whether astral
+        # is importable in the test environment.
+        with patch.object(self.mod, "_WEATHER_OK", True):
+            with patch.object(self.mod, "fetch_weather", side_effect=mock_fetch):
+                with patch.object(self.mod, "_CACHE_PATH", cache_path):
+                    with patch.object(self.mod, "_LOCK_PATH", lock_path):
+                        self.mod.run_refresh(self.cfg)
 
         self.assertEqual(len(fetch_called), 1)
 

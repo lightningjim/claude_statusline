@@ -787,11 +787,15 @@ class TestRunRefreshAlerts(unittest.TestCase):
         lock_path = os.path.join(self.tmpdir, "refresh.lock")
         cache_path = os.path.join(self.tmpdir, "cache.json")
 
-        with patch.object(self.mod, "fetch_weather", side_effect=mock_fetch_weather):
-            with patch.object(self.mod, "fetch_alerts", side_effect=mock_fetch_alerts):
-                with patch.object(self.mod, "_CACHE_PATH", cache_path):
-                    with patch.object(self.mod, "_LOCK_PATH", lock_path):
-                        self.mod.run_refresh(self.cfg)
+        # WR-02: weather/alerts now gate on _WEATHER_OK (+ show_weather + a
+        # configured location). The cfg supplies both; force _WEATHER_OK True so
+        # both fetches fire regardless of whether astral is importable here.
+        with patch.object(self.mod, "_WEATHER_OK", True):
+            with patch.object(self.mod, "fetch_weather", side_effect=mock_fetch_weather):
+                with patch.object(self.mod, "fetch_alerts", side_effect=mock_fetch_alerts):
+                    with patch.object(self.mod, "_CACHE_PATH", cache_path):
+                        with patch.object(self.mod, "_LOCK_PATH", lock_path):
+                            self.mod.run_refresh(self.cfg)
 
         self.assertEqual(len(weather_called), 1, "fetch_weather must be called")
         self.assertEqual(len(alerts_called), 1, "fetch_alerts must be called")
