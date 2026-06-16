@@ -201,13 +201,13 @@ Plans:
 **Goal:** A quiet-when-healthy Claude service-health indicator at the right end of the bottom line (after the 🗓 weekly segment, 3-space separator) that triggers ONLY on the tracked components this user runs — Claude Code, claude.ai, Claude Cowork (D-02, deriving from the components' own statuses + scoped incident/maintenance refs, never the page-wide rollup) — surfacing unresolved incidents as a severity-colored glyph + ANSI-sanitized incident title (with a component+state fallback when no title) and scheduled-maintenance windows as a distinct neutral glyph (D-03/D-04), all on the existing detached ~5-minute sectioned-cache + render-never-blocks machinery, omitting silently (return None) when healthy, cold, or on any parse/network error (D-01/D-05/D-06).
 **Requirements**: None mapped to REQUIREMENTS.md IDs (v2-style enhancement; scope tracked against CONTEXT D-01..D-06 + Claude's Discretion; labels STATUS-DATA/STATUS-RENDER used internally).
 **Depends on:** Phase 5
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 06-01-PLAN.md — Data layer: `display.show_claude_status` + `cache.status_ttl/status_max_stale` defaults, `_NF_CLAUDE_*` glyphs, `_claude_status_color`, pure `_derive_claude_status` tracked-component trigger (D-01/D-02/D-03/D-04), `fetch_claude_status` (status.claude.com summary.json + FAKE_STATUS fixture override) + run_refresh/maybe_spawn_refresh wiring + fixtures/unit tests (D-02,D-03,D-04,D-05)
+- [x] 06-01-PLAN.md — Data layer: `display.show_claude_status` + `cache.status_ttl/status_max_stale` defaults, `_NF_CLAUDE_*` glyphs, `_claude_status_color`, pure `_derive_claude_status` tracked-component trigger (D-01/D-02/D-03/D-04), `fetch_claude_status` (status.claude.com summary.json + FAKE_STATUS fixture override) + run_refresh/maybe_spawn_refresh wiring + fixtures/unit tests (D-02,D-03,D-04,D-05)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -229,4 +229,4 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 →
 | 4. git info incl. active worktree | 2/2 | Complete   | 2026-05-29 |
 | 5. GSD status info | 2/2 | Complete   | 2026-05-29 |
 | 05.1. Fix TestGsdSegmentBuilder test failures | 1/1 | Complete    | 2026-05-30 |
-| 6. Add Claude Status to usage line | 0/2 | Planned | — |
+| 6. Add Claude Status to usage line | 1/2 | In Progress|  |
