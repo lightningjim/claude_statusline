@@ -1653,9 +1653,21 @@ def run_refresh(cfg: dict) -> None:
         except (FileExistsError, OSError):
             # Lock already held by another fetch — exit immediately (no stampede)
             return
-        # Lock acquired — run all three fetches under the single lock (D2-16 + Phase 06)
-        fetch_weather(cfg)
-        fetch_alerts(cfg)
+        # Lock acquired — run the fetches under the single lock (D2-16 + Phase 06).
+        # WR-02: gate weather/alerts on the SAME conditions the render-path weather
+        # segment uses (_weather_segment :2773-2787) so a user with weather disabled
+        # or an unconfigured (0.0,0.0) location does not spawn pointless HTTP requests
+        # against api.weather.gov every status_ttl. The status fetch is independent
+        # of weather config and always runs (the T-06-06 / D-05 intent).
+        weather_cfg = cfg.get("weather", {}) if isinstance(cfg, dict) else {}
+        location = cfg.get("location", {}) if isinstance(cfg, dict) else {}
+        _lat, _lon = location.get("lat"), location.get("lon")
+        has_location = not (
+            _lat is None or _lon is None or (float(_lat) == 0.0 and float(_lon) == 0.0)
+        )
+        if _WEATHER_OK and weather_cfg.get("show_weather", True) and has_location:
+            fetch_weather(cfg)
+            fetch_alerts(cfg)
         fetch_claude_status(cfg)  # Phase 06: Claude service-health status (D-05)
     except Exception:
         pass

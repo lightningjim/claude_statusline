@@ -543,18 +543,68 @@ class TestRunRefreshStatus(unittest.TestCase):
         lock_path = os.path.join(self.tmpdir, "refresh.lock")
         cache_path = os.path.join(self.tmpdir, "cache.json")
 
-        with patch.object(self.mod, "fetch_weather", side_effect=mock_fetch_weather):
-            with patch.object(self.mod, "fetch_alerts", side_effect=mock_fetch_alerts):
-                with patch.object(self.mod, "fetch_claude_status",
-                                  side_effect=mock_fetch_claude_status):
-                    with patch.object(self.mod, "_CACHE_PATH", cache_path):
-                        with patch.object(self.mod, "_LOCK_PATH", lock_path):
-                            self.mod.run_refresh(self.cfg)
+        # WR-02: weather/alerts now gate on _WEATHER_OK + show_weather + a configured
+        # location. This cfg has a real location and show_weather=True, so with
+        # _WEATHER_OK forced True all three fetches must fire.
+        with patch.object(self.mod, "_WEATHER_OK", True):
+            with patch.object(self.mod, "fetch_weather", side_effect=mock_fetch_weather):
+                with patch.object(self.mod, "fetch_alerts", side_effect=mock_fetch_alerts):
+                    with patch.object(self.mod, "fetch_claude_status",
+                                      side_effect=mock_fetch_claude_status):
+                        with patch.object(self.mod, "_CACHE_PATH", cache_path):
+                            with patch.object(self.mod, "_LOCK_PATH", lock_path):
+                                self.mod.run_refresh(self.cfg)
 
         self.assertEqual(len(weather_called), 1, "fetch_weather must be called")
         self.assertEqual(len(alerts_called), 1, "fetch_alerts must be called")
         self.assertEqual(len(status_called), 1,
                          "fetch_claude_status must be called by run_refresh")
+
+    # ---- WR-02: weather/alerts gated; status always runs ----
+
+    def _run_refresh_capturing(self, cfg):
+        """Run run_refresh against cfg; return (weather_n, alerts_n, status_n)."""
+        weather_called, alerts_called, status_called = [], [], []
+        lock_path = os.path.join(self.tmpdir, "refresh2.lock")
+        cache_path = os.path.join(self.tmpdir, "cache2.json")
+        with patch.object(self.mod, "fetch_weather",
+                          side_effect=lambda c: weather_called.append(True)):
+            with patch.object(self.mod, "fetch_alerts",
+                              side_effect=lambda c: alerts_called.append(True)):
+                with patch.object(self.mod, "fetch_claude_status",
+                                  side_effect=lambda c: status_called.append(True)):
+                    with patch.object(self.mod, "_CACHE_PATH", cache_path):
+                        with patch.object(self.mod, "_LOCK_PATH", lock_path):
+                            self.mod.run_refresh(cfg)
+        return len(weather_called), len(alerts_called), len(status_called)
+
+    def test_run_refresh_skips_weather_when_show_weather_false(self):
+        """show_weather=False → weather/alerts skipped, status still fetched (WR-02)."""
+        cfg = dict(self.cfg)
+        cfg["weather"] = {"contact_email": "test@example.com", "show_weather": False}
+        with patch.object(self.mod, "_WEATHER_OK", True):
+            w, a, s = self._run_refresh_capturing(cfg)
+        self.assertEqual(w, 0, "fetch_weather must be skipped when show_weather=False")
+        self.assertEqual(a, 0, "fetch_alerts must be skipped when show_weather=False")
+        self.assertEqual(s, 1, "fetch_claude_status must still run (status is independent)")
+
+    def test_run_refresh_skips_weather_when_location_unconfigured(self):
+        """Unconfigured (0.0,0.0) location → weather/alerts skipped, status still runs (WR-02)."""
+        cfg = dict(self.cfg)
+        cfg["location"] = {"lat": 0.0, "lon": 0.0}
+        with patch.object(self.mod, "_WEATHER_OK", True):
+            w, a, s = self._run_refresh_capturing(cfg)
+        self.assertEqual(w, 0, "fetch_weather must be skipped for the (0.0,0.0) placeholder")
+        self.assertEqual(a, 0, "fetch_alerts must be skipped for the (0.0,0.0) placeholder")
+        self.assertEqual(s, 1, "fetch_claude_status must still run")
+
+    def test_run_refresh_skips_weather_when_weather_unavailable(self):
+        """_WEATHER_OK False (astral/requests missing) → weather/alerts skipped, status runs (WR-02)."""
+        with patch.object(self.mod, "_WEATHER_OK", False):
+            w, a, s = self._run_refresh_capturing(self.cfg)
+        self.assertEqual(w, 0, "fetch_weather must be skipped when _WEATHER_OK is False")
+        self.assertEqual(a, 0, "fetch_alerts must be skipped when _WEATHER_OK is False")
+        self.assertEqual(s, 1, "fetch_claude_status must still run when weather deps are missing")
 
 
 # ---------------------------------------------------------------------------
