@@ -1558,6 +1558,76 @@ def fetch_alerts(cfg: dict) -> None:
         pass
 
 
+def fetch_claude_status(cfg: dict) -> None:
+    """Fetch Anthropic/Claude service health and write the claude_status cache section.
+
+    Endpoint: GET https://status.claude.com/api/v2/summary.json
+    Accept: None (plain JSON — no ld+json header needed for Statuspage.io v2)
+
+    Flow:
+      1. If CLAUDE_STATUSLINE_FAKE_STATUS env var is set, load the named JSON file
+         as the summary payload instead of issuing an HTTP request (UAT/offline testing —
+         mirrors CLAUDE_STATUSLINE_FAKE_ALERTS pattern; T-06-02).
+      2. Otherwise: GET summary.json via _nws_get (reused as-is; generic despite NWS name).
+      3. Pass the parsed payload to _derive_claude_status to compute the trigger result.
+      4. Write the claude_status cache section atomically — even when derivation is None
+         (healthy state), to timestamp the fetch and prevent a hot respawn loop.
+
+    Stores the RAW (unsanitized) label from _derive_claude_status; sanitization happens
+    on the render path (Plan 02) so the cache is a faithful record (truth-telling, T-06-01).
+
+    Wrapped in try/except — never raises (D-10 / T-06-02). A failed fetch leaves the
+    claude_status section unchanged; the render falls back gracefully (cold-cache → None).
+
+    RUNS ONLY IN THE DETACHED CHILD (--refresh mode). Never called on the render path.
+    """
+    try:
+        weather_cfg = cfg.get("weather", {})
+        contact_email = weather_cfg.get("contact_email", "")
+
+        ua = make_user_agent(_APP_VERSION, contact_email)
+        import time as _time
+        now = _time.time()
+
+        # UAT/offline fixture override: honor CLAUDE_STATUSLINE_FAKE_STATUS env var
+        # (mirrors CLAUDE_STATUSLINE_FAKE_ALERTS pattern — T-06-02)
+        fake_path = os.environ.get("CLAUDE_STATUSLINE_FAKE_STATUS")
+        if fake_path:
+            try:
+                with open(fake_path, encoding="utf-8") as fh:
+                    summary = json.load(fh)
+            except Exception:
+                return  # bad fake file: leave cache unchanged
+        else:
+            # Live fetch: GET status.claude.com/api/v2/summary.json (plain JSON)
+            # URL is a hardcoded constant — no user/config interpolation (T-06-04)
+            url = "https://status.claude.com/api/v2/summary.json"
+            summary = _nws_get(url, ua, accept=None)
+
+        # Derive the trigger result from the parsed payload
+        derived = _derive_claude_status(summary)
+
+        # Build the cache payload — always include the derived result (or an explicit
+        # "noteworthy=False" marker) so even a healthy refresh timestamps the section,
+        # preventing the maybe_spawn_refresh loop from respawning every render.
+        if derived is not None:
+            payload = {
+                "noteworthy": True,
+                "severity":   derived.get("severity"),
+                "label":      derived.get("label"),
+                "kind":       derived.get("kind"),
+            }
+        else:
+            payload = {"noteworthy": False}
+
+        # Write the claude_status cache section atomically
+        write_cache_section(_CACHE_PATH, "claude_status", payload, now)
+
+    except Exception:
+        # Any network / parse / OS error is swallowed (D-10).
+        pass
+
+
 def run_refresh(cfg: dict) -> None:
     """Entry point for the detached background fetch child (--refresh mode).
 
@@ -1565,8 +1635,8 @@ def run_refresh(cfg: dict) -> None:
     if the file already exists).  If the lock is already held by another fetch,
     exits immediately (no stampede — T-02-09, D2-05).
 
-    Refreshes both weather and alerts under the single lock (D2-16 — no separate
-    fetch process for alerts; both run in the same detached child).
+    Refreshes weather, alerts, and Claude service status under the single lock
+    (D2-16 + Phase-06 D-05 — all three fetches run in the same detached child).
 
     On any error: swallows and exits cleanly (never crashes the render bar via stderr).
     The lock file is always removed in the finally block so a crashed child
@@ -1583,9 +1653,10 @@ def run_refresh(cfg: dict) -> None:
         except (FileExistsError, OSError):
             # Lock already held by another fetch — exit immediately (no stampede)
             return
-        # Lock acquired — run both fetches under the single lock (D2-16)
+        # Lock acquired — run all three fetches under the single lock (D2-16 + Phase 06)
         fetch_weather(cfg)
         fetch_alerts(cfg)
+        fetch_claude_status(cfg)  # Phase 06: Claude service-health status (D-05)
     except Exception:
         pass
     finally:
@@ -1602,30 +1673,33 @@ def run_refresh(cfg: dict) -> None:
 
 
 def maybe_spawn_refresh(cfg: dict, cache: dict) -> None:
-    """Spawn a detached background child to refresh the weather and/or alerts cache if stale.
+    """Spawn a detached background child to refresh weather, alerts, or status cache if stale.
 
-    Checks whether the weather OR alerts section needs refreshing (past its TTL or absent).
-    If either is stale, spawns a new process under the current interpreter with --refresh,
+    Checks whether the weather, alerts, OR claude_status section needs refreshing
+    (past its TTL or absent). If any is stale, spawns a new process with --refresh,
     detached (start_new_session=True, stdio=DEVNULL) so it never blocks the render.
 
-    The detached child refreshes both weather and alerts under the single lock (D2-16).
+    The detached child refreshes all three sections under the single lock (D2-16 + Phase-06).
 
     This is a fire-and-forget call on the RENDER PATH — it must return instantly.
     The parent render continues with the current (possibly stale) cached value.
-    (D2-05 / T-02-08)
+    (D2-05 / T-02-08 / D-05)
     """
     try:
         cache_cfg = cfg.get("cache", {})
         weather_ttl = float(cache_cfg.get("weather_ttl", 600))
         alerts_ttl = float(cache_cfg.get("alerts_ttl", 300))
+        status_ttl = float(cache_cfg.get("status_ttl", 300))  # Phase 06 (D-05)
         import time as _time
         now = _time.time()
         weather_section = cache.get("weather", {})
         alerts_section = cache.get("alerts", {})
-        # Trigger refresh when: weather OR alerts section is absent OR stale past its TTL
+        status_section = cache.get("claude_status", {})  # Phase 06 (D-05)
+        # Trigger refresh when: weather OR alerts OR claude_status is absent/stale
         weather_stale = not section_is_fresh(weather_section, ttl=weather_ttl, now=now)
         alerts_stale = not section_is_fresh(alerts_section, ttl=alerts_ttl, now=now)
-        if not (weather_stale or alerts_stale):
+        status_stale = not section_is_fresh(status_section, ttl=status_ttl, now=now)  # Phase 06 (D-05)
+        if not (weather_stale or alerts_stale or status_stale):
             return
         # Spawn detached child — fixed argv, no shell interpolation (T-02-08)
         subprocess.Popen(

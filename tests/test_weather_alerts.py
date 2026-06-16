@@ -839,11 +839,14 @@ class TestMaybeSpawnRefreshAlerts(unittest.TestCase):
                            "Popen must be called when alerts section is stale")
 
     def test_no_spawn_when_both_fresh(self):
-        """maybe_spawn_refresh does NOT spawn when both weather and alerts are fresh."""
+        """maybe_spawn_refresh does NOT spawn when weather, alerts, and status are all fresh."""
         now = time.time()
         cache = {
             "weather": {"fetched_at": now - 60, "icon": "☀️", "temp": 72},
             "alerts": {"fetched_at": now - 60, "active": []},
+            # claude_status section must also be fresh — Phase 06 added status staleness
+            # as a third spawn trigger; without it, status_stale=True would cause a spawn
+            "claude_status": {"fetched_at": now - 60, "noteworthy": False},
         }
         popen_calls = []
 
@@ -855,7 +858,7 @@ class TestMaybeSpawnRefreshAlerts(unittest.TestCase):
             self.mod.maybe_spawn_refresh(self.cfg, cache)
 
         self.assertEqual(len(popen_calls), 0,
-                         "Popen must NOT be called when both sections are fresh")
+                         "Popen must NOT be called when all three sections are fresh")
 
 
 # ---------------------------------------------------------------------------
