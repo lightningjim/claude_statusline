@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 02.2 complete (2/2) — ready to discuss Phase 03
-last_updated: 2026-06-07T19:40:36.985Z
-last_activity: 2026-06-07 -- Phase 02.2 execution started
+status: planning
+stopped_at: Phase 6 context gathered
+last_updated: "2026-06-16T20:09:42.435Z"
+last_activity: 2026-06-07
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 9
   total_plans: 19
   completed_plans: 19
-  percent: 100
+  percent: 90
 ---
 
 # Project State
@@ -123,6 +123,7 @@ Recent decisions affecting current work:
 - Phase 03.1 inserted after Phase 3: Resolve default bar gradient vs shade test drift (URGENT)
 - Phase 05.1 inserted after Phase 05: Fix TestGsdSegmentBuilder environment-leak test failures (URGENT)
 - Phase 02.2 inserted after Phase 2: Differentiate between watches, warnings, and advisories (URGENT)
+- Phase 6 added: Add Claude Status onto the right end of the Claude usage line
 
 ### Pending Todos
 
@@ -148,6 +149,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-06-07T18:25:52.551Z
-Stopped at: Phase 2.2 context gathered
-Resume file: .planning/phases/02.2-differentiate-between-watches-warnings-and-advisories/02.2-CONTEXT.md
+Last session: 2026-06-16T20:09:42.425Z
+Stopped at: Phase 6 context gathered
+Resume file: .planning/phases/06-add-claude-status-onto-the-right-end-of-the-claude-usage-lin/06-CONTEXT.md
