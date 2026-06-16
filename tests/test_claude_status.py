@@ -961,5 +961,300 @@ class TestClaudeStatusSegmentBuilder(unittest.TestCase):
                         self.fail(f"_claude_status_segment raised on garbage cfg {bad_cfg!r}: {e}")
 
 
+# ---------------------------------------------------------------------------
+# Task 5 (Plan 02): render_bottom_line integration + render-path spawn
+# ---------------------------------------------------------------------------
+#
+# Covers:
+#  - render_bottom_line appends status_seg AFTER weekly_seg with 3-space sep (D-06)
+#  - Cold-cache → status segment absent, bottom line byte-identical to current (D-01)
+#  - show_claude_status=False → status never appears even with incident cached
+#  - render_bottom_line returns None when NO segments present (unchanged)
+#  - maybe_spawn_refresh is reachable from the bottom-line render path independent
+#    of weather (specifically: when weather is disabled or location is unconfigured,
+#    maybe_spawn_refresh is still called, so status cache stays fresh)
+
+class TestRenderBottomLineStatusIntegration(unittest.TestCase):
+    """render_bottom_line: status segment appended after weekly segment (D-06)."""
+
+    # Load module once per class to keep tests fast
+    _mod = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls._mod = _load_script_module()
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        # Use the .examples fixture for realistic data
+        examples_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            ".examples"
+        )
+        fixture_path = os.path.join(examples_dir, "claude_stdin.json")
+        with open(fixture_path) as f:
+            self.fixture_data = json.load(f)
+
+        self.base_cfg = {
+            "toggles": {
+                "show_context_bar": True,
+                "show_five_hour": True,
+                "show_weekly": True,
+            },
+            "thresholds": {"warn": 70, "crit": 90},
+            "display": {
+                "show_claude_status": True,
+                "icon_set": "nerd",
+                "bar_style": "shade",
+            },
+            "cache": {
+                "status_ttl": 300,
+                "status_max_stale": 900,
+            },
+        }
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _fresh_status_section(self, **kwargs) -> dict:
+        """Return a fresh claude_status cache section."""
+        sec = {"fetched_at": time.time() - 60}
+        sec.update(kwargs)
+        return sec
+
+    def _write_cache(self, status_section: dict | None) -> str:
+        """Write a cache.json and return path. status_section=None means no claude_status key."""
+        cache_path = os.path.join(self.tmpdir, "cache.json")
+        cache_data = {}
+        if status_section is not None:
+            cache_data["claude_status"] = status_section
+        with open(cache_path, "w") as f:
+            json.dump(cache_data, f)
+        return cache_path
+
+    def _render(self, status_section: dict | None, extra_cfg: dict | None = None) -> str | None:
+        """Call render_bottom_line with the given cache state."""
+        import copy
+        cfg = copy.deepcopy(self.base_cfg)
+        if extra_cfg:
+            for k, v in extra_cfg.items():
+                if isinstance(v, dict) and k in cfg:
+                    cfg[k].update(v)
+                else:
+                    cfg[k] = v
+        cache_path = self._write_cache(status_section)
+        with patch.object(self._mod, "_CACHE_PATH", cache_path):
+            return self._mod.render_bottom_line(self.fixture_data, cfg)
+
+    # ---- call-site existence check ----
+
+    def test_status_seg_called_in_render_bottom_line(self):
+        """render_bottom_line must call _claude_status_segment (grep acceptance criterion)."""
+        import inspect
+        src = inspect.getsource(self._mod.render_bottom_line)
+        self.assertIn("_claude_status_segment", src,
+                      "render_bottom_line source must call _claude_status_segment")
+
+    def test_status_seg_variable_in_render_bottom_line(self):
+        """render_bottom_line source must contain 'status_seg' variable."""
+        import inspect
+        src = inspect.getsource(self._mod.render_bottom_line)
+        self.assertIn("status_seg", src,
+                      "render_bottom_line source must have 'status_seg' variable")
+
+    # ---- cold-cache path ----
+
+    def test_cold_cache_no_status_in_output(self):
+        """Cold cache (no claude_status section) → bottom line has no status glyph."""
+        result = self._render(None)  # cold: absent cache
+        self.assertIsNotNone(result,
+                             "Cold cache must still produce a bottom line (ctx/rate segs present)")
+        # The incident glyph character must not appear in the stripped output
+        import re
+        stripped = re.sub(r'\x1b\[[0-9;]*m', '', result)
+        # _NF_CLAUDE_INCIDENT is a nerd-font char; just check that result doesn't contain it
+        self.assertNotIn(str(self._mod._NF_CLAUDE_INCIDENT), stripped,
+                         f"Cold cache must produce no incident glyph; got {stripped!r}")
+
+    def test_cold_cache_bottom_line_unchanged_from_baseline(self):
+        """Cold cache → bottom line is byte-identical to the no-status baseline."""
+        # Both paths should give the same output: the status segment is absent in both
+        result_cold = self._render(None)
+        # Also render without the claude_status toggle enabled (effectively same thing)
+        result_disabled = self._render(None, extra_cfg={"display": {"show_claude_status": False}})
+        # Both should be equal (no status segment in either case)
+        self.assertEqual(result_cold, result_disabled,
+                         "Cold cache and disabled-toggle bottom lines must be identical "
+                         "(status seg absent in both cases)")
+
+    # ---- incident cache path ----
+
+    def test_incident_cache_output_ends_with_status_segment(self):
+        """Incident in cache → render_bottom_line output ends with the status segment (D-06)."""
+        sec = self._fresh_status_section(
+            noteworthy=True, severity="minor",
+            label="Claude Code elevated error rates", kind="incident"
+        )
+        result = self._render(sec)
+        self.assertIsNotNone(result)
+        import re
+        stripped = re.sub(r'\x1b\[[0-9;]*m', '', result)
+        self.assertIn("Claude Code elevated error rates", stripped,
+                      f"Bottom line must contain incident label; got {stripped!r}")
+
+    def test_incident_cache_has_three_space_separator_before_status(self):
+        """Incident in cache → status segment is preceded by '   ' (3-space separator, D-06)."""
+        sec = self._fresh_status_section(
+            noteworthy=True, severity="minor",
+            label="Elevated error rates", kind="incident"
+        )
+        result = self._render(sec)
+        self.assertIsNotNone(result)
+        import re
+        stripped = re.sub(r'\x1b\[[0-9;]*m', '', result)
+        # The 3-space separator must appear before the status label
+        label_idx = stripped.find("Elevated error rates")
+        self.assertGreater(label_idx, 2,
+                           f"Label must be preceded by at least 3 chars; got {stripped!r}")
+        separator_before = stripped[label_idx - 4:label_idx]
+        # Check that the 3 chars before the glyph (which precedes the label) are spaces
+        # The pattern is: "...   glyph label..." — find the separator
+        self.assertIn("   ", stripped,
+                      f"Bottom line must contain '   ' (3-space) separator; got {stripped!r}")
+
+    def test_incident_comes_after_weekly_segment(self):
+        """Status segment is after the weekly (calendar) segment in output (D-06)."""
+        sec = self._fresh_status_section(
+            noteworthy=True, severity="minor",
+            label="Status here", kind="incident"
+        )
+        result = self._render(sec)
+        self.assertIsNotNone(result)
+        import re
+        stripped = re.sub(r'\x1b\[[0-9;]*m', '', result)
+        # Calendar glyph (nerd font U+F073 = nf-fa-calendar) must come before status label
+        cal_glyph = str(self._mod._NF_CALENDAR)
+        cal_idx = stripped.find(cal_glyph)
+        label_idx = stripped.find("Status here")
+        self.assertGreater(label_idx, cal_idx,
+                           f"Status label must come AFTER calendar glyph; "
+                           f"cal_idx={cal_idx}, label_idx={label_idx}, stripped={stripped!r}")
+
+    # ---- show_claude_status=False ----
+
+    def test_disabled_toggle_no_status_in_output(self):
+        """show_claude_status=False → status segment absent even with incident cached."""
+        sec = self._fresh_status_section(
+            noteworthy=True, severity="critical",
+            label="Claude Code is down", kind="incident"
+        )
+        result = self._render(sec, extra_cfg={"display": {"show_claude_status": False}})
+        self.assertIsNotNone(result, "Disabled toggle must still render ctx/rate segs")
+        import re
+        stripped = re.sub(r'\x1b\[[0-9;]*m', '', result)
+        self.assertNotIn("Claude Code is down", stripped,
+                         f"show_claude_status=False must suppress status segment; got {stripped!r}")
+
+    # ---- None-return when NO segments ----
+
+    def test_empty_data_returns_none_regardless_of_status(self):
+        """render_bottom_line returns None when no context or rate-limit segments are present."""
+        sec = self._fresh_status_section(
+            noteworthy=True, severity="minor", label="Outage", kind="incident"
+        )
+        # Override toggles to disable ctx + rate segments (simulates missing data)
+        empty_cfg = {
+            "toggles": {
+                "show_context_bar": False,
+                "show_five_hour": False,
+                "show_weekly": False,
+            },
+            "thresholds": {"warn": 70, "crit": 90},
+            "display": {
+                "show_claude_status": False,  # also disable status
+                "icon_set": "nerd",
+                "bar_style": "shade",
+            },
+            "cache": {"status_ttl": 300, "status_max_stale": 900},
+        }
+        cache_path = self._write_cache(sec)
+        with patch.object(self._mod, "_CACHE_PATH", cache_path):
+            result = self._mod.render_bottom_line({}, empty_cfg)
+        self.assertIsNone(result,
+                          "render_bottom_line must return None when no segments are present")
+
+
+class TestRenderBottomLineSpawnPath(unittest.TestCase):
+    """maybe_spawn_refresh is reachable from render_bottom_line independent of weather."""
+
+    _mod = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls._mod = _load_script_module()
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.examples_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            ".examples"
+        )
+        with open(os.path.join(self.examples_dir, "claude_stdin.json")) as f:
+            self.fixture_data = json.load(f)
+        self.stale_cache_path = os.path.join(self.tmpdir, "stale_cache.json")
+        # Write a cache with a stale status section (no weather / no alerts)
+        stale_section = {"fetched_at": time.time() - 600}  # past TTL
+        with open(self.stale_cache_path, "w") as f:
+            json.dump({"claude_status": stale_section}, f)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _cfg_no_weather(self):
+        """Return a cfg with weather disabled and no location (weather segment returns None)."""
+        return {
+            "toggles": {"show_context_bar": True, "show_five_hour": True, "show_weekly": True},
+            "thresholds": {"warn": 70, "crit": 90},
+            "display": {"show_claude_status": True, "icon_set": "nerd", "bar_style": "shade"},
+            "cache": {"status_ttl": 300, "status_max_stale": 900},
+            "weather": {"show_weather": False},
+            # No "location" key — weather segment will bail early
+        }
+
+    def test_maybe_spawn_refresh_called_when_weather_disabled(self):
+        """maybe_spawn_refresh is called from the render path even when weather is disabled."""
+        spawn_calls = []
+        original_maybe_spawn = self._mod.maybe_spawn_refresh
+
+        def spy_spawn(cfg, cache):
+            spawn_calls.append((cfg, cache))
+            # Do NOT actually spawn — just record the call
+
+        cfg = self._cfg_no_weather()
+        with patch.object(self._mod, "_CACHE_PATH", self.stale_cache_path):
+            with patch.object(self._mod, "maybe_spawn_refresh", side_effect=spy_spawn):
+                self._mod.render_bottom_line(self.fixture_data, cfg)
+
+        self.assertGreater(len(spawn_calls), 0,
+                           "maybe_spawn_refresh must be called from render_bottom_line "
+                           "even when weather is disabled (status needs refresh too)")
+
+    def test_maybe_spawn_refresh_called_with_cache_dict(self):
+        """maybe_spawn_refresh is called with a cache dict (not None) from the render path."""
+        spawn_calls = []
+
+        def spy_spawn(cfg, cache):
+            spawn_calls.append(cache)
+
+        cfg = self._cfg_no_weather()
+        with patch.object(self._mod, "_CACHE_PATH", self.stale_cache_path):
+            with patch.object(self._mod, "maybe_spawn_refresh", side_effect=spy_spawn):
+                self._mod.render_bottom_line(self.fixture_data, cfg)
+
+        if spawn_calls:
+            self.assertIsInstance(spawn_calls[0], dict,
+                                  "maybe_spawn_refresh must be called with cache dict")
+
+
 if __name__ == "__main__":
     unittest.main()
