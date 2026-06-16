@@ -1,0 +1,45 @@
+{
+  "page": {
+    "id": "kh6z6xlq5g4w",
+    "name": "Claude",
+    "url": "https://status.claude.com"
+  },
+  "status": {
+    "indicator": "none",
+    "description": "All Systems Operational"
+  },
+  "components": [
+    {
+      "id": "comp-claude-ai",
+      "name": "claude.ai",
+      "status": "operational"
+    },
+    {
+      "id": "comp-claude-code",
+      "name": "Claude Code",
+      "status": "operational"
+    },
+    {
+      "id": "comp-claude-cowork",
+      "name": "Claude Cowork",
+      "status": "operational"
+    },
+    {
+      "id": "comp-claude-api",
+      "name": "Claude API (api.anthropic.com)",
+      "status": "operational"
+    },
+    {
+      "id": "comp-claude-console",
+      "name": "Claude Console (platform.claude.com)",
+      "status": "operational"
+    },
+    {
+      "id": "comp-claude-gov",
+      "name": "Claude for Government",
+      "status": "operational"
+    }
+  ],
+  "incidents": [],
+  "scheduled_maintenances": []
+}

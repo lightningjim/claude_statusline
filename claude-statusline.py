@@ -153,6 +153,9 @@ DEFAULTS: dict = {
         "alerts_ttl":         300,    # 5 min
         "weather_max_stale":  3600,   # 1 hour ceiling before dropping stale obs
         "alerts_max_stale":   900,    # 15 min ceiling before dropping stale alerts
+        # Phase 06: Claude status cache TTL (D-05 — same cadence as alerts)
+        "status_ttl":         300,    # 5 min
+        "status_max_stale":   900,    # 15 min ceiling before dropping stale status
     },
     # Phase-2 weather settings (D2-12)
     "weather": {
@@ -178,6 +181,10 @@ DEFAULTS: dict = {
         # True (default) renders the GSD segment when .planning/ exists under project_dir.
         # Set to false in [display] to suppress the segment (e.g. in test configs).
         "show_gsd": True,
+        # Phase 06: Claude service-health segment toggle (D-08 discretion: display.show_claude_status).
+        # True (default) renders the Claude status segment when a noteworthy event is detected.
+        # Quiet when all tracked components are healthy (D-01). Set to false to suppress.
+        "show_claude_status": True,
     },
 }
 
@@ -454,6 +461,28 @@ _NF_GSD_IDLE      = ""   # nf-fa-pause         U+F04C  (dim: parked / next-up
 
 # Plan slot glyph (map — the plan/roadmap label icon)
 _NF_GSD_PLAN      = ""   # nf-fa-map           U+F278  (neutral: plan slot label)
+
+# ---------------------------------------------------------------------------
+# Claude service-health glyph constants (Phase 06, D-03/D-04)
+#
+# Two codepoints — incident severity and maintenance — following the same
+# literal-codepoint-per-state + intent-comment pattern as _NF_GSD_* above.
+# Codepoints from the nf-fa-* (U+F0xx) range for consistency.
+#
+# Semantic rationale:
+#   Incident  -> fa-exclamation-circle  (U+F06A): urgent problem -- act now
+#   Maint     -> fa-wrench              (U+F0AD): maintenance/repair -- planned work
+#
+# DISTINCT glyphs for incident vs. maintenance (D-04): maintenance uses a neutral
+# wrench glyph rather than a severity exclamation; this prevents conflating
+# scheduled maintenance with an unplanned outage.
+# ---------------------------------------------------------------------------
+
+# Incident glyph (exclamation circle -- unresolved incident on a tracked component)
+_NF_CLAUDE_INCIDENT = ""   # nf-fa-exclamation_circle  U+F06A  (severity: problem active)
+
+# Maintenance glyph (wrench -- scheduled or in-progress maintenance window)
+_NF_CLAUDE_MAINT    = ""   # nf-fa-wrench               U+F0AD  (neutral: planned work)
 
 # ---------------------------------------------------------------------------
 # Alert-class glyph constants (Phase 02.2, D-04)
@@ -1204,6 +1233,205 @@ def _alert_color(alert: dict) -> str:
         return YELLOW
 
 
+def _claude_status_color(severity: object) -> str:
+    """Return the ANSI color+intensity for a Statuspage.io severity token (Phase 06, D-03/D-04).
+
+    Maps status severity tokens from summary.json to band hues:
+      minor       -> YELLOW             (minor disruption — be aware)
+      major       -> RED                (major outage — significant impact)
+      critical    -> BOLD + RED         (critical outage — service down)
+      maintenance -> DIM                (planned maintenance — neutral, NOT a severity hue, D-04)
+      <other>     -> YELLOW             (safe default on unknown/None/garbage input)
+
+    The function is intentionally symmetric with _alert_color: whole body in
+    try/except, returning YELLOW on any parse error (D-10 never-raises contract).
+
+    Do NOT route through color_for() — that is the usage-threshold band function
+    and is not applicable to status severity (see PATTERNS.md).
+    """
+    try:
+        hue_map = {
+            "minor":       YELLOW,
+            "major":       RED,
+            "critical":    f"{BOLD}{RED}",
+            # Neutral hue for maintenance: DIM, not a severity color (D-04).
+            # Using DIM (not DEFAULT_FG) so scheduled maintenance reads as low-key/informational.
+            "maintenance": DIM,
+        }
+        if not isinstance(severity, str):
+            return YELLOW
+        return hue_map.get(severity, YELLOW)
+    except Exception:
+        return YELLOW
+
+
+# ---------------------------------------------------------------------------
+# Claude service-health derivation (Phase 06, D-01/D-02/D-03/D-04)
+# ---------------------------------------------------------------------------
+
+# Tracked components: only these trigger the status indicator (D-02).
+# Must match the component names verbatim as they appear in the status.claude.com feed.
+_CLAUDE_TRACKED_COMPONENTS: frozenset = frozenset({
+    "Claude Code",
+    "claude.ai",
+    "Claude Cowork",
+})
+
+# Human-readable state labels for degraded component statuses (D-03 fallback)
+_CLAUDE_STATUS_LABELS: dict = {
+    "degraded_performance": "degraded",
+    "partial_outage":       "partial outage",
+    "major_outage":         "major outage",
+    "under_maintenance":    "maintenance",
+}
+
+# Impact → severity mapping for incidents (D-03)
+_CLAUDE_IMPACT_SEVERITY: dict = {
+    "critical": "critical",
+    "major":    "major",
+    "minor":    "minor",
+    # "none" impact on an unresolved incident → fall back to "minor"
+    "none":     "minor",
+}
+
+
+def _derive_claude_status(summary: object) -> dict | None:
+    """Derive a status trigger result from a Statuspage.io summary.json dict.
+
+    Returns None (quiet-when-healthy, D-01) when all tracked components
+    (Claude Code, claude.ai, Claude Cowork) are operational and there is no
+    relevant incident or maintenance window.
+
+    Returns a dict with the shape:
+        {"severity": str, "label": str, "kind": str}
+    when something noteworthy is found.  The label is stored RAW (unsanitized)
+    so the cache is a faithful record — sanitization is the render path's job (Plan 02).
+
+    Derivation priority (first match wins):
+      1. Unresolved incident whose components[] intersect the tracked set → kind="incident"
+      2. Scheduled/in-progress maintenance touching a tracked component → kind="maintenance"
+      3. Tracked component with a non-operational status and no incident → kind="degraded"
+      4. All healthy → None
+
+    Do NOT use the top-level status.indicator rollup as the trigger (confirmed
+    D-02 hazard: indicator fires on any component, including untracked ones).
+
+    Whole body in try/except returning None — never raises (D-10 / T-06-02).
+    """
+    try:
+        if not isinstance(summary, dict):
+            return None
+
+        # Build a name→status map for all components in the feed
+        components_raw = summary.get("components", [])
+        if not isinstance(components_raw, list):
+            components_raw = []
+        comp_status: dict = {}
+        for comp in components_raw:
+            if not isinstance(comp, dict):
+                continue
+            name = comp.get("name", "")
+            status = comp.get("status", "operational")
+            if isinstance(name, str) and name:
+                comp_status[name] = status
+
+        def _tracked_component_names(component_refs: object) -> set:
+            """Return the subset of tracked component names from a component refs list."""
+            if not isinstance(component_refs, list):
+                return set()
+            result = set()
+            for ref in component_refs:
+                if not isinstance(ref, dict):
+                    continue
+                name = ref.get("name", "")
+                if isinstance(name, str) and name in _CLAUDE_TRACKED_COMPONENTS:
+                    result.add(name)
+            return result
+
+        # --- Rule 1: Unresolved incidents touching tracked components (D-03) ---
+        incidents_raw = summary.get("incidents", [])
+        if not isinstance(incidents_raw, list):
+            incidents_raw = []
+
+        triggered_incidents = []
+        for inc in incidents_raw:
+            if not isinstance(inc, dict):
+                continue
+            # An incident is "unresolved" if its status is investigating/identified/monitoring
+            inc_status = inc.get("status", "")
+            if not isinstance(inc_status, str):
+                continue
+            if inc_status not in ("investigating", "identified", "monitoring"):
+                continue
+            tracked = _tracked_component_names(inc.get("components", []))
+            if not tracked:
+                continue
+            triggered_incidents.append(inc)
+
+        if triggered_incidents:
+            # Pick the highest-impact incident
+            impact_rank = {"critical": 3, "major": 2, "minor": 1, "none": 0}
+            best = max(
+                triggered_incidents,
+                key=lambda i: impact_rank.get(i.get("impact", "none"), 0),
+            )
+            impact = best.get("impact", "none")
+            severity = _CLAUDE_IMPACT_SEVERITY.get(impact, "minor")
+            label = best.get("name", "")
+            if not isinstance(label, str):
+                label = ""
+            return {"severity": severity, "label": label, "kind": "incident"}
+
+        # --- Rule 2: Scheduled/in-progress maintenance touching tracked components (D-04) ---
+        maintenances_raw = summary.get("scheduled_maintenances", [])
+        if not isinstance(maintenances_raw, list):
+            maintenances_raw = []
+
+        for maint in maintenances_raw:
+            if not isinstance(maint, dict):
+                continue
+            maint_status = maint.get("status", "")
+            if not isinstance(maint_status, str):
+                continue
+            if maint_status not in ("scheduled", "in_progress"):
+                continue
+            tracked = _tracked_component_names(maint.get("components", []))
+            if not tracked:
+                continue
+            label = maint.get("name", "")
+            if not isinstance(label, str):
+                label = ""
+            return {"severity": "maintenance", "label": label, "kind": "maintenance"}
+
+        # --- Rule 3: Tracked component degraded with no associated incident (D-03 fallback) ---
+        non_operational = (
+            "degraded_performance",
+            "partial_outage",
+            "major_outage",
+            "under_maintenance",
+        )
+        for comp_name in sorted(_CLAUDE_TRACKED_COMPONENTS):  # deterministic order
+            status = comp_status.get(comp_name, "operational")
+            if status in non_operational:
+                human_state = _CLAUDE_STATUS_LABELS.get(status, status.replace("_", " "))
+                label = f"{comp_name}: {human_state}"
+                # Map component status to severity tier
+                severity_map = {
+                    "degraded_performance": "minor",
+                    "partial_outage":       "major",
+                    "major_outage":         "critical",
+                    "under_maintenance":    "maintenance",
+                }
+                severity = severity_map.get(status, "minor")
+                return {"severity": severity, "label": label, "kind": "degraded"}
+
+        # --- Rule 4: All healthy (D-01) ---
+        return None
+
+    except Exception:
+        return None
+
+
 def _build_alert_tally(remaining: list, icon_set: str) -> str:
     """Build a per-class tally string for the non-primary alerts (D-08).
 
@@ -1330,6 +1558,76 @@ def fetch_alerts(cfg: dict) -> None:
         pass
 
 
+def fetch_claude_status(cfg: dict) -> None:
+    """Fetch Anthropic/Claude service health and write the claude_status cache section.
+
+    Endpoint: GET https://status.claude.com/api/v2/summary.json
+    Accept: None (plain JSON — no ld+json header needed for Statuspage.io v2)
+
+    Flow:
+      1. If CLAUDE_STATUSLINE_FAKE_STATUS env var is set, load the named JSON file
+         as the summary payload instead of issuing an HTTP request (UAT/offline testing —
+         mirrors CLAUDE_STATUSLINE_FAKE_ALERTS pattern; T-06-02).
+      2. Otherwise: GET summary.json via _nws_get (reused as-is; generic despite NWS name).
+      3. Pass the parsed payload to _derive_claude_status to compute the trigger result.
+      4. Write the claude_status cache section atomically — even when derivation is None
+         (healthy state), to timestamp the fetch and prevent a hot respawn loop.
+
+    Stores the RAW (unsanitized) label from _derive_claude_status; sanitization happens
+    on the render path (Plan 02) so the cache is a faithful record (truth-telling, T-06-01).
+
+    Wrapped in try/except — never raises (D-10 / T-06-02). A failed fetch leaves the
+    claude_status section unchanged; the render falls back gracefully (cold-cache → None).
+
+    RUNS ONLY IN THE DETACHED CHILD (--refresh mode). Never called on the render path.
+    """
+    try:
+        weather_cfg = cfg.get("weather", {})
+        contact_email = weather_cfg.get("contact_email", "")
+
+        ua = make_user_agent(_APP_VERSION, contact_email)
+        import time as _time
+        now = _time.time()
+
+        # UAT/offline fixture override: honor CLAUDE_STATUSLINE_FAKE_STATUS env var
+        # (mirrors CLAUDE_STATUSLINE_FAKE_ALERTS pattern — T-06-02)
+        fake_path = os.environ.get("CLAUDE_STATUSLINE_FAKE_STATUS")
+        if fake_path:
+            try:
+                with open(fake_path, encoding="utf-8") as fh:
+                    summary = json.load(fh)
+            except Exception:
+                return  # bad fake file: leave cache unchanged
+        else:
+            # Live fetch: GET status.claude.com/api/v2/summary.json (plain JSON)
+            # URL is a hardcoded constant — no user/config interpolation (T-06-04)
+            url = "https://status.claude.com/api/v2/summary.json"
+            summary = _nws_get(url, ua, accept=None)
+
+        # Derive the trigger result from the parsed payload
+        derived = _derive_claude_status(summary)
+
+        # Build the cache payload — always include the derived result (or an explicit
+        # "noteworthy=False" marker) so even a healthy refresh timestamps the section,
+        # preventing the maybe_spawn_refresh loop from respawning every render.
+        if derived is not None:
+            payload = {
+                "noteworthy": True,
+                "severity":   derived.get("severity"),
+                "label":      derived.get("label"),
+                "kind":       derived.get("kind"),
+            }
+        else:
+            payload = {"noteworthy": False}
+
+        # Write the claude_status cache section atomically
+        write_cache_section(_CACHE_PATH, "claude_status", payload, now)
+
+    except Exception:
+        # Any network / parse / OS error is swallowed (D-10).
+        pass
+
+
 def run_refresh(cfg: dict) -> None:
     """Entry point for the detached background fetch child (--refresh mode).
 
@@ -1337,8 +1635,8 @@ def run_refresh(cfg: dict) -> None:
     if the file already exists).  If the lock is already held by another fetch,
     exits immediately (no stampede — T-02-09, D2-05).
 
-    Refreshes both weather and alerts under the single lock (D2-16 — no separate
-    fetch process for alerts; both run in the same detached child).
+    Refreshes weather, alerts, and Claude service status under the single lock
+    (D2-16 + Phase-06 D-05 — all three fetches run in the same detached child).
 
     On any error: swallows and exits cleanly (never crashes the render bar via stderr).
     The lock file is always removed in the finally block so a crashed child
@@ -1355,9 +1653,10 @@ def run_refresh(cfg: dict) -> None:
         except (FileExistsError, OSError):
             # Lock already held by another fetch — exit immediately (no stampede)
             return
-        # Lock acquired — run both fetches under the single lock (D2-16)
+        # Lock acquired — run all three fetches under the single lock (D2-16 + Phase 06)
         fetch_weather(cfg)
         fetch_alerts(cfg)
+        fetch_claude_status(cfg)  # Phase 06: Claude service-health status (D-05)
     except Exception:
         pass
     finally:
@@ -1374,30 +1673,33 @@ def run_refresh(cfg: dict) -> None:
 
 
 def maybe_spawn_refresh(cfg: dict, cache: dict) -> None:
-    """Spawn a detached background child to refresh the weather and/or alerts cache if stale.
+    """Spawn a detached background child to refresh weather, alerts, or status cache if stale.
 
-    Checks whether the weather OR alerts section needs refreshing (past its TTL or absent).
-    If either is stale, spawns a new process under the current interpreter with --refresh,
+    Checks whether the weather, alerts, OR claude_status section needs refreshing
+    (past its TTL or absent). If any is stale, spawns a new process with --refresh,
     detached (start_new_session=True, stdio=DEVNULL) so it never blocks the render.
 
-    The detached child refreshes both weather and alerts under the single lock (D2-16).
+    The detached child refreshes all three sections under the single lock (D2-16 + Phase-06).
 
     This is a fire-and-forget call on the RENDER PATH — it must return instantly.
     The parent render continues with the current (possibly stale) cached value.
-    (D2-05 / T-02-08)
+    (D2-05 / T-02-08 / D-05)
     """
     try:
         cache_cfg = cfg.get("cache", {})
         weather_ttl = float(cache_cfg.get("weather_ttl", 600))
         alerts_ttl = float(cache_cfg.get("alerts_ttl", 300))
+        status_ttl = float(cache_cfg.get("status_ttl", 300))  # Phase 06 (D-05)
         import time as _time
         now = _time.time()
         weather_section = cache.get("weather", {})
         alerts_section = cache.get("alerts", {})
-        # Trigger refresh when: weather OR alerts section is absent OR stale past its TTL
+        status_section = cache.get("claude_status", {})  # Phase 06 (D-05)
+        # Trigger refresh when: weather OR alerts OR claude_status is absent/stale
         weather_stale = not section_is_fresh(weather_section, ttl=weather_ttl, now=now)
         alerts_stale = not section_is_fresh(alerts_section, ttl=alerts_ttl, now=now)
-        if not (weather_stale or alerts_stale):
+        status_stale = not section_is_fresh(status_section, ttl=status_ttl, now=now)  # Phase 06 (D-05)
+        if not (weather_stale or alerts_stale or status_stale):
             return
         # Spawn detached child — fixed argv, no shell interpolation (T-02-08)
         subprocess.Popen(
