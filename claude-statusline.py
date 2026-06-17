@@ -1944,8 +1944,34 @@ def fetch_claude_status(cfg: dict) -> None:
             url = "https://status.claude.com/api/v2/summary.json"
             summary = _nws_get(url, ua, accept=None)
 
-        # Derive the trigger result from the parsed payload
-        derived = _derive_claude_status(summary)
+        # --- Phase 07 Plan 02: dismissal-store read + auto-prune (D-04) ---
+        # Read the current dismissal store (corrupt/missing → {} → no suppression).
+        # Collect live incident ids from the parsed summary, prune stale dismissed ids
+        # (those no longer present in the feed), and persist the pruned store if it
+        # changed.  Wrapped in its own try/except so a store error never affects the
+        # fetch result (D-10).  NEVER writes the user's TOML (D-05).
+        dismissals: dict = {}
+        try:
+            dismissals = read_dismissals(_DISMISSALS_PATH)
+            # Build set of live tracked incident ids (defensive: only string ids)
+            live_ids: set = set()
+            for _inc in (summary.get("incidents", []) or []):
+                if isinstance(_inc, dict):
+                    _id = _inc.get("id", "")
+                    if isinstance(_id, str) and _id:
+                        live_ids.add(_id)
+            pruned = _prune_dismissals(dismissals, live_ids)
+            if pruned != dismissals:
+                write_dismissals(pruned, _DISMISSALS_PATH)
+                dismissals = pruned
+        except Exception:
+            dismissals = {}  # prune error → treat as empty store (no suppression)
+
+        # Derive the trigger result from the parsed payload, passing dismissals + cfg
+        # so the cached result already accounts for suppression (D-01).  Suppressed
+        # incidents fall through to maintenance/degraded/None — bar stays quiet on
+        # the very next render without re-fetching.
+        derived = _derive_claude_status(summary, dismissals=dismissals, cfg=cfg)
 
         # Collect the raw tracked-incident list (D-02 enabler for --status-incidents,
         # Plan 03). Included in BOTH branches so the payload shape is always stable
