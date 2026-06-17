@@ -1629,7 +1629,7 @@ def _is_suppressed(
         # Guard: cfg must be a dict; if not, treat as no config (filter enabled, no patterns)
         if not isinstance(cfg, dict):
             cfg = {}
-        claude_status_cfg = cfg.get("claude_status") if isinstance(cfg, dict) else {}
+        claude_status_cfg = cfg.get("claude_status")   # cfg is always dict here
         if not isinstance(claude_status_cfg, dict):
             claude_status_cfg = {}
 
