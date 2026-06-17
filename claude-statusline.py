@@ -422,11 +422,12 @@ def _prune_dismissals(store: dict, live_ids: object) -> dict:
 # Phase 07 Plan 03: CLI management flag helpers
 # ---------------------------------------------------------------------------
 
-# One-line next-refresh note appended to every --dismiss / --undismiss confirmation.
-# The bar updates at the next status refresh (cache TTL ~5 min); --refresh applies now.
+# One-line note appended to every --dismiss / --undismiss confirmation.
+# Plan 04 fix: render-time suppression makes the change take effect on the VERY NEXT
+# render — no --refresh required (and --refresh is unreliable under the stampede lock).
 _DISMISS_REFRESH_NOTE = (
-    "  Note: change takes effect on the bar at the next status refresh"
-    " (cache TTL ~5 min); run --refresh to apply it immediately."
+    "  Note: change takes effect on the bar at the very next render"
+    " (no --refresh required)."
 )
 
 
