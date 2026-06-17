@@ -2495,6 +2495,10 @@ class TestDeriveClaudeStatusFilterIntegration(unittest.TestCase):
         result = self.mod._derive_claude_status(summary, dismissals=dismissals, cfg=cfg)
         self.assertIsNotNone(result,
                              "Escalated incident (major > minor-at-dismiss) must re-surface (D-03)")
+        self.assertEqual(result.get("kind"), "incident",
+                         "Re-surfaced result must be kind='incident', not kind='degraded' (Rule 3 fallback)")
+        self.assertEqual(result.get("severity"), "major",
+                         "Re-surfaced incident must carry the escalated impact as severity")
 
     # ---- toggle-off: no suppression ----
 
