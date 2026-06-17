@@ -141,13 +141,16 @@ Plans:
 
 **Goal:** Resolve the test/code drift in the Phase-3 default progress bar. Two tests fail on `main` (pre-existing, surfaced during Phase 4) because they assert the default bar contains a `▓` shade cell, while the default now renders a gradient (`█▍…`) bar. Decide the intended default (gradient vs shade), then make the default and the tests agree — either fix the default to emit a shade cell or update the tests to expect the gradient.
 **Affected tests:**
+
 - `tests/test_bottom_line.py::TestBottomLineFixture::test_bottom_line_bar_fill_cells`
 - `tests/test_bottom_line.py::TestBarStylePresets::test_default_no_config_shade_unchanged`
+
 **Requirements**: None mapped (CONTEXT-driven test-isolation fix; scope tracked against D-01..D-04).
 **Depends on:** Phase 3
 **Plans:** 1/1 plans complete
 
 Plans:
+
 - [x] 03.1-01-PLAN.md — Isolate the two default-asserting tests from the user's live config (no-config HOME → DEFAULTS shade fallback) + audit/harden sibling full-run tests; production code unchanged (D-01,D-02,D-03,D-04)
 
 ### Phase 4: git info including active worktree
@@ -242,6 +245,14 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 →
 **Plans:** 3 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 07-01-PLAN.md — Foundation: [claude_status] config table + tool-owned dismissal store helpers + widened cache payload (D-05, D-06)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 07-02-PLAN.md — Dual filter in _derive_claude_status (id-dismiss + keyword/regex), escalation re-surface, auto-prune (D-01, D-03, D-04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 07-03-PLAN.md — Management CLI: --status-incidents / --dismiss / --undismiss (D-02)
