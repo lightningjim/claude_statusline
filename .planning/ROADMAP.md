@@ -105,7 +105,7 @@ Plans:
 **Goal:** Adopt Nerd Font glyphs across the statusline now that JetBrains + DejaVu Nerd Fonts are installed — starting with weather conditions/alerts (supersedes the emoji set from Phase 2) and extending to the other segment glyphs (model/thinking indicator, context, rate-limit, sun events) where a Nerd Font glyph reads better than the current emoji/ASCII.
 **Requirements**: ENH-04 (pulled forward from REQUIREMENTS.md v2)
 **Depends on:** Phase 2
-**Plans:** 3/3 plans complete
+**Plans:** 3/3 plans complete + 1 gap-closure plan (07-04)
 
 Plans:
 
@@ -256,3 +256,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 07-03-PLAN.md — Management CLI: --status-incidents / --dismiss / --undismiss (D-02)
+
+**Wave 4** *(gap closure — UAT Test 1 fix)*
+
+- [ ] 07-04-PLAN.md — Render-time suppression: re-apply _is_suppressed over cached tracked_incidents at render so --dismiss / ignore_title_patterns take effect instantly (zero-network, lock-independent); D-03 escalation preserved; corrected --refresh help text
