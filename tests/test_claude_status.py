@@ -1103,6 +1103,349 @@ class TestClaudeStatusSegmentBuilder(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Task 3 (Plan 04): render-time suppression unit tests
+# ---------------------------------------------------------------------------
+#
+# Covers the Phase 07 Plan 04 (UAT gap) fix: _claude_status_segment re-applies
+# _is_suppressed over cached tracked_incidents + live dismissal store at render
+# time, so --dismiss / ignore_title_patterns take effect on the very next render
+# without a network fetch (instant, zero-network, lock-independent).
+#
+# Each test builds a FRESH, baked-noteworthy cache section that includes a
+# tracked_incidents list, then asserts the render outcome. Both _CACHE_PATH and
+# _DISMISSALS_PATH are patched to temp files so no real ~/.claude paths are read.
+#
+# Trust-boundary coverage (from the threat model):
+#   T-07-04-01 — ReDoS: reuses _is_suppressed's 500-char cap (no new matching code)
+#   T-07-04-02 — Corrupt dismissal store → {} → no suppression, never raises (D-10)
+#   T-07-04-03 — Malformed tracked_incidents → treated as empty → baked behavior
+#   T-07-04-04 — D-03 escalation re-surface: live impact > dismissed impact → surfaces
+
+class TestClaudeStatusRenderSuppression(unittest.TestCase):
+    """_claude_status_segment render-time suppression (Plan 04 UAT gap fix)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        self.tmpdir = tempfile.mkdtemp()
+        self.data = {}
+        self.base_cfg = {
+            "cache": {
+                "status_ttl": 300,
+                "status_max_stale": 900,
+            },
+            "display": {
+                "show_claude_status": True,
+                "icon_set": "nerd",
+            },
+            "claude_status": {
+                "filter_enabled": True,
+                "ignore_title_patterns": [],
+            },
+        }
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write_dismissals(self, store: dict) -> str:
+        """Write a dismissal store JSON to tmpdir; return the path."""
+        path = os.path.join(self.tmpdir, "status_dismissals.json")
+        with open(path, "w") as f:
+            json.dump(store, f)
+        return path
+
+    def _fresh_section(self, **kwargs) -> dict:
+        """Return a fresh (within max_stale) cache section with the given fields."""
+        sec = {"fetched_at": time.time() - 60}
+        sec.update(kwargs)
+        return sec
+
+    def _segment(self, status_section: dict | None,
+                 dismissal_store: dict | None = None,
+                 extra_cfg: dict | None = None) -> str | None:
+        """Call _claude_status_segment with patched _CACHE_PATH and _DISMISSALS_PATH."""
+        import copy
+        cfg = copy.deepcopy(self.base_cfg)
+        if extra_cfg:
+            for k, v in extra_cfg.items():
+                if isinstance(v, dict) and k in cfg:
+                    cfg[k].update(v)
+                else:
+                    cfg[k] = v
+
+        if status_section is not None:
+            cache_path = _make_cache_with_status(self.tmpdir, status_section)
+        else:
+            cache_path = os.path.join(self.tmpdir, "absent_cache.json")
+
+        if dismissal_store is not None:
+            dismissals_path = self._write_dismissals(dismissal_store)
+        else:
+            # Empty dismissal store (no dismissals)
+            dismissals_path = self._write_dismissals({})
+
+        with patch.object(self.mod, "_CACHE_PATH", cache_path):
+            with patch.object(self.mod, "_DISMISSALS_PATH", dismissals_path):
+                return self.mod._claude_status_segment(self.data, cfg)
+
+    # ---- test_dismiss_by_id_suppresses_at_render ----
+
+    def test_dismiss_by_id_suppresses_at_render(self):
+        """dismiss-by-id: dismissed id at matching impact → returns None at next render (D-01).
+
+        A fresh baked-noteworthy section whose sole tracked incident id is in the
+        live dismissal store (impact_at_dismiss == live impact) → the render path
+        re-applies _is_suppressed and returns None instantly, without a network fetch.
+        """
+        tracked_inc = {"id": "inc-muted", "impact": "minor",
+                       "status": "investigating", "title": "Mythos access suspended",
+                       "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="minor",
+            label="Mythos access suspended", kind="incident",
+            tracked_incidents=[tracked_inc],
+        )
+        dismissal_store = {
+            "inc-muted": {"impact_at_dismiss": "minor", "dismissed_at": time.time() - 10},
+        }
+        result = self._segment(sec, dismissal_store=dismissal_store)
+        self.assertIsNone(result,
+                          "dismiss-by-id at matching impact must suppress at render (D-01 instant mute)")
+
+    # ---- test_keyword_suppresses_at_render ----
+
+    def test_keyword_suppresses_at_render(self):
+        """keyword match: ignore_title_patterns matches incident title → returns None at render.
+
+        Empty dismissal store; cfg has ignore_title_patterns=["Mythos"]; the sole
+        tracked incident's title contains "Mythos" → suppressed at render via _is_suppressed.
+        """
+        tracked_inc = {"id": "inc-kw", "impact": "minor",
+                       "status": "investigating",
+                       "title": "Mythos/Fable suspended access",
+                       "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="minor",
+            label="Mythos/Fable suspended access", kind="incident",
+            tracked_incidents=[tracked_inc],
+        )
+        result = self._segment(
+            sec,
+            dismissal_store={},  # no id-dismissals
+            extra_cfg={"claude_status": {"filter_enabled": True,
+                                         "ignore_title_patterns": ["Mythos"]}},
+        )
+        self.assertIsNone(result,
+                          "keyword match in ignore_title_patterns must suppress at render (D-01)")
+
+    # ---- test_escalation_resurfaces_at_render ----
+
+    def test_escalation_resurfaces_at_render(self):
+        """escalation re-surface (D-03): dismissed at minor but live impact is major → surfaces.
+
+        id dismissed at impact_at_dismiss="minor" but the cached tracked incident's
+        live impact is "major" → _is_suppressed returns False (escalation void) → the
+        segment is non-None (incident surfaces on the bar).
+        """
+        tracked_inc = {"id": "inc-escalated", "impact": "major",
+                       "status": "identified",
+                       "title": "Claude Code elevated errors",
+                       "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="major",
+            label="Claude Code elevated errors", kind="incident",
+            tracked_incidents=[tracked_inc],
+        )
+        dismissal_store = {
+            "inc-escalated": {"impact_at_dismiss": "minor", "dismissed_at": time.time() - 10},
+        }
+        result = self._segment(sec, dismissal_store=dismissal_store)
+        self.assertIsNotNone(result,
+                             "Escalated incident (live impact > impact_at_dismiss) must "
+                             "re-surface at render (D-03)")
+        # The result should contain some recognizable text from the title
+        self.assertIsInstance(result, str,
+                              "Escalated incident result must be a str, not None (D-03)")
+
+    # ---- test_unrelated_incident_still_lights ----
+
+    def test_unrelated_incident_still_lights(self):
+        """Un-dismissed, un-keyword-matched incident → still returns non-None string.
+
+        Mute never hides a real, un-targeted incident even when there are dismissals
+        present for OTHER ids.
+        """
+        tracked_inc = {"id": "inc-real", "impact": "minor",
+                       "status": "investigating",
+                       "title": "Claude Code API elevated errors",
+                       "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="minor",
+            label="Claude Code API elevated errors", kind="incident",
+            tracked_incidents=[tracked_inc],
+        )
+        # Dismissal store references a DIFFERENT id
+        dismissal_store = {
+            "inc-other": {"impact_at_dismiss": "minor", "dismissed_at": time.time() - 10},
+        }
+        result = self._segment(sec, dismissal_store=dismissal_store)
+        self.assertIsNotNone(result,
+                             "Un-dismissed incident must still surface at render (mute must not be "
+                             "over-broad)")
+        self.assertIsInstance(result, str, "Result must be a string for an active incident")
+
+    # ---- test_healthy_still_omits ----
+
+    def test_healthy_still_omits(self):
+        """noteworthy=False (healthy) with any dismissal store → still returns None (D-01).
+
+        The render-time suppression path is only reached after the noteworthy gate.
+        Healthy (all-clear) must still silently omit regardless of the dismissal store.
+        """
+        sec = self._fresh_section(noteworthy=False)
+        dismissal_store = {
+            "inc-anything": {"impact_at_dismiss": "minor", "dismissed_at": time.time()},
+        }
+        result = self._segment(sec, dismissal_store=dismissal_store)
+        self.assertIsNone(result,
+                          "noteworthy=False must return None even with a populated dismissal store (D-01)")
+
+    # ---- test_cold_cache_still_omits ----
+
+    def test_cold_cache_still_omits(self):
+        """Absent/stale cache → None even with a populated dismissal store (D-01 cold-cache).
+
+        The freshness gate fires before the suppression block, so a cold/stale cache
+        always omits silently regardless of the dismissal store contents.
+        """
+        dismissal_store = {
+            "inc-anything": {"impact_at_dismiss": "minor", "dismissed_at": time.time()},
+        }
+        # Cold cache: no cache file at all
+        result = self._segment(None, dismissal_store=dismissal_store)
+        self.assertIsNone(result,
+                          "Cold cache (absent file) must return None with any dismissal store (D-01)")
+
+    # ---- test_render_never_raises_on_malformed ----
+
+    def test_render_never_raises_on_malformed(self):
+        """Malformed tracked_incidents and/or corrupt dismissal store → never raises (D-10).
+
+        Various malformed inputs must degrade gracefully (None or the baked string)
+        without raising — the render path is protected by the function-level try/except.
+        """
+        bad_tracked_variants = [
+            "not a list",          # non-list tracked_incidents
+            None,                  # explicit None
+            [None, "bad", 42],     # list of non-dicts
+            [{"id": None, "impact": None, "title": None}],  # dicts with None fields
+        ]
+        bad_dismissal_variants = [
+            "not a dict",          # non-dict store
+            None,                  # None store (write a bad JSON file)
+        ]
+        for bad_tracked in bad_tracked_variants:
+            for bad_dismissals_flag in (False, True):
+                with self.subTest(tracked=bad_tracked, corrupt_dismissals=bad_dismissals_flag):
+                    sec = self._fresh_section(
+                        noteworthy=True, severity="minor",
+                        label="Outage", kind="incident",
+                        tracked_incidents=bad_tracked,
+                    )
+                    if bad_dismissals_flag:
+                        # Write a corrupt dismissal file (invalid JSON)
+                        dismissals_path = os.path.join(self.tmpdir, "corrupt_dismissals.json")
+                        with open(dismissals_path, "w") as f:
+                            f.write("not-json{{{")
+                        cache_path = _make_cache_with_status(self.tmpdir, sec)
+                        import copy
+                        cfg = copy.deepcopy(self.base_cfg)
+                        try:
+                            with patch.object(self.mod, "_CACHE_PATH", cache_path):
+                                with patch.object(self.mod, "_DISMISSALS_PATH", dismissals_path):
+                                    result = self.mod._claude_status_segment(self.data, cfg)
+                            self.assertTrue(result is None or isinstance(result, str),
+                                            f"Malformed input must return str|None, not raise; "
+                                            f"tracked={bad_tracked!r}, corrupt_dismissals={bad_dismissals_flag}; "
+                                            f"got={result!r}")
+                        except Exception as exc:
+                            self.fail(
+                                f"_claude_status_segment raised on malformed input "
+                                f"(tracked={bad_tracked!r}, corrupt_dismissals={bad_dismissals_flag}): {exc}"
+                            )
+                    else:
+                        try:
+                            result = self._segment(sec, dismissal_store={})
+                            self.assertTrue(result is None or isinstance(result, str),
+                                            f"Malformed tracked_incidents must return str|None (D-10); "
+                                            f"tracked={bad_tracked!r}, got={result!r}")
+                        except Exception as exc:
+                            self.fail(
+                                f"_claude_status_segment raised on malformed tracked_incidents "
+                                f"{bad_tracked!r}: {exc}"
+                            )
+
+    # ---- test_maintenance_baked_behavior_unchanged ----
+
+    def test_maintenance_baked_behavior_unchanged(self):
+        """maintenance/degraded baked section (no tracked_incidents) → renders baked segment.
+
+        Render-time suppression governs incidents only (items with ids in
+        tracked_incidents). A maintenance section has no tracked incident ids and must
+        render the baked maintenance segment unchanged, even with a populated dismissal
+        store.
+        """
+        # Maintenance section with no tracked_incidents — or an empty list
+        sec = self._fresh_section(
+            noteworthy=True, severity="maintenance",
+            label="Scheduled maintenance window", kind="maintenance",
+            tracked_incidents=[],  # empty — no ids to filter
+        )
+        dismissal_store = {
+            "inc-irrelevant": {"impact_at_dismiss": "major", "dismissed_at": time.time()},
+        }
+        result = self._segment(sec, dismissal_store=dismissal_store)
+        self.assertIsNotNone(result,
+                             "Maintenance section must still render despite populated dismissal store "
+                             "(render-time suppression governs incidents only)")
+        # The maintenance glyph must be present (not suppressed)
+        self.assertIn(self.mod._NF_CLAUDE_MAINT, result,
+                      f"Maintenance segment must contain the maintenance glyph (wrench); "
+                      f"got={result!r}")
+
+    # ---- test_second_incident_surfaces_when_first_dismissed ----
+
+    def test_second_incident_surfaces_when_first_dismissed(self):
+        """When the first tracked incident is dismissed, the second non-suppressed one surfaces.
+
+        Two tracked_incidents: first is dismissed (suppressed), second is not.
+        The segment must render the SECOND incident's title (fall-through to next item).
+        """
+        first_inc = {"id": "inc-dismissed", "impact": "minor",
+                     "status": "investigating", "title": "Mythos/Fable suspended",
+                     "component": "Claude Code"}
+        second_inc = {"id": "inc-active", "impact": "minor",
+                      "status": "investigating", "title": "API elevated errors",
+                      "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="minor",
+            label="Mythos/Fable suspended", kind="incident",  # baked from first
+            tracked_incidents=[first_inc, second_inc],
+        )
+        dismissal_store = {
+            "inc-dismissed": {"impact_at_dismiss": "minor", "dismissed_at": time.time() - 10},
+        }
+        result = self._segment(sec, dismissal_store=dismissal_store)
+        self.assertIsNotNone(result,
+                             "Second non-suppressed incident must surface when first is dismissed")
+        self.assertIn("API elevated errors", result,
+                      f"Result must contain the SECOND incident's title (first was dismissed); "
+                      f"got={result!r}")
+        self.assertNotIn("Mythos/Fable", result,
+                         f"Dismissed first incident title must NOT appear in result; "
+                         f"got={result!r}")
+
+
+# ---------------------------------------------------------------------------
 # Task 5 (Plan 02): render_bottom_line integration + render-path spawn
 # ---------------------------------------------------------------------------
 #
