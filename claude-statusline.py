@@ -3521,12 +3521,15 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
     """Return a severity-colored glyph + sanitized incident/maintenance title, or None.
 
     Reads the "claude_status" cache section written by fetch_claude_status (Plan 01).
-    Never blocks on the network — all I/O is a single cache read.
+    Also reads the dismissal store (local JSON, cheap, fail-safe) to re-apply render-time
+    suppression — making --dismiss / ignore_title_patterns take effect on the next render
+    without a network fetch (Plan 04 UAT gap fix). Never blocks on the network.
 
     Return rules (first match):
       - show_claude_status=False → None
       - cache absent / section stale past status_max_stale → None  (cold-cache silent, D-01)
       - noteworthy=False (healthy) → None  (quiet-when-healthy, D-01)
+      - all tracked_incidents suppressed at render time → None  (instant mute, Plan 04)
       - kind=="maintenance" → neutral glyph (_NF_CLAUDE_MAINT) + DIM color (D-04)
       - kind=="incident" or "degraded" → severity glyph + _claude_status_color(severity)
       - Sanitization (T-06-04): ANSI-strip + width-bound + hollow-glyph fallback (WR-02)
@@ -3558,10 +3561,67 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
         if not noteworthy:
             return None
 
+        # Step 3b: Phase 07 Plan 04 (UAT gap): render-time suppression.
+        # Re-apply _is_suppressed over cached tracked_incidents + live dismissal store
+        # so --dismiss / ignore_title_patterns take effect on the very next render
+        # (instant, zero-network, lock-independent). REUSE _is_suppressed — single
+        # ordering (see :1556). D-03 escalation re-surface honored via the live impact
+        # passed in. This block only governs incident-kind items (incidents have ids in
+        # tracked_incidents); maintenance/degraded fall through to the baked behavior.
+        #
+        # Failure modes: bad store or bad tracked_incidents → degrade to baked behavior
+        # (no suppression); never raises (body already inside function try/except).
+        try:
+            dismissals = read_dismissals(_DISMISSALS_PATH)
+        except Exception:
+            dismissals = {}
+        if not isinstance(dismissals, dict):
+            dismissals = {}
+
+        raw_tracked = sec.get("tracked_incidents")
+        tracked_incs = raw_tracked if isinstance(raw_tracked, list) else []
+
+        # Variables for Step 4 — default to baked values; overridden below when a
+        # surviving incident is found among tracked_incs.
+        _severity_override = None
+        _label_override    = None
+        _kind_override     = None
+
+        if tracked_incs:
+            # Re-run _is_suppressed over the cached incidents (in the same order
+            # _collect_tracked_incidents produced them) to find the first non-suppressed
+            # incident that should drive the segment.
+            surviving_inc = None
+            for inc in tracked_incs:
+                if not isinstance(inc, dict):
+                    continue
+                inc_id_rt  = inc.get("id")
+                inc_impact = inc.get("impact", "none")
+                inc_title  = inc.get("title", "")
+                if not _is_suppressed(inc_id_rt, inc_impact, inc_title, dismissals, _cfg):
+                    surviving_inc = inc
+                    break
+
+            if surviving_inc is None:
+                # Every tracked incident is suppressed at render time — return None
+                # (instant mute, mirrors Phase 6 quiet-when-healthy D-01).
+                return None
+
+            # A surviving incident was found; recompute severity/label/kind from its
+            # live cached fields so the bar falls through to the next relevant item
+            # instead of showing the muted one.
+            _severity_override = _CLAUDE_IMPACT_SEVERITY.get(
+                surviving_inc.get("impact", "none"), "minor"
+            )
+            _label_override = surviving_inc.get("title", sec.get("label", ""))
+            _kind_override  = "incident"
+        # else: empty tracked_incs → maintenance/degraded baked item → fall through
+        # unchanged to the existing baked path (no suppression applied).
+
         # Step 4: resolve severity, label, kind from section
-        severity = sec.get("severity", "minor")
-        label    = sec.get("label", "")
-        kind     = sec.get("kind", "incident")
+        severity = _severity_override if _severity_override is not None else sec.get("severity", "minor")
+        label    = _label_override    if _label_override    is not None else sec.get("label", "")
+        kind     = _kind_override     if _kind_override     is not None else sec.get("kind", "incident")
 
         # Step 5: resolve icon_set and glyph (D-04 distinct glyphs for incident vs maintenance)
         icon_set = _cfg.get("display", {}).get("icon_set", "nerd")
