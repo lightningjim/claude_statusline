@@ -418,6 +418,67 @@ def _prune_dismissals(store: dict, live_ids: object) -> dict:
         return {}
 
 
+# ---------------------------------------------------------------------------
+# Phase 07 Plan 03: CLI management flag helpers
+# ---------------------------------------------------------------------------
+
+# One-line next-refresh note appended to every --dismiss / --undismiss confirmation.
+# The bar updates at the next status refresh (cache TTL ~5 min); --refresh applies now.
+_DISMISS_REFRESH_NOTE = (
+    "  Note: change takes effect on the bar at the next status refresh"
+    " (cache TTL ~5 min); run --refresh to apply it immediately."
+)
+
+
+def _handle_dismiss_flag(inc_id: str, cache_path: str | None = None,
+                         dismissals_path: str | None = None) -> None:
+    """Handle the --dismiss <id> side-effect flag.
+
+    Reads the cached tracked_incidents list to find the live impact baseline
+    for the given id (D-03), then records the dismissal.  If the id is not
+    found in the live list the impact defaults to 'none'.
+
+    Missing/empty id: prints a usage hint and returns cleanly (no store write,
+    no IndexError, no traceback).  Wraps all I/O in try/except — never raises.
+    """
+    if not inc_id:
+        print("Usage: claude-statusline.py --dismiss <incident-id>")
+        return
+    try:
+        from_cache = read_cache(cache_path if cache_path is not None else _CACHE_PATH)
+        tracked = from_cache.get("claude_status", {}).get("tracked_incidents", [])
+        impact_at_dismiss = "none"
+        if isinstance(tracked, list):
+            for entry in tracked:
+                if isinstance(entry, dict) and entry.get("id") == inc_id:
+                    impact_at_dismiss = entry.get("impact", "none")
+                    break
+        _dismiss_id(inc_id, impact_at_dismiss,
+                    path=dismissals_path if dismissals_path is not None else _DISMISSALS_PATH)
+        print(f"Dismissed incident '{inc_id}' (impact baseline: {impact_at_dismiss}).")
+        print(_DISMISS_REFRESH_NOTE)
+    except Exception as exc:
+        print(f"Error dismissing '{inc_id}': {exc}")
+
+
+def _handle_undismiss_flag(inc_id: str, dismissals_path: str | None = None) -> None:
+    """Handle the --undismiss <id> side-effect flag.
+
+    Removes the dismissal entry for the given id.  Missing/empty id: usage hint,
+    clean return.  Wraps all I/O in try/except — never raises.
+    """
+    if not inc_id:
+        print("Usage: claude-statusline.py --undismiss <incident-id>")
+        return
+    try:
+        _undismiss_id(inc_id,
+                      path=dismissals_path if dismissals_path is not None else _DISMISSALS_PATH)
+        print(f"Removed dismissal for incident '{inc_id}'.")
+        print(_DISMISS_REFRESH_NOTE)
+    except Exception as exc:
+        print(f"Error un-dismissing '{inc_id}': {exc}")
+
+
 def section_is_fresh(section: dict, ttl: float, now: float) -> bool:
     """Return True when the section's fetched_at is within the given TTL.
 
@@ -3575,6 +3636,22 @@ def main() -> None:
     if "--refresh" in sys.argv:
         cfg = load_config()
         run_refresh(cfg)
+        sys.exit(0)
+
+    # --dismiss <id>: record an id-dismissal with the live impact baseline; exit.
+    # Never reads stdin; never emits the status bar (D-02).
+    if "--dismiss" in sys.argv:
+        idx = sys.argv.index("--dismiss")
+        inc_id = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else ""
+        _handle_dismiss_flag(inc_id)
+        sys.exit(0)
+
+    # --undismiss <id>: remove an id-dismissal from the store; exit.
+    # Never reads stdin; never emits the status bar (D-02).
+    if "--undismiss" in sys.argv:
+        idx = sys.argv.index("--undismiss")
+        inc_id = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else ""
+        _handle_undismiss_flag(inc_id)
         sys.exit(0)
 
     cfg = load_config()
