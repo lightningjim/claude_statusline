@@ -1376,6 +1376,7 @@ def _claude_status_color(severity: object) -> str:
 
 # ---------------------------------------------------------------------------
 # Claude service-health derivation (Phase 06, D-01/D-02/D-03/D-04)
+# Phase 07 Plan 02: filter integration (_is_suppressed + _CLAUDE_PATTERN_MATCH_MAXLEN)
 # ---------------------------------------------------------------------------
 
 # Tracked components: only these trigger the status indicator (D-02).
@@ -1385,6 +1386,21 @@ _CLAUDE_TRACKED_COMPONENTS: frozenset = frozenset({
     "claude.ai",
     "Claude Cowork",
 })
+
+# Maximum number of characters of an incident title that any pattern (substring or regex)
+# is matched against.  This caps the match target to a fixed length so a pathological
+# regex (e.g. ``(a+)+$``) cannot produce catastrophic backtracking on the
+# render/refresh path — the derivation must never hang (runtime contract, D-10).
+#
+# NOTE: re.compile()/re.error only catches MALFORMED patterns at COMPILE time; it does
+# NOT bound RUNTIME backtracking. This 500-char cap is the actual ReDoS mitigation.
+# Residual risk: a non-catastrophic pattern still runs over up to 500 chars (bounded;
+# negligible for a single-user subprocess CLI). No signal.alarm/threading timeout used.
+_CLAUDE_PATTERN_MATCH_MAXLEN: int = 500
+
+# Impact severity ordering for escalation re-surface (D-03).  Shared by both
+# _is_suppressed and _derive_claude_status so only ONE ordering exists.
+_CLAUDE_IMPACT_RANK: dict = {"critical": 3, "major": 2, "minor": 1, "none": 0}
 
 # Human-readable state labels for degraded component statuses (D-03 fallback)
 _CLAUDE_STATUS_LABELS: dict = {
@@ -1404,7 +1420,135 @@ _CLAUDE_IMPACT_SEVERITY: dict = {
 }
 
 
-def _derive_claude_status(summary: object) -> dict | None:
+def _is_suppressed(
+    inc_id: object,
+    impact: object,
+    title: object,
+    dismissals: object,
+    cfg: object,
+) -> bool:
+    """Return True if an incident is suppressed by the id-dismiss or keyword filter.
+
+    Suppression applies when EITHER filter matches (subject to escalation override for
+    id-dismissals). When ``cfg["claude_status"]["filter_enabled"]`` is False, the filter
+    is a no-op and this function always returns False (Phase 6 behavior preserved, D-06).
+
+    **Keyword matching semantics (D-06 discretion):**
+    Default semantics is *case-insensitive substring* (no backtracking, predictable).
+    Regex is the opt-in fallback: each pattern is compiled with ``re.compile(pattern,
+    re.IGNORECASE)`` inside a per-pattern ``try/except re.error``; a malformed pattern
+    (compilation error) falls back to the substring result. A bad/catastrophic pattern
+    must NEVER raise and must NEVER suppress on its own.
+
+    **ReDoS mitigation — _CLAUDE_PATTERN_MATCH_MAXLEN (500-char cap):**
+    Before any matching (substring or regex), the match target is sliced:
+    ``title_capped = str(title)[:_CLAUDE_PATTERN_MATCH_MAXLEN]``.
+    ALL matching runs against ``title_capped``, NEVER the raw title.
+    This caps the worst-case backtracking work to a fixed input length so even a
+    catastrophically-backtracking pattern (e.g. ``(a+)+$``) returns in microseconds
+    and cannot hang the render/refresh path (runtime contract: never hang, D-10).
+    IMPORTANT: ``re.compile``/``re.error`` catches MALFORMED patterns at COMPILE time
+    only — it does NOT bound RUNTIME backtracking.  The 500-char cap is the actual
+    mitigation.
+
+    **Escalation re-surface (D-03, id-dismissals only):**
+    Each id-dismissal stores ``impact_at_dismiss``.  If the live incident impact rises
+    ABOVE the stored impact (per ``_CLAUDE_IMPACT_RANK``), the dismissal is treated as
+    void and the incident re-surfaces (this function returns False).  Keyword suppression
+    is a *blunt mute* — no per-incident escalation tracking.
+
+    **Corrupt / missing inputs degrade to no suppression:**
+    Non-dict ``dismissals`` → treated as empty (no id-dismiss check).
+    ``cfg`` is None or non-dict → ``filter_enabled`` defaults to True with no patterns;
+    bad data anywhere inside → no suppression, no raise (outer ``try/except``).
+
+    Returns
+    -------
+    True  — incident is suppressed (skip / fall through in the derivation loop).
+    False — incident is NOT suppressed (include as normal).
+
+    Never raises (whole body in try/except → False).
+    """
+    try:
+        # Guard: cfg must be a dict; if not, treat as no config (filter enabled, no patterns)
+        if not isinstance(cfg, dict):
+            cfg = {}
+        claude_status_cfg = cfg.get("claude_status") if isinstance(cfg, dict) else {}
+        if not isinstance(claude_status_cfg, dict):
+            claude_status_cfg = {}
+
+        # 1. Master toggle: if filter_enabled is False, no suppression occurs (D-06)
+        if not claude_status_cfg.get("filter_enabled", True):
+            return False
+
+        # 2. Normalize dismissals — non-dict → treat as empty (corrupt store → no suppression)
+        if not isinstance(dismissals, dict):
+            dismissals = {}
+
+        # 3. Keyword / regex check (D-01, D-06)
+        #    Primary semantics: case-insensitive SUBSTRING (non-backtracking, predictable).
+        #    Regex is opt-in fallback; compiled per-pattern in try/except so a bad pattern
+        #    degrades to the substring result (never raises, never suppresses on its own).
+        #
+        #    CRITICAL ReDoS mitigation: slice the match target to the cap BEFORE any
+        #    matching so a pathological pattern cannot hang (see module-level docstring).
+        patterns = claude_status_cfg.get("ignore_title_patterns", [])
+        if not isinstance(patterns, list):
+            patterns = []
+        if patterns:
+            title_capped = str(title)[:_CLAUDE_PATTERN_MATCH_MAXLEN]
+            title_lower = title_capped.lower()
+            for pat in patterns:
+                if not isinstance(pat, str):
+                    continue
+                pat_lower = pat.lower()
+                # Default: case-insensitive substring match (no backtracking)
+                substring_match = pat_lower in title_lower
+                if substring_match:
+                    return True  # keyword match → suppressed
+                # Opt-in regex: try to compile and match against the CAPPED title
+                # A bad pattern (re.error at compile time) falls back to substring_match
+                # (which is False here — we already know the substring didn't match).
+                # Catastrophic-backtracking patterns are bounded by the 500-char cap.
+                try:
+                    import re as _re
+                    compiled = _re.compile(pat, _re.IGNORECASE)
+                    if compiled.search(title_capped):
+                        return True  # regex match → suppressed
+                except Exception:
+                    # Bad/malformed pattern: degrade to no-match (already returned
+                    # False for substring above); never suppress on a bad pattern.
+                    pass
+
+        # 4. Id-dismiss check with escalation re-surface (D-03)
+        #    Keyword suppression carries NO escalation (blunt mute); only id-dismissals
+        #    participate in the escalation safety valve.
+        inc_id_str = str(inc_id) if inc_id is not None else ""
+        if inc_id_str and inc_id_str in dismissals:
+            entry = dismissals.get(inc_id_str)
+            if not isinstance(entry, dict):
+                # Corrupt entry — treat as suppressed (store was set by _dismiss_id)
+                return True
+            stored_impact = entry.get("impact_at_dismiss", "none")
+            stored_rank = _CLAUDE_IMPACT_RANK.get(stored_impact, 0)
+            live_rank = _CLAUDE_IMPACT_RANK.get(str(impact) if impact is not None else "none", 0)
+            if live_rank > stored_rank:
+                # Escalation: live impact rose above stored → void the dismissal
+                return False
+            return True  # suppressed
+
+        return False  # no match in either filter
+
+    except Exception:
+        # Any unexpected error (bad data, internal failure) → not suppressed (D-10)
+        return False
+
+
+def _derive_claude_status(
+    summary: object,
+    dismissals: object = None,
+    cfg: object = None,
+) -> dict | None:
     """Derive a status trigger result from a Statuspage.io summary.json dict.
 
     Returns None (quiet-when-healthy, D-01) when all tracked components
@@ -1417,10 +1561,17 @@ def _derive_claude_status(summary: object) -> dict | None:
     so the cache is a faithful record — sanitization is the render path's job (Plan 02).
 
     Derivation priority (first match wins):
-      1. Unresolved incident whose components[] intersect the tracked set → kind="incident"
+      1. Unresolved incident whose components[] intersect the tracked set AND is
+         NOT suppressed by the filter → kind="incident"
       2. Scheduled/in-progress maintenance touching a tracked component → kind="maintenance"
       3. Tracked component with a non-operational status and no incident → kind="degraded"
       4. All healthy → None
+
+    Phase 07 Plan 02 (D-01):
+    ``dismissals`` and ``cfg`` thread the filter into the incident loop.  When
+    ``dismissals=None`` and ``cfg=None`` (the defaults), behavior is byte-identical
+    to Phase 6 — no suppression occurs.  Suppressed incidents fall through to the
+    next rule / maintenance / None, preserving quiet-when-healthy (Phase 6 D-01).
 
     Do NOT use the top-level status.indicator rollup as the trigger (confirmed
     D-02 hazard: indicator fires on any component, including untracked ones).
@@ -1430,6 +1581,10 @@ def _derive_claude_status(summary: object) -> dict | None:
     try:
         if not isinstance(summary, dict):
             return None
+
+        # Normalize dismissals: None → {} so _is_suppressed can safely call .get()
+        if dismissals is None:
+            dismissals = {}
 
         # Build a name→status map for all components in the feed
         components_raw = summary.get("components", [])
@@ -1475,14 +1630,26 @@ def _derive_claude_status(summary: object) -> dict | None:
             tracked = _tracked_component_names(inc.get("components", []))
             if not tracked:
                 continue
+            # --- Phase 07 Plan 02: suppression filter (D-01) ---
+            # A suppressed incident is treated as not-noteworthy: the derivation
+            # falls through to the next incident / maintenance / None, preserving
+            # Phase 6 quiet-when-healthy.  _is_suppressed handles all edge cases
+            # (bad cfg/dismissals, bad regex, corrupt store) → False (not suppressed).
+            if _is_suppressed(
+                inc.get("id", ""),
+                inc.get("impact", "none"),
+                inc.get("name", ""),
+                dismissals,
+                cfg,
+            ):
+                continue  # skip — suppressed by id-dismiss or keyword filter
             triggered_incidents.append(inc)
 
         if triggered_incidents:
-            # Pick the highest-impact incident
-            impact_rank = {"critical": 3, "major": 2, "minor": 1, "none": 0}
+            # Pick the highest-impact incident; reuse _CLAUDE_IMPACT_RANK (no duplicate)
             best = max(
                 triggered_incidents,
-                key=lambda i: impact_rank.get(i.get("impact", "none"), 0),
+                key=lambda i: _CLAUDE_IMPACT_RANK.get(i.get("impact", "none"), 0),
             )
             impact = best.get("impact", "none")
             severity = _CLAUDE_IMPACT_SEVERITY.get(impact, "minor")

@@ -2056,26 +2056,90 @@ class TestDeriveClaudeStatusFilterIntegration(unittest.TestCase):
             "ignore_title_patterns": patterns if patterns is not None else [],
         }}
 
-    # ---- id-dismiss: suppressed incident falls through to None ----
+    # ---- id-dismiss: suppressed incident falls through to next rule ----
+    #
+    # Note: status_incident_tracked.json has Claude Code in degraded_performance status.
+    # When the incident is suppressed, derivation falls through to Rule 3 (degraded
+    # component), which returns a degraded result — NOT None. This is the correct
+    # D-01 quiet-when-healthy behavior: suppressed incident → next relevant state.
+    # To test "suppressed → None" we need a fixture with only the incident and all
+    # components operational (no Rule 3 trigger). Use status_operational.json with
+    # an injected incident instead.
 
-    def test_id_dismiss_suppresses_returns_none(self):
-        """_derive_claude_status with id-dismiss for the only incident returns None (falls through, D-01)."""
+    def test_id_dismiss_suppresses_incident_not_in_triggered(self):
+        """_derive_claude_status with id-dismiss skips the incident (does NOT return kind='incident')."""
         summary = _load_fixture("status_incident_tracked.json")
         dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
         cfg = self._cfg()
         result = self.mod._derive_claude_status(summary, dismissals=dismissals, cfg=cfg)
+        # The incident is suppressed, so result must NOT be kind='incident'.
+        # It may be None or kind='degraded' (Rule 3) since the fixture has
+        # Claude Code in degraded_performance — but not the incident.
+        if result is not None:
+            self.assertNotEqual(result.get("kind"), "incident",
+                                "Id-dismissed incident must NOT appear as kind='incident' in result")
+
+    def test_id_dismiss_on_all_operational_returns_none(self):
+        """Id-dismiss on incident in all-operational context falls through to None (D-01)."""
+        # Build a summary with an incident on operational components (no Rule 3 trigger)
+        summary = {
+            "components": [
+                {"name": "Claude Code", "status": "operational"},
+                {"name": "claude.ai", "status": "operational"},
+                {"name": "Claude Cowork", "status": "operational"},
+            ],
+            "incidents": [
+                {
+                    "id": "inc-perp",
+                    "name": "Mythos model access removal",
+                    "status": "monitoring",
+                    "impact": "minor",
+                    "components": [{"name": "Claude Code", "status": "operational"}],
+                }
+            ],
+            "scheduled_maintenances": [],
+        }
+        dismissals = {"inc-perp": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg()
+        result = self.mod._derive_claude_status(summary, dismissals=dismissals, cfg=cfg)
         self.assertIsNone(result,
-                          "Id-dismissed only incident must fall through to None (D-01)")
+                          "Id-dismissed only incident on operational components must fall through to None (D-01)")
 
-    # ---- keyword: suppressed incident falls through to None ----
+    # ---- keyword: suppressed incident falls through ----
 
-    def test_keyword_suppresses_returns_none(self):
-        """_derive_claude_status with matching keyword returns None (falls through, D-01)."""
+    def test_keyword_suppresses_incident_not_in_triggered(self):
+        """_derive_claude_status with matching keyword skips the incident (NOT kind='incident')."""
         summary = _load_fixture("status_incident_tracked.json")
         cfg = self._cfg(patterns=["Elevated"])
         result = self.mod._derive_claude_status(summary, dismissals={}, cfg=cfg)
+        # Incident suppressed → must NOT appear as kind='incident'
+        if result is not None:
+            self.assertNotEqual(result.get("kind"), "incident",
+                                "Keyword-suppressed incident must NOT appear as kind='incident'")
+
+    def test_keyword_on_all_operational_returns_none(self):
+        """Keyword match on incident in all-operational context falls through to None (D-01)."""
+        summary = {
+            "components": [
+                {"name": "Claude Code", "status": "operational"},
+                {"name": "claude.ai", "status": "operational"},
+                {"name": "Claude Cowork", "status": "operational"},
+            ],
+            "incidents": [
+                {
+                    "id": "inc-perp",
+                    "name": "Mythos model access removal",
+                    "status": "monitoring",
+                    "impact": "minor",
+                    "components": [{"name": "Claude Code", "status": "operational"}],
+                }
+            ],
+            "scheduled_maintenances": [],
+        }
+        cfg = self._cfg(patterns=["Mythos"])
+        result = self.mod._derive_claude_status(summary, dismissals={}, cfg=cfg)
         self.assertIsNone(result,
-                          "Keyword-matching only incident must fall through to None (D-01)")
+                          "Keyword-suppressed only incident on operational components must fall through to None (D-01)")
 
     # ---- escalation re-surface ----
 
@@ -2092,13 +2156,35 @@ class TestDeriveClaudeStatusFilterIntegration(unittest.TestCase):
     # ---- toggle-off: no suppression ----
 
     def test_toggle_off_no_suppression(self):
-        """filter_enabled=False with matching id-dismiss AND keyword → incident returned (no suppression)."""
-        summary = _load_fixture("status_incident_tracked.json")
+        """filter_enabled=False with matching id-dismiss AND keyword → incident returned (no suppression).
+
+        Uses an all-operational summary with an incident so there's no Rule 3 fallback
+        to obscure whether the incident itself was suppressed.
+        """
+        summary = {
+            "components": [
+                {"name": "Claude Code", "status": "operational"},
+                {"name": "claude.ai", "status": "operational"},
+                {"name": "Claude Cowork", "status": "operational"},
+            ],
+            "incidents": [
+                {
+                    "id": "inc-001",
+                    "name": "Elevated error rates for Claude Code tool calls",
+                    "status": "monitoring",
+                    "impact": "minor",
+                    "components": [{"name": "Claude Code", "status": "operational"}],
+                }
+            ],
+            "scheduled_maintenances": [],
+        }
         dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
         cfg = self._cfg(filter_enabled=False, patterns=["Elevated"])
         result = self.mod._derive_claude_status(summary, dismissals=dismissals, cfg=cfg)
         self.assertIsNotNone(result,
                              "filter_enabled=False must disable all suppression — incident must be returned")
+        self.assertEqual(result.get("kind"), "incident",
+                         "filter_enabled=False must return kind='incident' (not suppressed)")
 
     # ---- backward compat: no new args → Phase 6 behavior unchanged ----
 
