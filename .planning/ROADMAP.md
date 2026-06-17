@@ -242,7 +242,7 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 →
 **Goal:** Suppress non-actionable, long-lived `status.claude.com` incidents (e.g. the perpetual Mythos/Fable access-removal incident) via a dual filter (dismiss-by-incident-id + title keyword/regex), with an escalation safety valve, while preserving Phase 6 quiet-when-healthy and never-crash behavior.
 **Requirements**: none mapped (driven by CONTEXT.md decisions D-01..D-06)
 **Depends on:** Phase 6
-**Plans:** 3/3 plans complete
+**Plans:** 4/4 plans complete
 
 Plans:
 **Wave 1**
@@ -259,4 +259,4 @@ Plans:
 
 **Wave 4** *(gap closure — UAT Test 1 fix)*
 
-- [ ] 07-04-PLAN.md — Render-time suppression: re-apply _is_suppressed over cached tracked_incidents at render so --dismiss / ignore_title_patterns take effect instantly (zero-network, lock-independent); D-03 escalation preserved; corrected --refresh help text
+- [x] 07-04-PLAN.md — Render-time suppression: re-apply _is_suppressed over cached tracked_incidents at render so --dismiss / ignore_title_patterns take effect instantly (zero-network, lock-independent); D-03 escalation preserved; corrected --refresh help text
