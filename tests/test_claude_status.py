@@ -1641,5 +1641,149 @@ class TestDismissalStoreHelpers(unittest.TestCase):
                          "_prune_dismissals({}, ...) must return {}")
 
 
+# ---------------------------------------------------------------------------
+# Phase 7 Plan 01: Task 2 — Widened claude_status cache payload (tracked-incident list)
+# ---------------------------------------------------------------------------
+
+
+class TestFetchClaudeStatusWidenedPayload(unittest.TestCase):
+    """fetch_claude_status cache payload carries a stable tracked_incidents list (D-02 enabler)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        self.tmpdir = tempfile.mkdtemp()
+        self.cache_path = os.path.join(self.tmpdir, "cache.json")
+        self.cfg = {
+            "location": {"lat": 35.4676, "lon": -97.5164},
+            "weather": {"contact_email": "test@example.com", "show_weather": True},
+            "units": {"temp_unit": "F"},
+            "cache": {
+                "weather_ttl": 600,
+                "alerts_ttl": 300,
+                "weather_max_stale": 3600,
+                "alerts_max_stale": 900,
+                "status_ttl": 300,
+                "status_max_stale": 900,
+            },
+        }
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _fetch_with_fixture(self, fixture_name: str) -> dict:
+        """Fetch using FAKE_STATUS pointing at a fixture; return the written claude_status section."""
+        fake_path = os.path.join(FIXTURES_DIR, fixture_name)
+        with patch.dict(os.environ, {"CLAUDE_STATUSLINE_FAKE_STATUS": fake_path}):
+            with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                self.mod.fetch_claude_status(self.cfg)
+        data = self.mod.read_cache(self.cache_path)
+        return data.get("claude_status", {})
+
+    # ---- tracked_incidents key is always present ----
+
+    def test_incident_fixture_has_tracked_incidents_key(self):
+        """Incident fixture → claude_status section has 'tracked_incidents' key."""
+        section = self._fetch_with_fixture("status_incident_tracked.json")
+        self.assertIn("tracked_incidents", section,
+                      "claude_status section must have 'tracked_incidents' key when incident present")
+
+    def test_operational_fixture_has_tracked_incidents_key(self):
+        """Operational/healthy fixture → claude_status section still has 'tracked_incidents' key (stable shape)."""
+        section = self._fetch_with_fixture("status_operational.json")
+        self.assertIn("tracked_incidents", section,
+                      "claude_status section must have 'tracked_incidents' key even when healthy")
+
+    def test_operational_fixture_tracked_incidents_is_empty_list(self):
+        """Operational fixture → tracked_incidents is an empty list (not absent)."""
+        section = self._fetch_with_fixture("status_operational.json")
+        incidents = section.get("tracked_incidents")
+        self.assertIsInstance(incidents, list,
+                              "tracked_incidents must be a list even in healthy state")
+        self.assertEqual(incidents, [],
+                         "tracked_incidents must be [] in healthy state")
+
+    # ---- incident fixture: list entry shape ----
+
+    def test_incident_fixture_tracked_incidents_contains_inc_001(self):
+        """Incident fixture → tracked_incidents list contains entry with id 'inc-001'."""
+        section = self._fetch_with_fixture("status_incident_tracked.json")
+        incidents = section.get("tracked_incidents", [])
+        self.assertIsInstance(incidents, list, "tracked_incidents must be a list")
+        ids = [e.get("id") for e in incidents if isinstance(e, dict)]
+        self.assertIn("inc-001", ids,
+                      f"tracked_incidents must contain id='inc-001'; got ids={ids!r}")
+
+    def test_incident_fixture_entry_has_impact(self):
+        """Incident fixture entry has 'impact' key == 'minor' (matches fixture)."""
+        section = self._fetch_with_fixture("status_incident_tracked.json")
+        incidents = section.get("tracked_incidents", [])
+        entry = next((e for e in incidents if isinstance(e, dict) and e.get("id") == "inc-001"), None)
+        self.assertIsNotNone(entry, "Entry for inc-001 must be present")
+        self.assertEqual(entry.get("impact"), "minor",
+                         "Entry impact must be 'minor' per fixture")
+
+    def test_incident_fixture_entry_has_status(self):
+        """Incident fixture entry has 'status' key == 'monitoring' (matches fixture)."""
+        section = self._fetch_with_fixture("status_incident_tracked.json")
+        incidents = section.get("tracked_incidents", [])
+        entry = next((e for e in incidents if isinstance(e, dict) and e.get("id") == "inc-001"), None)
+        self.assertIsNotNone(entry, "Entry for inc-001 must be present")
+        self.assertEqual(entry.get("status"), "monitoring",
+                         "Entry status must be 'monitoring' per fixture")
+
+    def test_incident_fixture_entry_has_title(self):
+        """Incident fixture entry has 'title' key matching fixture incident name."""
+        section = self._fetch_with_fixture("status_incident_tracked.json")
+        incidents = section.get("tracked_incidents", [])
+        entry = next((e for e in incidents if isinstance(e, dict) and e.get("id") == "inc-001"), None)
+        self.assertIsNotNone(entry, "Entry for inc-001 must be present")
+        expected_title = "Elevated error rates for Claude Code tool calls"
+        self.assertEqual(entry.get("title"), expected_title,
+                         f"Entry title must match fixture; got {entry.get('title')!r}")
+
+    def test_incident_fixture_entry_has_component(self):
+        """Incident fixture entry has 'component' key == 'Claude Code' (tracked component)."""
+        section = self._fetch_with_fixture("status_incident_tracked.json")
+        incidents = section.get("tracked_incidents", [])
+        entry = next((e for e in incidents if isinstance(e, dict) and e.get("id") == "inc-001"), None)
+        self.assertIsNotNone(entry, "Entry for inc-001 must be present")
+        self.assertEqual(entry.get("component"), "Claude Code",
+                         f"Entry component must be 'Claude Code'; got {entry.get('component')!r}")
+
+    # ---- existing payload keys unchanged (no regression) ----
+
+    def test_incident_fixture_noteworthy_still_true(self):
+        """Incident fixture → noteworthy=True still present (no regression to Phase 6 payload)."""
+        section = self._fetch_with_fixture("status_incident_tracked.json")
+        self.assertTrue(section.get("noteworthy"),
+                        "noteworthy must still be True in incident cache section (Phase 6 key)")
+
+    def test_incident_fixture_severity_still_present(self):
+        """Incident fixture → severity key still present in payload (no regression)."""
+        section = self._fetch_with_fixture("status_incident_tracked.json")
+        self.assertIn("severity", section,
+                      "severity must still be present in payload (Phase 6 key)")
+
+    def test_incident_fixture_label_still_present(self):
+        """Incident fixture → label key still present in payload (no regression)."""
+        section = self._fetch_with_fixture("status_incident_tracked.json")
+        self.assertIn("label", section,
+                      "label must still be present in payload (Phase 6 key)")
+
+    def test_incident_fixture_kind_still_present(self):
+        """Incident fixture → kind key still present in payload (no regression)."""
+        section = self._fetch_with_fixture("status_incident_tracked.json")
+        self.assertIn("kind", section,
+                      "kind must still be present in payload (Phase 6 key)")
+
+    def test_operational_fixture_noteworthy_false_still_present(self):
+        """Operational fixture → noteworthy=False still present (no regression)."""
+        section = self._fetch_with_fixture("status_operational.json")
+        self.assertIn("noteworthy", section,
+                      "noteworthy key must be present even in healthy section")
+        self.assertFalse(section.get("noteworthy"),
+                         "noteworthy must be False in healthy section")
+
+
 if __name__ == "__main__":
     unittest.main()
