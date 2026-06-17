@@ -2369,5 +2369,188 @@ class TestEscalationFixtureAndAutoPrune(unittest.TestCase):
                          "All dismissed ids must be pruned when live feed has no incidents (D-04)")
 
 
+# ---------------------------------------------------------------------------
+# Phase 07 Plan 03 Task 1: --dismiss / --undismiss store-mutation flags
+# ---------------------------------------------------------------------------
+
+class TestDismissUndismissFlags(unittest.TestCase):
+    """--dismiss / --undismiss main() branches: store mutation, next-refresh note, graceful errors."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        self.tmpdir = tempfile.mkdtemp()
+        self.dismissals_path = os.path.join(self.tmpdir, "status_dismissals.json")
+        self.cache_path = os.path.join(self.tmpdir, "cache.json")
+        self.cfg = {
+            "claude_status": {"filter_enabled": True, "ignore_title_patterns": []},
+        }
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _make_cache_with_incident(self, inc_id="inc-001", impact="minor"):
+        """Write a cache file with a tracked_incidents list containing the given incident."""
+        payload = {
+            "claude_status": {
+                "fetched_at": time.time(),
+                "tracked_incidents": [
+                    {"id": inc_id, "impact": impact, "status": "monitoring",
+                     "title": "Test incident", "component": "Claude Code"}
+                ],
+            }
+        }
+        with open(self.cache_path, "w") as f:
+            json.dump(payload, f)
+
+    # ---- --dismiss store mutation ----
+
+    def test_dismiss_flag_adds_entry_to_store(self):
+        """--dismiss handler records inc-001 in the dismissal store."""
+        self._make_cache_with_incident("inc-001", "minor")
+        with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+            with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                self.mod._handle_dismiss_flag("inc-001")
+        store = self.mod.read_dismissals(self.dismissals_path)
+        self.assertIn("inc-001", store, "--dismiss must add the id to the dismissal store")
+
+    def test_dismiss_flag_records_live_impact_baseline(self):
+        """--dismiss stores impact_at_dismiss matching the live cache entry ('minor')."""
+        self._make_cache_with_incident("inc-001", "minor")
+        with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+            with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                self.mod._handle_dismiss_flag("inc-001")
+        store = self.mod.read_dismissals(self.dismissals_path)
+        self.assertEqual(store["inc-001"]["impact_at_dismiss"], "minor",
+                         "impact_at_dismiss must match the live cache impact ('minor')")
+
+    # ---- --undismiss store mutation ----
+
+    def test_undismiss_flag_removes_entry_from_store(self):
+        """--undismiss handler removes inc-001 from the dismissal store."""
+        # Seed the store with inc-001
+        self.mod.write_dismissals(
+            {"inc-001": {"impact_at_dismiss": "minor", "dismissed_at": time.time()}},
+            self.dismissals_path,
+        )
+        with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+            self.mod._handle_undismiss_flag("inc-001")
+        store = self.mod.read_dismissals(self.dismissals_path)
+        self.assertNotIn("inc-001", store, "--undismiss must remove the id from the store")
+
+    # ---- next-refresh note in confirmation output ----
+
+    def test_dismiss_confirmation_contains_next_refresh_note(self):
+        """--dismiss confirmation mentions next refresh (or --refresh applies it immediately)."""
+        self._make_cache_with_incident("inc-001", "minor")
+        import io
+        buf = io.StringIO()
+        with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+            with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                import sys as _sys
+                original_stdout = _sys.stdout
+                _sys.stdout = buf
+                try:
+                    self.mod._handle_dismiss_flag("inc-001")
+                finally:
+                    _sys.stdout = original_stdout
+        output = buf.getvalue()
+        self.assertTrue(
+            "refresh" in output.lower(),
+            f"--dismiss confirmation must mention next-refresh note; got: {output!r}"
+        )
+
+    def test_undismiss_confirmation_contains_next_refresh_note(self):
+        """--undismiss confirmation also mentions next refresh."""
+        import io
+        buf = io.StringIO()
+        with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+            import sys as _sys
+            original_stdout = _sys.stdout
+            _sys.stdout = buf
+            try:
+                self.mod._handle_undismiss_flag("inc-001")
+            finally:
+                _sys.stdout = original_stdout
+        output = buf.getvalue()
+        self.assertTrue(
+            "refresh" in output.lower(),
+            f"--undismiss confirmation must mention next-refresh note; got: {output!r}"
+        )
+
+    def test_dismiss_confirmation_mentions_refresh_applies_immediately(self):
+        """--dismiss next-refresh note says --refresh applies the change now."""
+        self._make_cache_with_incident("inc-001", "minor")
+        import io
+        buf = io.StringIO()
+        with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+            with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                import sys as _sys
+                original_stdout = _sys.stdout
+                _sys.stdout = buf
+                try:
+                    self.mod._handle_dismiss_flag("inc-001")
+                finally:
+                    _sys.stdout = original_stdout
+        output = buf.getvalue()
+        self.assertTrue(
+            "--refresh" in output,
+            f"--dismiss note must mention '--refresh' for immediate effect; got: {output!r}"
+        )
+
+    # ---- unknown id falls back to 'none' impact ----
+
+    def test_dismiss_unknown_id_records_with_none_impact(self):
+        """--dismiss unknown id (not in cache) records with impact_at_dismiss='none'."""
+        # Cache has no incidents
+        self._make_cache_with_incident("inc-999", "minor")  # different id
+        with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+            with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                self.mod._handle_dismiss_flag("inc-unknown")
+        store = self.mod.read_dismissals(self.dismissals_path)
+        self.assertIn("inc-unknown", store,
+                      "Unknown id must still be recorded in the store")
+        self.assertEqual(store["inc-unknown"]["impact_at_dismiss"], "none",
+                         "Unknown id must use 'none' as the impact_at_dismiss baseline")
+
+    # ---- missing arg degrades gracefully ----
+
+    def test_dismiss_missing_arg_no_index_error(self):
+        """--dismiss with no following token: no IndexError, clean exit, store unchanged."""
+        with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+            with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                try:
+                    self.mod._handle_dismiss_flag("")  # empty id = missing arg
+                except Exception as e:
+                    self.fail(f"--dismiss missing arg raised: {e}")
+        # store must remain empty
+        store = self.mod.read_dismissals(self.dismissals_path)
+        self.assertEqual(store, {},
+                         "Missing id arg must leave store unchanged")
+
+    def test_undismiss_missing_arg_no_raise(self):
+        """--undismiss with no following token: no raise, store unchanged."""
+        with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+            try:
+                self.mod._handle_undismiss_flag("")  # empty id = missing arg
+            except Exception as e:
+                self.fail(f"--undismiss missing arg raised: {e}")
+
+    # ---- no stdin, no bar ----
+
+    def test_dismiss_does_not_call_load_stdin(self):
+        """--dismiss handler must not call _load_stdin."""
+        self._make_cache_with_incident()
+        called = []
+        original = self.mod._load_stdin
+        self.mod._load_stdin = lambda: called.append(True) or {}
+        try:
+            with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+                with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                    self.mod._handle_dismiss_flag("inc-001")
+        finally:
+            self.mod._load_stdin = original
+        self.assertEqual(called, [], "--dismiss must not call _load_stdin")
+
+
 if __name__ == "__main__":
     unittest.main()
