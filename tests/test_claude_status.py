@@ -1397,5 +1397,249 @@ class TestRenderBottomLineSpawnPath(unittest.TestCase):
                                   "maybe_spawn_refresh must be called with cache dict")
 
 
+# ---------------------------------------------------------------------------
+# Phase 7 Plan 01: Task 1 — [claude_status] config table + dismissal-store helpers
+# ---------------------------------------------------------------------------
+
+
+class TestClaudeStatusConfigDefaults(unittest.TestCase):
+    """DEFAULTS["claude_status"] table: filter_enabled + ignore_title_patterns defaults."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_defaults_has_claude_status_table(self):
+        """DEFAULTS must have a top-level 'claude_status' key."""
+        self.assertIn("claude_status", self.mod.DEFAULTS,
+                      "DEFAULTS must have a top-level 'claude_status' table (D-06)")
+
+    def test_filter_enabled_default_true(self):
+        """DEFAULTS['claude_status']['filter_enabled'] must default to True."""
+        table = self.mod.DEFAULTS.get("claude_status", {})
+        self.assertIn("filter_enabled", table,
+                      "DEFAULTS['claude_status'] must have 'filter_enabled'")
+        self.assertTrue(table["filter_enabled"],
+                        "filter_enabled must default to True (D-06)")
+
+    def test_ignore_title_patterns_default_empty(self):
+        """DEFAULTS['claude_status']['ignore_title_patterns'] must default to []."""
+        table = self.mod.DEFAULTS.get("claude_status", {})
+        self.assertIn("ignore_title_patterns", table,
+                      "DEFAULTS['claude_status'] must have 'ignore_title_patterns'")
+        self.assertEqual(table["ignore_title_patterns"], [],
+                         "ignore_title_patterns must default to [] (D-06)")
+
+    def test_load_config_deep_merges_claude_status_partial_override(self):
+        """load_config with only ignore_title_patterns in TOML keeps filter_enabled default."""
+        import tempfile
+        # Write a minimal TOML with just ignore_title_patterns under [claude_status]
+        toml_content = '[claude_status]\nignore_title_patterns = ["Mythos"]\n'
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".toml", delete=False
+        ) as fh:
+            fh.write(toml_content)
+            toml_path = fh.name
+        try:
+            cfg = self.mod.load_config(toml_path)
+            cs = cfg.get("claude_status", {})
+            self.assertEqual(cs.get("ignore_title_patterns"), ["Mythos"],
+                             "TOML override must propagate ignore_title_patterns")
+            self.assertTrue(cs.get("filter_enabled"),
+                            "filter_enabled must keep default True when not in TOML")
+        finally:
+            os.unlink(toml_path)
+
+
+class TestDismissalStoreHelpers(unittest.TestCase):
+    """read_dismissals / write_dismissals / _dismiss_id / _undismiss_id / _prune_dismissals."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        self.tmpdir = tempfile.mkdtemp()
+        self.store_path = os.path.join(self.tmpdir, "status_dismissals.json")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    # ---- _DISMISSALS_PATH constant ----
+
+    def test_dismissals_path_constant_exists(self):
+        """_DISMISSALS_PATH must be defined in the module."""
+        self.assertTrue(hasattr(self.mod, "_DISMISSALS_PATH"),
+                        "_DISMISSALS_PATH constant must be defined")
+
+    def test_dismissals_path_is_string(self):
+        """_DISMISSALS_PATH must be a string (expanded path)."""
+        self.assertIsInstance(self.mod._DISMISSALS_PATH, str,
+                              "_DISMISSALS_PATH must be a str")
+
+    # ---- read_dismissals ----
+
+    def test_read_dismissals_exists(self):
+        """read_dismissals function must exist."""
+        self.assertTrue(callable(getattr(self.mod, "read_dismissals", None)),
+                        "read_dismissals must be defined")
+
+    def test_read_dismissals_missing_path_returns_empty(self):
+        """read_dismissals on a missing path returns {} (no raise, no suppression)."""
+        missing = os.path.join(self.tmpdir, "nonexistent.json")
+        result = self.mod.read_dismissals(missing)
+        self.assertEqual(result, {},
+                         "read_dismissals on missing path must return {}")
+
+    def test_read_dismissals_garbage_bytes_returns_empty(self):
+        """read_dismissals on garbage bytes returns {} (corrupt store → no suppression)."""
+        with open(self.store_path, "wb") as fh:
+            fh.write(b"\xff\xfe garbage not json \x00\x01")
+        result = self.mod.read_dismissals(self.store_path)
+        self.assertEqual(result, {},
+                         "read_dismissals on corrupt bytes must return {}")
+
+    def test_read_dismissals_non_dict_json_returns_empty(self):
+        """read_dismissals on a JSON list (not dict) returns {} (rejects non-dict)."""
+        with open(self.store_path, "w") as fh:
+            json.dump(["not", "a", "dict"], fh)
+        result = self.mod.read_dismissals(self.store_path)
+        self.assertEqual(result, {},
+                         "read_dismissals on JSON list must return {}")
+
+    def test_read_dismissals_valid_dict_returns_it(self):
+        """read_dismissals on a valid JSON dict returns that dict."""
+        store = {"inc-001": {"impact_at_dismiss": "minor", "dismissed_at": 1700000000.0}}
+        with open(self.store_path, "w") as fh:
+            json.dump(store, fh)
+        result = self.mod.read_dismissals(self.store_path)
+        self.assertEqual(result, store,
+                         "read_dismissals must return the stored dict exactly")
+
+    # ---- write_dismissals ----
+
+    def test_write_dismissals_exists(self):
+        """write_dismissals function must exist."""
+        self.assertTrue(callable(getattr(self.mod, "write_dismissals", None)),
+                        "write_dismissals must be defined")
+
+    def test_write_dismissals_round_trip(self):
+        """write_dismissals then read_dismissals round-trips the store dict."""
+        store = {
+            "inc-001": {"impact_at_dismiss": "minor", "dismissed_at": 1700000000.0},
+            "inc-002": {"impact_at_dismiss": "major", "dismissed_at": 1700000001.0},
+        }
+        self.mod.write_dismissals(store, self.store_path)
+        result = self.mod.read_dismissals(self.store_path)
+        self.assertEqual(result, store,
+                         "write_dismissals → read_dismissals must round-trip the store")
+
+    def test_write_dismissals_unwritable_path_does_not_raise(self):
+        """write_dismissals to an unwritable path swallows the error (never raises)."""
+        bad_path = "/dev/null/cannot_write_here.json"
+        try:
+            self.mod.write_dismissals({"id": "x"}, bad_path)
+        except Exception as e:
+            self.fail(f"write_dismissals raised on unwritable path: {e}")
+
+    # ---- _dismiss_id ----
+
+    def test_dismiss_id_exists(self):
+        """_dismiss_id function must exist."""
+        self.assertTrue(callable(getattr(self.mod, "_dismiss_id", None)),
+                        "_dismiss_id must be defined")
+
+    def test_dismiss_id_adds_entry_with_impact(self):
+        """_dismiss_id adds an entry with impact_at_dismiss and dismissed_at."""
+        self.mod._dismiss_id("inc-001", "minor", self.store_path)
+        store = self.mod.read_dismissals(self.store_path)
+        self.assertIn("inc-001", store,
+                      "_dismiss_id must add the id to the store")
+        entry = store["inc-001"]
+        self.assertEqual(entry.get("impact_at_dismiss"), "minor",
+                         "Stored entry must have impact_at_dismiss='minor'")
+        self.assertIn("dismissed_at", entry,
+                      "Stored entry must have dismissed_at timestamp")
+        self.assertIsInstance(entry["dismissed_at"], float,
+                              "dismissed_at must be a float epoch")
+
+    def test_dismiss_id_empty_id_is_noop(self):
+        """_dismiss_id with empty inc_id is a no-op (no store write, no raise)."""
+        try:
+            self.mod._dismiss_id("", "minor", self.store_path)
+        except Exception as e:
+            self.fail(f"_dismiss_id('', ...) raised: {e}")
+        # Store should still not exist (or be empty)
+        result = self.mod.read_dismissals(self.store_path)
+        self.assertNotIn("", result,
+                         "_dismiss_id('') must not write an empty-string key")
+
+    # ---- _undismiss_id ----
+
+    def test_undismiss_id_exists(self):
+        """_undismiss_id function must exist."""
+        self.assertTrue(callable(getattr(self.mod, "_undismiss_id", None)),
+                        "_undismiss_id must be defined")
+
+    def test_undismiss_id_removes_entry(self):
+        """_undismiss_id removes an id that was previously dismissed."""
+        # Seed the store directly
+        store = {"inc-001": {"impact_at_dismiss": "minor", "dismissed_at": 1700000000.0}}
+        self.mod.write_dismissals(store, self.store_path)
+        # Undismiss
+        self.mod._undismiss_id("inc-001", self.store_path)
+        result = self.mod.read_dismissals(self.store_path)
+        self.assertNotIn("inc-001", result,
+                         "_undismiss_id must remove the id from the store")
+
+    def test_undismiss_id_noop_for_missing_id(self):
+        """_undismiss_id on an id not in store is a no-op (no raise)."""
+        try:
+            self.mod._undismiss_id("nonexistent-id", self.store_path)
+        except Exception as e:
+            self.fail(f"_undismiss_id on missing id raised: {e}")
+
+    # ---- _prune_dismissals ----
+
+    def test_prune_dismissals_exists(self):
+        """_prune_dismissals function must exist."""
+        self.assertTrue(callable(getattr(self.mod, "_prune_dismissals", None)),
+                        "_prune_dismissals must be defined")
+
+    def test_prune_dismissals_removes_stale_ids(self):
+        """_prune_dismissals drops ids not in live_ids, keeps ids that are."""
+        store = {
+            "inc-001": {"impact_at_dismiss": "minor", "dismissed_at": 1700000000.0},
+            "inc-002": {"impact_at_dismiss": "major", "dismissed_at": 1700000001.0},
+            "inc-stale": {"impact_at_dismiss": "none", "dismissed_at": 1700000002.0},
+        }
+        live_ids = {"inc-001", "inc-002"}
+        pruned = self.mod._prune_dismissals(store, live_ids)
+        self.assertIn("inc-001", pruned, "inc-001 is live and must be kept")
+        self.assertIn("inc-002", pruned, "inc-002 is live and must be kept")
+        self.assertNotIn("inc-stale", pruned, "inc-stale is not live and must be pruned")
+
+    def test_prune_dismissals_is_pure_no_side_effects(self):
+        """_prune_dismissals is pure: it does not modify the input store dict."""
+        store = {
+            "inc-001": {"impact_at_dismiss": "minor", "dismissed_at": 1700000000.0},
+        }
+        original_keys = set(store.keys())
+        _ = self.mod._prune_dismissals(store, set())  # prune everything
+        self.assertEqual(set(store.keys()), original_keys,
+                         "_prune_dismissals must be pure (no side effects on input dict)")
+
+    def test_prune_dismissals_empty_live_ids_clears_all(self):
+        """_prune_dismissals with empty live_ids returns empty dict."""
+        store = {
+            "inc-001": {"impact_at_dismiss": "minor", "dismissed_at": 1700000000.0},
+        }
+        pruned = self.mod._prune_dismissals(store, set())
+        self.assertEqual(pruned, {},
+                         "_prune_dismissals(store, set()) must return empty dict")
+
+    def test_prune_dismissals_empty_store_returns_empty(self):
+        """_prune_dismissals on empty store returns empty dict."""
+        pruned = self.mod._prune_dismissals({}, {"inc-001", "inc-002"})
+        self.assertEqual(pruned, {},
+                         "_prune_dismissals({}, ...) must return {}")
+
+
 if __name__ == "__main__":
     unittest.main()
