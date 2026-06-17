@@ -64,3 +64,12 @@ blocked: 0
   missing:
     - "Apply dismissal/keyword suppression at RENDER time (re-run _is_suppressed over cached tracked_incidents in _claude_status_segment) so --dismiss is instant and network-independent."
     - "Alternatively/additionally: make manual --refresh reliable (wait-for-lock or bypass the stampede lock for explicit foreground invocation) and correct the :429 help text."
+  fix_decision: |
+    CHOSEN (user, 2026-06-17): RENDER-TIME SUPPRESSION.
+    Re-apply _is_suppressed over the cached tracked_incidents inside _claude_status_segment (:3520) so
+    --dismiss and keyword (ignore_title_patterns) filters take effect on the very next render — instant,
+    zero-network, lock-independent. Reuse the existing _is_suppressed/_derive_claude_status ordering
+    (single source of truth, per the :1557 comment) — do NOT fork the suppression logic. Also correct the
+    misleading help text at :429 ("run --refresh to apply it immediately"). The fetch-time baking can
+    remain as-is for the network/escalation path; render-time suppression layers on top for local actions.
+    NOT chosen: changing the stampede-lock behavior of run_refresh (left intact).
