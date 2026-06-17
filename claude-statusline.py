@@ -186,6 +186,13 @@ DEFAULTS: dict = {
         # Quiet when all tracked components are healthy (D-01). Set to false to suppress.
         "show_claude_status": True,
     },
+    # Phase 07: Claude-status incident filter (D-06). Hand-edited TOML only —
+    # the tool NEVER rewrites this table (id-dismissals live in the tool-owned
+    # store, D-05). A bad regex degrades to no-match, never crashes (D-10).
+    "claude_status": {
+        "filter_enabled": True,            # master toggle for the suppression filter
+        "ignore_title_patterns": [],       # title patterns (e.g. "Mythos", "Fable")
+    },
 }
 
 
@@ -307,6 +314,108 @@ def write_cache_section(path: str | None, section_name: str, payload: dict, now:
     except Exception:
         # Any OS/JSON error is swallowed — cache miss on next render, not a crash
         pass
+
+
+# ---------------------------------------------------------------------------
+# Phase 07: Tool-owned dismissal store (D-05)
+#
+# Modeled VERBATIM on read_cache / write_cache_section above:
+#  - same cache dir (~/.claude/claude-statusline/)
+#  - same atomic temp-then-os.replace write pattern
+#  - same corrupt/missing → safe-default discipline (corrupt → {} → no suppression)
+#
+# The store maps incident id → {"impact_at_dismiss": str, "dismissed_at": float}.
+# The tool fully owns this file; it NEVER writes the user's TOML (D-05).
+# ---------------------------------------------------------------------------
+
+_DISMISSALS_PATH = os.path.expanduser("~/.claude/claude-statusline/status_dismissals.json")
+
+
+def read_dismissals(path: str | None = None) -> dict:
+    """Load the dismissal store; return {} on any error (missing, corrupt, non-dict).
+
+    Mirrors read_cache's read-with-silent-fallback discipline:
+    corrupt / missing → {} → no suppression (D-05, T-07-01).
+    """
+    if path is None:
+        path = _DISMISSALS_PATH
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            return {}
+        return data
+    except Exception:
+        return {}
+
+
+def write_dismissals(store: dict, path: str | None = None) -> None:
+    """Atomically write the whole dismissal store (temp file then os.replace — T-07-02).
+
+    Writes the flat dict as a single JSON object — no per-section merge (unlike
+    write_cache_section, which merges sections; here we own the whole file).
+
+    Any error during write is swallowed so a failing store write never crashes the bar.
+    """
+    if path is None:
+        path = _DISMISSALS_PATH
+    try:
+        # Atomic write: temp file in same dir, then os.replace
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(store, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, path)
+    except Exception:
+        # Any OS/JSON error is swallowed — store miss on next render, not a crash
+        pass
+
+
+def _dismiss_id(inc_id: str, impact_at_dismiss: str, path: str | None = None) -> None:
+    """Add an id-dismiss entry to the store.
+
+    Records impact_at_dismiss (used for escalation re-surface, D-03) and dismissed_at
+    (epoch float).  No-op on empty inc_id (guard against caller passing "" or None).
+    Swallows all errors — never raises.
+    """
+    if not inc_id:
+        return
+    try:
+        import time as _time
+        store = read_dismissals(path)
+        store[inc_id] = {
+            "impact_at_dismiss": impact_at_dismiss,
+            "dismissed_at": _time.time(),
+        }
+        write_dismissals(store, path)
+    except Exception:
+        pass
+
+
+def _undismiss_id(inc_id: str, path: str | None = None) -> None:
+    """Remove an id-dismiss entry from the store.
+
+    No-op if inc_id is not in the store.  Swallows all errors — never raises.
+    """
+    try:
+        store = read_dismissals(path)
+        store.pop(inc_id, None)
+        write_dismissals(store, path)
+    except Exception:
+        pass
+
+
+def _prune_dismissals(store: dict, live_ids: object) -> dict:
+    """Return a new dict containing only entries whose id is in live_ids.
+
+    Pure / side-effect-free: the input store is never modified (caller persists
+    the result via write_dismissals if desired — D-04 auto-prune).  Safe on any
+    input type for live_ids (non-sets/non-iterables degrade to returning {}).
+    """
+    try:
+        return {k: v for k, v in store.items() if k in live_ids}
+    except Exception:
+        return {}
 
 
 def section_is_fresh(section: dict, ttl: float, now: float) -> bool:
