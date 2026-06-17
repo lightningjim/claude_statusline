@@ -2552,5 +2552,194 @@ class TestDismissUndismissFlags(unittest.TestCase):
         self.assertEqual(called, [], "--dismiss must not call _load_stdin")
 
 
+# ---------------------------------------------------------------------------
+# Phase 07 Plan 03 Task 2: --status-incidents table (sanitized, cache+store only)
+# ---------------------------------------------------------------------------
+
+class TestStatusIncidentsFlag(unittest.TestCase):
+    """--status-incidents: readable table from cache + store only, sanitized, never fetches."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        self.tmpdir = tempfile.mkdtemp()
+        self.cache_path = os.path.join(self.tmpdir, "cache.json")
+        self.dismissals_path = os.path.join(self.tmpdir, "status_dismissals.json")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write_cache_with_incidents(self, incidents):
+        """Write a cache file with the given tracked_incidents list."""
+        payload = {
+            "claude_status": {
+                "fetched_at": time.time(),
+                "tracked_incidents": incidents,
+            }
+        }
+        with open(self.cache_path, "w") as f:
+            json.dump(payload, f)
+
+    def _call_print_helper(self, incidents, dismissals=None):
+        """Call _print_status_incidents directly; capture stdout."""
+        import io
+        import sys as _sys
+        cache = {"claude_status": {"fetched_at": time.time(), "tracked_incidents": incidents}}
+        store = dismissals if dismissals is not None else {}
+        buf = io.StringIO()
+        original = _sys.stdout
+        _sys.stdout = buf
+        try:
+            self.mod._print_status_incidents(cache, store)
+        finally:
+            _sys.stdout = original
+        return buf.getvalue()
+
+    # ---- helper exists ----
+
+    def test_print_helper_exists(self):
+        """_print_status_incidents function must exist in the module."""
+        self.assertTrue(callable(getattr(self.mod, "_print_status_incidents", None)),
+                        "_print_status_incidents must be a callable")
+
+    # ---- table content ----
+
+    def test_table_contains_incident_id(self):
+        """Output contains the incident id."""
+        incidents = [{"id": "inc-001", "impact": "minor", "status": "monitoring",
+                      "title": "Elevated error rates for Claude Code tool calls",
+                      "component": "Claude Code"}]
+        output = self._call_print_helper(incidents)
+        self.assertIn("inc-001", output, "Table must include the incident id")
+
+    def test_table_contains_incident_title(self):
+        """Output contains the (sanitized) incident title."""
+        incidents = [{"id": "inc-001", "impact": "minor", "status": "monitoring",
+                      "title": "Elevated error rates for Claude Code tool calls",
+                      "component": "Claude Code"}]
+        output = self._call_print_helper(incidents)
+        self.assertIn("Elevated error rates", output,
+                      "Table must include the incident title text")
+
+    def test_table_contains_component(self):
+        """Output contains the affected component name."""
+        incidents = [{"id": "inc-001", "impact": "minor", "status": "monitoring",
+                      "title": "Elevated error rates for Claude Code tool calls",
+                      "component": "Claude Code"}]
+        output = self._call_print_helper(incidents)
+        self.assertIn("Claude Code", output,
+                      "Table must include the affected component name")
+
+    def test_table_contains_impact(self):
+        """Output contains the impact level."""
+        incidents = [{"id": "inc-001", "impact": "minor", "status": "monitoring",
+                      "title": "Elevated error rates for Claude Code tool calls",
+                      "component": "Claude Code"}]
+        output = self._call_print_helper(incidents)
+        self.assertIn("minor", output, "Table must include the impact level")
+
+    def test_table_contains_status(self):
+        """Output contains the status value."""
+        incidents = [{"id": "inc-001", "impact": "minor", "status": "monitoring",
+                      "title": "Elevated error rates for Claude Code tool calls",
+                      "component": "Claude Code"}]
+        output = self._call_print_helper(incidents)
+        self.assertIn("monitoring", output, "Table must include the status value")
+
+    # ---- dismissed / active markers ----
+
+    def test_active_incident_shows_active_marker(self):
+        """Undismissed incident shows 'active' state marker."""
+        incidents = [{"id": "inc-001", "impact": "minor", "status": "monitoring",
+                      "title": "Test incident", "component": "Claude Code"}]
+        output = self._call_print_helper(incidents, dismissals={})
+        self.assertIn("active", output,
+                      "Undismissed incident must show 'active' state marker")
+
+    def test_dismissed_incident_shows_dismissed_marker(self):
+        """Dismissed incident shows 'dismissed' state marker."""
+        incidents = [{"id": "inc-001", "impact": "minor", "status": "monitoring",
+                      "title": "Test incident", "component": "Claude Code"}]
+        store = {"inc-001": {"impact_at_dismiss": "minor", "dismissed_at": time.time()}}
+        output = self._call_print_helper(incidents, dismissals=store)
+        self.assertIn("dismissed", output,
+                      "Dismissed incident must show 'dismissed' state marker")
+
+    def test_stale_store_entry_shows_stale_marker(self):
+        """A store entry whose id is NOT in the live tracked_incidents shows 'stale'."""
+        # Live list is empty; store has a stale entry
+        incidents = []
+        store = {"inc-stale": {"impact_at_dismiss": "minor", "dismissed_at": time.time()}}
+        output = self._call_print_helper(incidents, dismissals=store)
+        self.assertIn("stale", output,
+                      "Store entry absent from live incidents must show 'stale' marker")
+        self.assertIn("inc-stale", output,
+                      "Stale store entry id must appear in the output")
+
+    # ---- no network fetch ----
+
+    def test_no_fetch_claude_status_call(self):
+        """_print_status_incidents must NOT call fetch_claude_status."""
+        incidents = [{"id": "inc-001", "impact": "minor", "status": "monitoring",
+                      "title": "Test", "component": "Claude Code"}]
+        fetch_called = []
+        original = self.mod.fetch_claude_status
+        self.mod.fetch_claude_status = lambda cfg: fetch_called.append(True)
+        try:
+            self._call_print_helper(incidents)
+        finally:
+            self.mod.fetch_claude_status = original
+        self.assertEqual(fetch_called, [],
+                         "_print_status_incidents must not call fetch_claude_status")
+
+    # ---- ANSI sanitization ----
+
+    def test_malicious_title_no_raw_escape(self):
+        """Malicious title with raw ANSI escapes must not appear in output."""
+        # Use the malicious title from the fixture
+        malicious = "\x1b[31mCRITICAL\x1b[0m: Claude Code \x1b[1;31moutage\x1b[0m"
+        incidents = [{"id": "inc-malicious", "impact": "major", "status": "investigating",
+                      "title": malicious, "component": "Claude Code"}]
+        output = self._call_print_helper(incidents)
+        self.assertNotIn("\x1b", output,
+                         "Output must not contain raw ANSI escape (\\x1b) sequences")
+
+    def test_malicious_title_from_fixture_no_escape(self):
+        """Incident from status_malicious_title.json fixture produces escape-free output."""
+        # Simulate what _collect_tracked_incidents would produce from the fixture
+        incidents = [{"id": "inc-malicious",
+                      "impact": "major",
+                      "status": "investigating",
+                      "title": "\x1b[31mCRITICAL\x1b[0m: Claude Code \x1b[1;31moutage\x1b[0m",
+                      "component": "Claude Code"}]
+        output = self._call_print_helper(incidents)
+        self.assertNotIn("\x1b", output,
+                         "Fixture malicious title must be sanitized before printing")
+
+    # ---- empty list ----
+
+    def test_empty_incidents_friendly_message(self):
+        """Empty tracked_incidents list → friendly 'no tracked incidents' message."""
+        output = self._call_print_helper([])
+        self.assertTrue(
+            len(output.strip()) > 0,
+            "Empty list must produce a non-empty friendly message (not silent exit)"
+        )
+        # Should say something about no incidents or nothing tracked
+        lower = output.lower()
+        self.assertTrue(
+            "no" in lower or "none" in lower or "empty" in lower,
+            f"Empty list message must indicate absence of incidents; got: {output!r}"
+        )
+
+    # ---- main() branch exists before _load_stdin ----
+
+    def test_main_has_status_incidents_branch(self):
+        """main() source must contain '--status-incidents' in sys.argv branch."""
+        import inspect
+        source = inspect.getsource(self.mod.main)
+        self.assertIn("--status-incidents", source,
+                      "main() must have a --status-incidents branch")
+
+
 if __name__ == "__main__":
     unittest.main()
