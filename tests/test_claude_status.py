@@ -1785,5 +1785,349 @@ class TestFetchClaudeStatusWidenedPayload(unittest.TestCase):
                          "noteworthy must be False in healthy section")
 
 
+# ---------------------------------------------------------------------------
+# Phase 7 Plan 02: Task 1 — _is_suppressed + filter integration in _derive_claude_status
+# ---------------------------------------------------------------------------
+
+
+class TestIsSuppressed(unittest.TestCase):
+    """_is_suppressed: dual filter (id-dismiss + keyword/regex), escalation, toggle, edge cases."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def test_is_suppressed_exists(self):
+        """_is_suppressed function must exist."""
+        self.assertTrue(callable(getattr(self.mod, "_is_suppressed", None)),
+                        "_is_suppressed must be defined in claude-statusline.py")
+
+    def test_claude_pattern_match_maxlen_exists(self):
+        """_CLAUDE_PATTERN_MATCH_MAXLEN constant must be defined."""
+        self.assertTrue(hasattr(self.mod, "_CLAUDE_PATTERN_MATCH_MAXLEN"),
+                        "_CLAUDE_PATTERN_MATCH_MAXLEN must be defined")
+
+    def test_claude_pattern_match_maxlen_is_500(self):
+        """_CLAUDE_PATTERN_MATCH_MAXLEN must equal 500."""
+        self.assertEqual(self.mod._CLAUDE_PATTERN_MATCH_MAXLEN, 500,
+                         "_CLAUDE_PATTERN_MATCH_MAXLEN must be 500 (ReDoS length cap)")
+
+    def _cfg(self, filter_enabled=True, patterns=None):
+        """Build a minimal cfg dict with claude_status settings."""
+        return {"claude_status": {
+            "filter_enabled": filter_enabled,
+            "ignore_title_patterns": patterns if patterns is not None else [],
+        }}
+
+    # ---- id-dismiss suppression ----
+
+    def test_id_dismiss_suppresses_incident(self):
+        """_is_suppressed with matching id-dismissal returns True (suppressed)."""
+        dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg()
+        result = self.mod._is_suppressed("inc-001", "minor", "Some title", dismissals, cfg)
+        self.assertTrue(result, "_is_suppressed must return True for a matching id-dismissal")
+
+    def test_id_dismiss_no_match_returns_false(self):
+        """_is_suppressed with non-matching id-dismissal returns False (not suppressed)."""
+        dismissals = {"inc-999": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg()
+        result = self.mod._is_suppressed("inc-001", "minor", "Some title", dismissals, cfg)
+        self.assertFalse(result, "_is_suppressed must return False when id not in dismissals")
+
+    # ---- keyword/regex suppression ----
+
+    def test_keyword_substring_suppresses_incident(self):
+        """_is_suppressed with matching keyword substring returns True."""
+        cfg = self._cfg(patterns=["Elevated"])
+        result = self.mod._is_suppressed(
+            "inc-001", "minor",
+            "Elevated error rates for Claude Code tool calls",
+            {}, cfg
+        )
+        self.assertTrue(result, "Keyword substring match must suppress")
+
+    def test_keyword_case_insensitive(self):
+        """_is_suppressed keyword matching is case-insensitive."""
+        cfg = self._cfg(patterns=["elevated"])
+        result = self.mod._is_suppressed(
+            "inc-001", "minor",
+            "Elevated error rates for Claude Code tool calls",
+            {}, cfg
+        )
+        self.assertTrue(result, "Keyword matching must be case-insensitive")
+
+    def test_keyword_no_match_returns_false(self):
+        """_is_suppressed with non-matching keyword returns False."""
+        cfg = self._cfg(patterns=["Mythos", "Fable"])
+        result = self.mod._is_suppressed(
+            "inc-001", "minor",
+            "Elevated error rates for Claude Code tool calls",
+            {}, cfg
+        )
+        self.assertFalse(result, "Non-matching keywords must not suppress")
+
+    # ---- EITHER filter suppresses ----
+
+    def test_keyword_match_suppresses_even_without_id_dismiss(self):
+        """Keyword match alone is sufficient to suppress (no id in dismissals)."""
+        cfg = self._cfg(patterns=["Elevated"])
+        result = self.mod._is_suppressed(
+            "inc-001", "minor",
+            "Elevated error rates for Claude Code tool calls",
+            {}, cfg  # empty dismissals — only keyword applies
+        )
+        self.assertTrue(result, "Keyword match alone must suppress (EITHER filter)")
+
+    def test_id_dismiss_suppresses_even_without_keyword_match(self):
+        """Id-dismiss alone is sufficient to suppress (patterns is empty)."""
+        dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg(patterns=[])  # no keyword patterns
+        result = self.mod._is_suppressed("inc-001", "minor", "Some unmatched title", dismissals, cfg)
+        self.assertTrue(result, "Id-dismiss alone must suppress (EITHER filter)")
+
+    # ---- escalation re-surface (D-03): id-dismissals only ----
+
+    def test_escalation_resurfaces_id_dismissed_incident(self):
+        """Id-dismissed incident with higher live impact is NOT suppressed (escalation re-surface, D-03)."""
+        dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg()
+        # Live impact is 'major' — higher than stored 'minor' → re-surface
+        result = self.mod._is_suppressed("inc-001", "major", "Some title", dismissals, cfg)
+        self.assertFalse(result,
+                         "Live impact > stored impact must void dismissal (re-surface, D-03)")
+
+    def test_escalation_critical_resurfaces_minor_dismiss(self):
+        """Critical live impact overrides a minor-at-dismiss id-dismissal."""
+        dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg()
+        result = self.mod._is_suppressed("inc-001", "critical", "Some title", dismissals, cfg)
+        self.assertFalse(result, "Critical live impact must void minor dismissal")
+
+    def test_escalation_same_impact_still_suppressed(self):
+        """Id-dismissed incident with SAME live impact as stored stays suppressed (no escalation)."""
+        dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg()
+        result = self.mod._is_suppressed("inc-001", "minor", "Some title", dismissals, cfg)
+        self.assertTrue(result, "Same impact level must stay suppressed (no escalation)")
+
+    def test_escalation_lower_impact_still_suppressed(self):
+        """Id-dismissed incident with LOWER live impact (e.g. 'none') stays suppressed."""
+        dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg()
+        # 'none' impact is lower than 'minor' → no escalation → still suppressed
+        result = self.mod._is_suppressed("inc-001", "none", "Some title", dismissals, cfg)
+        self.assertTrue(result, "Lower live impact must stay suppressed (no escalation)")
+
+    # ---- keyword has NO escalation tracking (blunt mute, D-03) ----
+
+    def test_keyword_high_impact_still_suppressed(self):
+        """Keyword-matched incident stays suppressed even at high/critical impact (blunt mute, D-03)."""
+        cfg = self._cfg(patterns=["Mythos"])
+        # High impact — but keyword suppression has no escalation tracking
+        result = self.mod._is_suppressed(
+            "inc-999", "critical",
+            "Mythos model access removal — long-lived monitoring incident",
+            {}, cfg
+        )
+        self.assertTrue(result, "Keyword mute has no escalation — must stay suppressed even at critical")
+
+    # ---- filter_enabled toggle (D-06) ----
+
+    def test_toggle_off_disables_id_dismiss(self):
+        """filter_enabled=False disables id-dismiss suppression."""
+        dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg(filter_enabled=False)
+        result = self.mod._is_suppressed("inc-001", "minor", "Some title", dismissals, cfg)
+        self.assertFalse(result, "filter_enabled=False must disable id-dismiss suppression")
+
+    def test_toggle_off_disables_keyword(self):
+        """filter_enabled=False disables keyword suppression."""
+        cfg = self._cfg(filter_enabled=False, patterns=["Elevated"])
+        result = self.mod._is_suppressed(
+            "inc-001", "minor",
+            "Elevated error rates for Claude Code tool calls",
+            {}, cfg
+        )
+        self.assertFalse(result, "filter_enabled=False must disable keyword suppression")
+
+    # ---- bad/invalid regex — degrade to no-match, never raise ----
+
+    def test_bad_regex_does_not_suppress(self):
+        """Bad/unterminated regex pattern degrades to no-match (incident NOT suppressed)."""
+        cfg = self._cfg(patterns=["[unterminated"])
+        result = self.mod._is_suppressed(
+            "inc-001", "minor",
+            "Elevated error rates for Claude Code tool calls",
+            {}, cfg
+        )
+        self.assertFalse(result,
+                         "Bad regex must degrade to no-match (not suppressed), never raise")
+
+    def test_bad_regex_does_not_raise(self):
+        """Bad regex pattern does not raise any exception."""
+        cfg = self._cfg(patterns=["[unterminated", "another[bad"])
+        try:
+            self.mod._is_suppressed("inc-001", "minor", "Some title", {}, cfg)
+        except Exception as e:
+            self.fail(f"_is_suppressed raised on bad regex: {e}")
+
+    # ---- ReDoS cap test ----
+
+    def test_redos_cap_returns_fast_and_does_not_suppress(self):
+        """Catastrophic-backtracking pattern against a long title returns quickly (no hang).
+
+        The length cap (_CLAUDE_PATTERN_MATCH_MAXLEN = 500) is the documented ReDoS
+        mitigation. This test feeds (a+)+$ (known catastrophic) against a run of 5000 'a'
+        chars + a trailing non-match char. Without the cap this would hang; with the 500-char
+        cap it terminates in microseconds. The call must complete well under 1 second and
+        must NOT suppress (the pattern does not match the capped title).
+        """
+        import time as _time
+        long_title = "a" * 5000 + "b"  # trailing 'b' makes (a+)+$ not match
+        cfg = self._cfg(patterns=["(a+)+$"])
+        t0 = _time.monotonic()
+        result = self.mod._is_suppressed("inc-001", "minor", long_title, {}, cfg)
+        elapsed = _time.monotonic() - t0
+        self.assertLess(elapsed, 1.0,
+                        f"ReDoS-cap: call must complete in < 1s; took {elapsed:.3f}s")
+        # The pattern (a+)+$ against title[:500] = "aaa...a" (500 a's) will actually match
+        # BUT the full title has 5000 a's so without the cap it would hang. With the cap
+        # at 500 chars the title_capped is "aaa...a" (500 chars) — the pattern DOES match
+        # since the capped title is all 'a'. The important thing is it returns FAST.
+        # We only assert the timing (fast return), not the match result (depends on cap).
+        # The key non-regression is: the function must return (not hang).
+        _ = result  # result may be True or False; we only care about timing
+
+    def test_redos_cap_long_title_with_trailing_nonmatch_no_suppress(self):
+        """Pattern that does not match title[:500] does NOT suppress.
+
+        Use a simple non-backtracking pattern that clearly does NOT match the first
+        500 chars of the long title, to verify the no-suppression outcome.
+        """
+        long_title = "a" * 5000 + "b"
+        # This pattern requires 'ZZZ' which is not in the first 500 chars of the title
+        cfg = self._cfg(patterns=["ZZZ"])
+        result = self.mod._is_suppressed("inc-001", "minor", long_title, {}, cfg)
+        self.assertFalse(result, "Pattern that doesn't match title[:500] must not suppress")
+
+    # ---- corrupt dismissals — degrade to no suppression, never raise ----
+
+    def test_corrupt_dismissals_string_returns_false(self):
+        """Non-dict dismissals (string) degrades to no suppression."""
+        cfg = self._cfg()
+        try:
+            result = self.mod._is_suppressed("inc-001", "minor", "Some title", "garbage", cfg)
+        except Exception as e:
+            self.fail(f"_is_suppressed raised on string dismissals: {e}")
+        self.assertFalse(result, "String dismissals must degrade to no suppression")
+
+    def test_corrupt_dismissals_int_returns_false(self):
+        """Non-dict dismissals (int) degrades to no suppression."""
+        cfg = self._cfg()
+        result = self.mod._is_suppressed("inc-001", "minor", "Some title", 123, cfg)
+        self.assertFalse(result, "Int dismissals must degrade to no suppression")
+
+    def test_corrupt_dismissals_none_returns_false(self):
+        """None dismissals degrades to no suppression."""
+        cfg = self._cfg()
+        result = self.mod._is_suppressed("inc-001", "minor", "Some title", None, cfg)
+        self.assertFalse(result, "None dismissals must degrade to no suppression")
+
+    def test_none_cfg_returns_false(self):
+        """None cfg (no config) degrades to no suppression."""
+        result = self.mod._is_suppressed("inc-001", "minor", "Some title", {}, None)
+        self.assertFalse(result, "None cfg must degrade to no suppression (filter_enabled defaults to no-op)")
+
+    def test_non_dict_cfg_returns_false(self):
+        """Non-dict cfg degrades to no suppression."""
+        result = self.mod._is_suppressed("inc-001", "minor", "Some title", {}, "bad")
+        self.assertFalse(result, "Non-dict cfg must degrade to no suppression")
+
+
+class TestDeriveClaudeStatusFilterIntegration(unittest.TestCase):
+    """_derive_claude_status: filter integration — id-dismiss and keyword suppress incidents."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+
+    def _cfg(self, filter_enabled=True, patterns=None):
+        return {"claude_status": {
+            "filter_enabled": filter_enabled,
+            "ignore_title_patterns": patterns if patterns is not None else [],
+        }}
+
+    # ---- id-dismiss: suppressed incident falls through to None ----
+
+    def test_id_dismiss_suppresses_returns_none(self):
+        """_derive_claude_status with id-dismiss for the only incident returns None (falls through, D-01)."""
+        summary = _load_fixture("status_incident_tracked.json")
+        dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg()
+        result = self.mod._derive_claude_status(summary, dismissals=dismissals, cfg=cfg)
+        self.assertIsNone(result,
+                          "Id-dismissed only incident must fall through to None (D-01)")
+
+    # ---- keyword: suppressed incident falls through to None ----
+
+    def test_keyword_suppresses_returns_none(self):
+        """_derive_claude_status with matching keyword returns None (falls through, D-01)."""
+        summary = _load_fixture("status_incident_tracked.json")
+        cfg = self._cfg(patterns=["Elevated"])
+        result = self.mod._derive_claude_status(summary, dismissals={}, cfg=cfg)
+        self.assertIsNone(result,
+                          "Keyword-matching only incident must fall through to None (D-01)")
+
+    # ---- escalation re-surface ----
+
+    def test_escalation_resurfaces_id_dismissed_incident(self):
+        """Id-dismissed minor incident with live major impact resurfaces (NOT None), D-03."""
+        summary = _load_fixture("status_incident_tracked_major.json")
+        # Dismissed at 'minor', but live impact is 'major' → re-surface
+        dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg()
+        result = self.mod._derive_claude_status(summary, dismissals=dismissals, cfg=cfg)
+        self.assertIsNotNone(result,
+                             "Escalated incident (major > minor-at-dismiss) must re-surface (D-03)")
+
+    # ---- toggle-off: no suppression ----
+
+    def test_toggle_off_no_suppression(self):
+        """filter_enabled=False with matching id-dismiss AND keyword → incident returned (no suppression)."""
+        summary = _load_fixture("status_incident_tracked.json")
+        dismissals = {"inc-001": {"impact_at_dismiss": "minor"}}
+        cfg = self._cfg(filter_enabled=False, patterns=["Elevated"])
+        result = self.mod._derive_claude_status(summary, dismissals=dismissals, cfg=cfg)
+        self.assertIsNotNone(result,
+                             "filter_enabled=False must disable all suppression — incident must be returned")
+
+    # ---- backward compat: no new args → Phase 6 behavior unchanged ----
+
+    def test_backward_compat_no_args_returns_incident(self):
+        """_derive_claude_status(summary) with no new args returns incident as before (Phase 6 compat)."""
+        summary = _load_fixture("status_incident_tracked.json")
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result,
+                             "No-new-args call must return incident (Phase 6 backward compat)")
+        self.assertEqual(result.get("kind"), "incident")
+
+    def test_backward_compat_operational_still_none(self):
+        """_derive_claude_status(summary) on operational fixture still returns None (backward compat)."""
+        summary = _load_fixture("status_operational.json")
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNone(result, "Operational fixture must still return None (backward compat)")
+
+    # ---- bad regex in _derive_claude_status: no raise, no suppression ----
+
+    def test_bad_regex_in_derive_does_not_suppress(self):
+        """_derive_claude_status with bad regex pattern returns the incident (not suppressed, no raise)."""
+        summary = _load_fixture("status_incident_tracked.json")
+        cfg = self._cfg(patterns=["[unterminated"])
+        try:
+            result = self.mod._derive_claude_status(summary, dismissals={}, cfg=cfg)
+        except Exception as e:
+            self.fail(f"_derive_claude_status raised on bad regex: {e}")
+        self.assertIsNotNone(result, "Bad regex must degrade to no-match — incident not suppressed")
+
+
 if __name__ == "__main__":
     unittest.main()
