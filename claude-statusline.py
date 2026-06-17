@@ -2109,10 +2109,19 @@ def fetch_claude_status(cfg: dict) -> None:
         dismissals: dict = {}
         try:
             dismissals = read_dismissals(_DISMISSALS_PATH)
-            # Build set of live tracked incident ids (defensive: only string ids)
+            # Build set of live tracked incident ids (defensive: only string ids).
+            # Only UNRESOLVED incidents (investigating/identified/monitoring) count as
+            # "live" — matching _collect_tracked_incidents (WR-03). A resolved incident
+            # lingers in the API feed for days (Statuspage.io history), so keying live_ids
+            # off all incidents would defer the prune until the entry fully disappears,
+            # leaving the store retaining a dismissal that --status-incidents already
+            # reports as stale. Aligning the filter prunes as soon as the incident resolves.
             live_ids: set = set()
             for _inc in (summary.get("incidents", []) or []):
                 if isinstance(_inc, dict):
+                    _status = _inc.get("status", "")
+                    if _status not in ("investigating", "identified", "monitoring"):
+                        continue          # resolved incident — do not keep in live_ids
                     _id = _inc.get("id", "")
                     if isinstance(_id, str) and _id:
                         live_ids.add(_id)
