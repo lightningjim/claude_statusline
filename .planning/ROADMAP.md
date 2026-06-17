@@ -242,12 +242,12 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 →
 **Goal:** Suppress non-actionable, long-lived `status.claude.com` incidents (e.g. the perpetual Mythos/Fable access-removal incident) via a dual filter (dismiss-by-incident-id + title keyword/regex), with an escalation safety valve, while preserving Phase 6 quiet-when-healthy and never-crash behavior.
 **Requirements**: none mapped (driven by CONTEXT.md decisions D-01..D-06)
 **Depends on:** Phase 6
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 07-01-PLAN.md — Foundation: [claude_status] config table + tool-owned dismissal store helpers + widened cache payload (D-05, D-06)
+- [x] 07-01-PLAN.md — Foundation: [claude_status] config table + tool-owned dismissal store helpers + widened cache payload (D-05, D-06)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

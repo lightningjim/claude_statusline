@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
+status: executing
 stopped_at: Phase 7 context gathered
-last_updated: "2026-06-17T05:35:24.976Z"
-last_activity: 2026-06-17 -- Phase 07 planning complete
+last_updated: "2026-06-17T05:45:22.398Z"
+last_activity: 2026-06-17 -- Phase 07 execution started
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 24
-  completed_plans: 21
-  percent: 88
+  completed_plans: 22
+  percent: 91
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Milestone complete
+**Current focus:** Phase 07 — filter-dismiss-claude-status-incidents-let-the-user-suppress
 
 ## Current Position
 
-Phase: 06
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-17 -- Phase 07 planning complete
+Phase: 07 (filter-dismiss-claude-status-incidents-let-the-user-suppress) — EXECUTING
+Plan: 2 of 3
+Status: Executing Phase 07
+Last activity: 2026-06-17 -- Phase 07 execution started
 
-Progress: [██████████] 100%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [██████████] 100%
 | Phase 03.1 P01 | 10 | 2 tasks | 1 files |
 | Phase 02.2-differentiate-between-watches-warnings-and-advisories P01 | 25 | 3 tasks | 3 files |
 | Phase 02.2 P02 | 20 | 2 tasks | 2 files |
+| Phase 07 P01 | 5 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,9 @@ Recent decisions affecting current work:
 - _NF_GSD_* PUA codepoints embedded as literal Unicode characters (chr() approach) — same pattern as existing _NF_GIT_* constants
 - emoji/ascii fallback glyphs for GSD segment: ▶/☑/⊘/✓/⏸ — consistent with plan-spec and distinct from nerd codepoints
 - plan-of-total wave_part included neutrally in GSD segment when plans_done/plans_total available from STATE.md progress block (D-04)
+- DEFAULTS["claude_status"] added as top-level table with filter_enabled=True + ignore_title_patterns=[] (D-06); tool never writes TOML (D-05)
+- Dismissal store at ~/.claude/claude-statusline/status_dismissals.json; flat dict id→{impact_at_dismiss,dismissed_at}; _prune_dismissals is pure (D-04/D-05)
+- tracked_incidents widened into both noteworthy and healthy claude_status cache payload branches for stable --status-incidents offline display (D-02)
 
 ### Roadmap Evolution
 
@@ -150,6 +154,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-06-17T02:11:10.360Z
+Last session: 2026-06-17T05:45:22.388Z
 Stopped at: Phase 7 context gathered
 Resume file: .planning/phases/07-filter-dismiss-claude-status-incidents-let-the-user-suppress/07-CONTEXT.md
