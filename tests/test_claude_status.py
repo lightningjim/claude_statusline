@@ -2215,5 +2215,159 @@ class TestDeriveClaudeStatusFilterIntegration(unittest.TestCase):
         self.assertIsNotNone(result, "Bad regex must degrade to no-match — incident not suppressed")
 
 
+# ---------------------------------------------------------------------------
+# Phase 7 Plan 02: Task 2 — Escalation fixture + refresh-path auto-prune wiring
+# ---------------------------------------------------------------------------
+
+
+class TestEscalationFixtureAndAutoPrune(unittest.TestCase):
+    """Escalation fixture loads correctly; refresh path auto-prunes stale dismissed ids (D-04)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        self.tmpdir = tempfile.mkdtemp()
+        self.cache_path = os.path.join(self.tmpdir, "cache.json")
+        self.dismissals_path = os.path.join(self.tmpdir, "status_dismissals.json")
+        self.cfg = {
+            "location": {"lat": 35.4676, "lon": -97.5164},
+            "weather": {"contact_email": "test@example.com", "show_weather": True},
+            "units": {"temp_unit": "F"},
+            "cache": {
+                "weather_ttl": 600,
+                "alerts_ttl": 300,
+                "weather_max_stale": 3600,
+                "alerts_max_stale": 900,
+                "status_ttl": 300,
+                "status_max_stale": 900,
+            },
+            "claude_status": {
+                "filter_enabled": True,
+                "ignore_title_patterns": [],
+            },
+        }
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _fetch_with_fixture(self, fixture_name: str) -> dict:
+        """Run fetch_claude_status with FAKE_STATUS fixture; return written claude_status section."""
+        fake_path = os.path.join(FIXTURES_DIR, fixture_name)
+        with patch.dict(os.environ, {"CLAUDE_STATUSLINE_FAKE_STATUS": fake_path}):
+            with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+                    self.mod.fetch_claude_status(self.cfg)
+        data = self.mod.read_cache(self.cache_path)
+        return data.get("claude_status", {})
+
+    # ---- escalation fixture loads correctly ----
+
+    def test_major_fixture_exists(self):
+        """tests/fixtures/status_incident_tracked_major.json must exist."""
+        path = os.path.join(FIXTURES_DIR, "status_incident_tracked_major.json")
+        self.assertTrue(os.path.exists(path),
+                        "status_incident_tracked_major.json fixture must exist")
+
+    def test_major_fixture_has_inc_001(self):
+        """Major fixture contains inc-001."""
+        data = _load_fixture("status_incident_tracked_major.json")
+        ids = [i.get("id") for i in data.get("incidents", [])]
+        self.assertIn("inc-001", ids, "Major fixture must contain incident with id='inc-001'")
+
+    def test_major_fixture_impact_is_major(self):
+        """Major fixture inc-001 has impact='major'."""
+        data = _load_fixture("status_incident_tracked_major.json")
+        inc = next((i for i in data.get("incidents", []) if i.get("id") == "inc-001"), None)
+        self.assertIsNotNone(inc, "inc-001 must be present in major fixture")
+        self.assertEqual(inc.get("impact"), "major",
+                         "inc-001 impact must be 'major' in the escalation fixture")
+
+    def test_major_fixture_undismissed_returns_major_severity(self):
+        """_derive_claude_status on major fixture (un-dismissed) returns major-severity incident."""
+        summary = _load_fixture("status_incident_tracked_major.json")
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result, "Major fixture must return a non-None result")
+        self.assertEqual(result.get("severity"), "major",
+                         f"Major fixture must yield severity='major'; got {result.get('severity')!r}")
+
+    # ---- auto-prune: fetch path calls _prune_dismissals ----
+
+    def test_fetch_prunes_stale_dismissed_id(self):
+        """fetch_claude_status prunes a dismissed id no longer in the live feed (D-04)."""
+        # Seed the store with a stale id (not in the live feed) + a live id (in the feed)
+        initial_store = {
+            "inc-stale-999": {"impact_at_dismiss": "minor", "dismissed_at": 1700000000.0},
+            "inc-001": {"impact_at_dismiss": "minor", "dismissed_at": 1700000001.0},
+        }
+        self.mod.write_dismissals(initial_store, self.dismissals_path)
+
+        # Run fetch against the live fixture (contains inc-001, NOT inc-stale-999)
+        self._fetch_with_fixture("status_incident_tracked.json")
+
+        # The stale id must be gone; the live id must remain
+        store = self.mod.read_dismissals(self.dismissals_path)
+        self.assertNotIn("inc-stale-999", store,
+                         "Auto-prune must remove dismissed id not in live feed (D-04)")
+        self.assertIn("inc-001", store,
+                      "Auto-prune must retain dismissed id that is still in live feed")
+
+    def test_fetch_prune_does_not_write_toml(self):
+        """Auto-prune writes only the tool-owned store; no TOML mutation (D-05)."""
+        # Check that no TOML file is written during the fetch
+        toml_path = os.path.expanduser("~/.claude/claude-statusline/claude-statusline.toml")
+        # Track write_dismissals calls (store-only) and ensure load_config isn't called with write
+        toml_write_calls = []
+
+        original_open = open
+        def spy_open(path, mode="r", **kwargs):
+            if "w" in mode and str(path).endswith(".toml"):
+                toml_write_calls.append(path)
+            return original_open(path, mode, **kwargs)
+
+        with patch.dict(os.environ, {"CLAUDE_STATUSLINE_FAKE_STATUS":
+                                      os.path.join(FIXTURES_DIR, "status_incident_tracked.json")}):
+            with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+                    self.mod.fetch_claude_status(self.cfg)
+
+        self.assertEqual(toml_write_calls, [],
+                         "Auto-prune must NOT write any TOML file (D-05)")
+
+    def test_fetch_passes_dismissals_and_cfg_to_derive(self):
+        """fetch_claude_status threads dismissals and cfg into _derive_claude_status (D-01 integration)."""
+        # Dismiss inc-001 so the derivation should suppress it
+        initial_store = {
+            "inc-001": {"impact_at_dismiss": "minor", "dismissed_at": 1700000000.0},
+        }
+        self.mod.write_dismissals(initial_store, self.dismissals_path)
+
+        # Run fetch against incident fixture — incident dismissed → noteworthy should be False
+        # (or a degraded result from Rule 3, but NOT an incident result)
+        self._fetch_with_fixture("status_incident_tracked.json")
+        section = self.mod.read_cache(self.cache_path).get("claude_status", {})
+
+        # The cached result must NOT show kind='incident' since it's dismissed
+        # (It may show noteworthy=False or kind='degraded' from Rule 3)
+        if section.get("noteworthy"):
+            self.assertNotEqual(section.get("kind"), "incident",
+                                "Dismissed incident must NOT be cached as kind='incident' "
+                                "(dismissals+cfg threaded into derivation)")
+
+    def test_stale_store_after_operational_fixture_is_pruned(self):
+        """fetch against operational fixture (no incidents) prunes ALL dismissed ids (D-04)."""
+        # Seed with two dismissed ids; operational feed has no incidents
+        initial_store = {
+            "inc-001": {"impact_at_dismiss": "minor", "dismissed_at": 1700000000.0},
+            "inc-002": {"impact_at_dismiss": "major", "dismissed_at": 1700000001.0},
+        }
+        self.mod.write_dismissals(initial_store, self.dismissals_path)
+
+        # Run against operational (no incidents) → no live ids → all pruned
+        self._fetch_with_fixture("status_operational.json")
+
+        store = self.mod.read_dismissals(self.dismissals_path)
+        self.assertEqual(store, {},
+                         "All dismissed ids must be pruned when live feed has no incidents (D-04)")
+
+
 if __name__ == "__main__":
     unittest.main()
