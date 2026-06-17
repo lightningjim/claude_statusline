@@ -479,6 +479,100 @@ def _handle_undismiss_flag(inc_id: str, dismissals_path: str | None = None) -> N
         print(f"Error un-dismissing '{inc_id}': {exc}")
 
 
+def _print_status_incidents(cache: dict, dismissals: dict) -> None:
+    """Print a sanitized, aligned table of tracked incidents with dismissed/active/stale markers.
+
+    Reads tracked_incidents from the claude_status cache section + the dismissal store.
+    Does NOT fetch (render-path discipline: cheap, no network).
+
+    State column values:
+      - "dismissed" — id is in the store and is in the live tracked_incidents list
+      - "active"    — id is in the live list and NOT dismissed
+      - "stale"     — id is in the store but NOT in the live tracked_incidents list
+
+    Titles (and any feed-derived string) are ANSI-sanitized using the verbatim
+    pattern from _claude_status_segment (T-07-08 / T-06-04): strip ESC + non-printable,
+    width-bound to _CLAUDE_STATUS_LABEL_MAXLEN.
+
+    Empty tracked_incidents list → prints a friendly "No tracked incidents" line.
+    Wraps all I/O in try/except — never raises.
+    """
+    try:
+        tracked = []
+        try:
+            tracked = cache.get("claude_status", {}).get("tracked_incidents", [])
+            if not isinstance(tracked, list):
+                tracked = []
+        except Exception:
+            tracked = []
+
+        if not isinstance(dismissals, dict):
+            dismissals = {}
+
+        # Build the live id set for stale detection
+        live_ids = {entry.get("id") for entry in tracked
+                    if isinstance(entry, dict) and entry.get("id")}
+
+        # Collect stale store entries (dismissed ids NOT in live feed)
+        stale_entries = [
+            {"id": sid, "state": "stale"}
+            for sid in dismissals
+            if sid not in live_ids
+        ]
+
+        if not tracked and not stale_entries:
+            print("No tracked incidents.")
+            return
+
+        # ANSI-strip + width-bound helper (VERBATIM from _claude_status_segment, T-06-04/T-07-08)
+        def _sanitize(s: str, maxlen: int = _CLAUDE_STATUS_LABEL_MAXLEN) -> str:
+            return "".join(
+                ch for ch in str(s)
+                if ch == " " or (ch.isprintable() and ch != "\x1b")
+            )[:maxlen].strip()
+
+        # Column widths for alignment
+        COL_ID = 20
+        COL_IMPACT = 8
+        COL_STATUS = 14
+        COL_STATE = 10
+        COL_COMPONENT = 16
+        COL_TITLE = _CLAUDE_STATUS_LABEL_MAXLEN
+
+        header = (
+            f"{'ID':<{COL_ID}}  {'IMPACT':<{COL_IMPACT}}  {'STATUS':<{COL_STATUS}}"
+            f"  {'STATE':<{COL_STATE}}  {'COMPONENT':<{COL_COMPONENT}}  TITLE"
+        )
+        separator = "-" * (COL_ID + COL_IMPACT + COL_STATUS + COL_STATE + COL_COMPONENT + COL_TITLE + 12)
+        print(header)
+        print(separator)
+
+        for entry in tracked:
+            if not isinstance(entry, dict):
+                continue
+            inc_id = _sanitize(entry.get("id", ""), COL_ID)
+            impact = _sanitize(entry.get("impact", ""), COL_IMPACT)
+            status = _sanitize(entry.get("status", ""), COL_STATUS)
+            component = _sanitize(entry.get("component", ""), COL_COMPONENT)
+            title = _sanitize(entry.get("title", ""), COL_TITLE)
+            raw_id = entry.get("id", "")
+            state = "dismissed" if raw_id in dismissals else "active"
+            print(
+                f"{inc_id:<{COL_ID}}  {impact:<{COL_IMPACT}}  {status:<{COL_STATUS}}"
+                f"  {state:<{COL_STATE}}  {component:<{COL_COMPONENT}}  {title}"
+            )
+
+        # Print stale store entries (dismissed ids no longer in live feed)
+        for entry in stale_entries:
+            sid = _sanitize(entry["id"], COL_ID)
+            print(
+                f"{sid:<{COL_ID}}  {'?':<{COL_IMPACT}}  {'?':<{COL_STATUS}}"
+                f"  {'stale':<{COL_STATE}}  {'?':<{COL_COMPONENT}}  (resolved/removed from feed)"
+            )
+    except Exception as exc:
+        print(f"Error listing incidents: {exc}")
+
+
 def section_is_fresh(section: dict, ttl: float, now: float) -> bool:
     """Return True when the section's fetched_at is within the given TTL.
 
@@ -3652,6 +3746,17 @@ def main() -> None:
         idx = sys.argv.index("--undismiss")
         inc_id = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else ""
         _handle_undismiss_flag(inc_id)
+        sys.exit(0)
+
+    # --status-incidents: print a sanitized table of tracked incidents from
+    # the cache + dismissal store only (no fetch); exit (D-02).
+    if "--status-incidents" in sys.argv:
+        try:
+            cache = read_cache(_CACHE_PATH)
+            dismissals = read_dismissals(_DISMISSALS_PATH)
+            _print_status_incidents(cache, dismissals)
+        except Exception as exc:
+            print(f"Error reading incident status: {exc}")
         sys.exit(0)
 
     cfg = load_config()
