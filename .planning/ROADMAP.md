@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: GSD status info especially the active Plan(s) being run** (completed 2026-05-29)
 - [x] **Phase 05.1: Fix TestGsdSegmentBuilder environment-leak test failures (INSERTED)** - Make the 9 failing TestGsdSegmentBuilder tests hermetic by refreshing the handoff timestamp to now at call time (mirroring _make_live_state) + add a wall-clock-independence guard test; test-only, source unchanged (completed 2026-05-30)
 - [x] **Phase 6: Add Claude Status onto the right end of the Claude usage line** - A quiet-when-healthy Claude service-health indicator at the right end of the bottom line — triggered only by the tracked components (Claude Code / claude.ai / Claude Cowork), surfacing unresolved incidents (severity glyph + sanitized title) and scheduled maintenance (neutral glyph), on the existing detached ~5min cache, omitting silently when healthy/cold — not yet started (completed 2026-06-16)
-- [ ] **Phase 7: Filter/dismiss Claude-status incidents** - Let the user suppress specific status.claude.com incidents (e.g. the perpetual Mythos/Fable access-removal incident) so non-actionable, long-lived incidents stop perpetually lighting the Phase 6 service-health segment — config-driven filter under `[claude_status]` (dismiss-by-incident-id + optional title keyword/regex and/or impact/status threshold) — not yet planned
+- [ ] **Phase 7: Filter/dismiss Claude-status incidents** - Let the user suppress specific status.claude.com incidents (e.g. the perpetual Mythos/Fable access-removal incident) so non-actionable, long-lived incidents stop perpetually lighting the Phase 6 service-health segment — config-driven filter under `[claude_status]` (dismiss-by-incident-id + optional title keyword/regex and/or impact/status threshold) — 3 plans
 
 ## Phase Details
 
@@ -236,10 +236,12 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 →
 
 **Description:** Let the user suppress specific `status.claude.com` incidents (e.g. the perpetual Mythos/Fable access-removal incident) so non-actionable, long-lived incidents stop perpetually lighting the Phase 6 service-health segment. Extends the Phase 6 indicator with a config-driven filter (dismiss-by-incident-id plus optional title keyword/regex and/or impact/status threshold, under `[claude_status]`).
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Suppress non-actionable, long-lived `status.claude.com` incidents (e.g. the perpetual Mythos/Fable access-removal incident) via a dual filter (dismiss-by-incident-id + title keyword/regex), with an escalation safety valve, while preserving Phase 6 quiet-when-healthy and never-crash behavior.
+**Requirements**: none mapped (driven by CONTEXT.md decisions D-01..D-06)
 **Depends on:** Phase 6
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 7 to break down)
+- [ ] 07-01-PLAN.md — Foundation: [claude_status] config table + tool-owned dismissal store helpers + widened cache payload (D-05, D-06)
+- [ ] 07-02-PLAN.md — Dual filter in _derive_claude_status (id-dismiss + keyword/regex), escalation re-surface, auto-prune (D-01, D-03, D-04)
+- [ ] 07-03-PLAN.md — Management CLI: --status-incidents / --dismiss / --undismiss (D-02)
