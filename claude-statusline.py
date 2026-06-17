@@ -1667,6 +1667,63 @@ def fetch_alerts(cfg: dict) -> None:
         pass
 
 
+def _collect_tracked_incidents(summary: object) -> list:
+    """Extract the list of tracked (unresolved) incidents from a Statuspage.io summary.
+
+    Returns a list of compact dicts, each with:
+        {"id", "impact", "status", "title", "component"}
+    where component is the first matching tracked component name (or "" if none).
+
+    Titles are stored RAW/unsanitized (matches Phase 6 cache contract, T-07-03/T-06-01).
+    Only incidents with status in ("investigating", "identified", "monitoring") and at
+    least one tracked component are included — mirrors the _derive_claude_status filter.
+
+    Returns [] on any error or malformed input — never raises (D-10).
+    """
+    try:
+        if not isinstance(summary, dict):
+            return []
+        incidents_raw = summary.get("incidents", [])
+        if not isinstance(incidents_raw, list):
+            return []
+        result = []
+        for inc in incidents_raw:
+            try:
+                if not isinstance(inc, dict):
+                    continue
+                inc_status = inc.get("status", "")
+                if not isinstance(inc_status, str):
+                    continue
+                if inc_status not in ("investigating", "identified", "monitoring"):
+                    continue
+                component_refs = inc.get("components", [])
+                if not isinstance(component_refs, list):
+                    component_refs = []
+                # Find first matching tracked component name
+                component = ""
+                for ref in component_refs:
+                    if not isinstance(ref, dict):
+                        continue
+                    name = ref.get("name", "")
+                    if isinstance(name, str) and name in _CLAUDE_TRACKED_COMPONENTS:
+                        component = name
+                        break
+                if not component:
+                    continue  # no tracked component → skip (mirrors _derive_claude_status logic)
+                result.append({
+                    "id":        inc.get("id", ""),
+                    "impact":    inc.get("impact", "none"),
+                    "status":    inc_status,
+                    "title":     inc.get("name", ""),   # RAW — sanitized by Plan 03 at print time
+                    "component": component,
+                })
+            except Exception:
+                continue  # per-item guard — skip malformed entries, never raise
+        return result
+    except Exception:
+        return []
+
+
 def fetch_claude_status(cfg: dict) -> None:
     """Fetch Anthropic/Claude service health and write the claude_status cache section.
 
@@ -1723,18 +1780,27 @@ def fetch_claude_status(cfg: dict) -> None:
         # Derive the trigger result from the parsed payload
         derived = _derive_claude_status(summary)
 
+        # Collect the raw tracked-incident list (D-02 enabler for --status-incidents,
+        # Plan 03). Included in BOTH branches so the payload shape is always stable
+        # (Plan 03 reads tracked_incidents from cache without a network fetch).
+        tracked_incidents = _collect_tracked_incidents(summary)
+
         # Build the cache payload — always include the derived result (or an explicit
         # "noteworthy=False" marker) so even a healthy refresh timestamps the section,
         # preventing the maybe_spawn_refresh loop from respawning every render.
         if derived is not None:
             payload = {
-                "noteworthy": True,
-                "severity":   derived.get("severity"),
-                "label":      derived.get("label"),
-                "kind":       derived.get("kind"),
+                "noteworthy":        True,
+                "severity":          derived.get("severity"),
+                "label":             derived.get("label"),
+                "kind":              derived.get("kind"),
+                "tracked_incidents": tracked_incidents,
             }
         else:
-            payload = {"noteworthy": False}
+            payload = {
+                "noteworthy":        False,
+                "tracked_incidents": tracked_incidents,
+            }
 
         # Write the claude_status cache section atomically
         write_cache_section(_CACHE_PATH, "claude_status", payload, now)
