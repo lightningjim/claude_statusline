@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: complete
-stopped_at: Phase 7 complete (UAT verified, gap-closure 07-04 done)
-last_updated: "2026-06-17T14:52:31.694Z"
-last_activity: 2026-06-17 -- Phase 07 complete: render-time suppression gap closed
+status: planning
+stopped_at: Phase 07.1 context gathered
+last_updated: "2026-06-18T14:56:33.237Z"
+last_activity: "2026-06-17 -- Phase 07 complete: render-time suppression gap closed"
 progress:
-  total_phases: 11
+  total_phases: 13
   completed_phases: 11
   total_plans: 25
   completed_plans: 25
-  percent: 100
+  percent: 85
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-28)
 
 Phase: 07 (filter-dismiss-claude-status-incidents-let-the-user-suppress) — COMPLETE
 Plan: 4 of 4
-Status: Phase 07 complete (UAT verified, gap-closure 07-04 done)
+Status: planning
 Last activity: 2026-06-17 -- Phase 07 complete: render-time suppression gap closed
 
 Progress: [██████████] 100%
@@ -130,6 +130,9 @@ Recent decisions affecting current work:
 - Phase 05.1 inserted after Phase 05: Fix TestGsdSegmentBuilder environment-leak test failures (URGENT)
 - Phase 02.2 inserted after Phase 2: Differentiate between watches, warnings, and advisories (URGENT)
 - Phase 6 added: Add Claude Status onto the right end of the Claude usage line
+- Phase 7 added: Filter/dismiss Claude-status incidents
+- Phase 8 added: Fix incorrect weather condition icon selection — statusline sometimes grabs the wrong weather glyph (e.g. non-weather glyph next to 88°F / Heat Advisory)
+- Phase 07.1 inserted after Phase 7: Distinguish resolved from unresolved Claude status incidents — keep showing important resolved-but-not-cleared incidents marked as resolved (URGENT)
 
 ### Pending Todos
 
@@ -155,6 +158,6 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-06-17T14:52:31.684Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-filter-dismiss-claude-status-incidents-let-the-user-suppress/07-CONTEXT.md
+Last session: 2026-06-18T14:56:33.227Z
+Stopped at: Phase 07.1 context gathered
+Resume file: .planning/phases/07.1-distinguish-resolved-from-unresolved-claude-status-incidents/07.1-CONTEXT.md
