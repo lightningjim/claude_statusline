@@ -486,9 +486,12 @@ def _print_status_incidents(cache: dict, dismissals: dict) -> None:
     Reads tracked_incidents from the claude_status cache section + the dismissal store.
     Does NOT fetch (render-path discipline: cheap, no network).
 
-    State column values:
+    State column values (in precedence order):
       - "dismissed" — id is in the store and is in the live tracked_incidents list
-      - "active"    — id is in the live list and NOT dismissed
+                      (takes precedence over all other states, including resolved)
+      - "resolved"  — id is in the live list, NOT dismissed, and entry status=="resolved"
+                      (wave-1 widened tracked_incidents to include resolved-but-degraded entries)
+      - "active"    — id is in the live list, NOT dismissed, and status is not resolved
       - "stale"     — id is in the store but NOT in the live tracked_incidents list
 
     Titles (and any feed-derived string) are ANSI-sanitized using the verbatim
@@ -557,7 +560,15 @@ def _print_status_incidents(cache: dict, dismissals: dict) -> None:
             component = _sanitize(entry.get("component", ""), COL_COMPONENT)
             title = _sanitize(entry.get("title", ""), COL_TITLE)
             raw_id = entry.get("id", "")
-            state = "dismissed" if raw_id in dismissals else "active"
+            # STATE precedence: dismissed > resolved > active (D-07, Plan 07.1-03)
+            # dismissed always wins; resolved entries (widened by Wave-1) show 'resolved'
+            # so the CLI gives a complete picture of what is or was driving the segment.
+            if raw_id in dismissals:
+                state = "dismissed"
+            elif entry.get("status") == "resolved":
+                state = "resolved"
+            else:
+                state = "active"
             print(
                 f"{inc_id:<{COL_ID}}  {impact:<{COL_IMPACT}}  {status:<{COL_STATUS}}"
                 f"  {state:<{COL_STATE}}  {component:<{COL_COMPONENT}}  {title}"
