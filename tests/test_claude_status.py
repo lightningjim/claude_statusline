@@ -509,6 +509,95 @@ class TestDeriveClaudeStatus(unittest.TestCase):
         except Exception as e:
             self.fail(f"_derive_claude_status raised on garbage resolved incidents: {e}")
 
+    # ---- WR-03 / CR-01 regression: multi-component masking ----
+
+    def _multi_component_summary(self, code_status, ai_status, resolved_for):
+        """Two tracked components degraded; a resolved incident touches `resolved_for`.
+
+        The other degraded component is left UNEXPLAINED (no incident at all).
+        """
+        return {
+            "components": [
+                {"name": "Claude Code", "status": code_status},
+                {"name": "claude.ai", "status": ai_status},
+                {"name": "Claude Cowork", "status": "operational"},
+            ],
+            "incidents": [
+                {"id": "r1", "name": "Code fixed", "status": "resolved",
+                 "impact": "major", "updated_at": "2026-06-18T12:00:00Z",
+                 "components": [{"name": resolved_for}]},
+            ],
+            "scheduled_maintenances": [],
+        }
+
+    def test_cr01_unexplained_degraded_wins_over_resolved_code_first(self):
+        """CR-01: resolved-explained 'Claude Code' + UNEXPLAINED 'claude.ai' → verdict RED.
+
+        The resolved incident explains the alphabetically-first component (Claude
+        Code), but claude.ai is degraded with no incident. The verdict must be the
+        RED unexplained component, NOT green — a green 'resolved' here would mask a
+        live outage (truth-telling, D-05).
+        """
+        summary = self._multi_component_summary(
+            code_status="partial_outage", ai_status="partial_outage",
+            resolved_for="Claude Code",
+        )
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("kind"), "degraded",
+                         f"Unexplained degraded must win RED over resolved; got {result!r}")
+        self.assertEqual(result.get("component"), "claude.ai",
+                         f"The UNEXPLAINED component must drive the verdict; got {result!r}")
+        self.assertEqual(result.get("incident_id"), None,
+                         "Genuinely-unexplained degraded must carry incident_id=None")
+
+    def test_cr01_unexplained_degraded_wins_over_resolved_ai_first(self):
+        """CR-01 (opposite sort order): resolved explains 'claude.ai', 'Claude Code' unexplained → RED.
+
+        Swapping which component carries the resolved incident must NOT flip the
+        verdict to green — the result must remain order-independent (RED for the
+        unexplained component).
+        """
+        summary = self._multi_component_summary(
+            code_status="partial_outage", ai_status="partial_outage",
+            resolved_for="claude.ai",
+        )
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("kind"), "degraded",
+                         f"Unexplained degraded must win RED regardless of sort order; got {result!r}")
+        self.assertEqual(result.get("component"), "Claude Code",
+                         f"The UNEXPLAINED component must drive the verdict; got {result!r}")
+
+    def test_cr01_all_degraded_components_resolved_returns_green(self):
+        """CR-01 boundary: EVERY degraded component is resolved-explained → green resolved verdict.
+
+        Only when there is no unexplained-degraded component may the resolved
+        verdict be emitted. The bound resolved incident_id must be carried.
+        """
+        summary = {
+            "components": [
+                {"name": "Claude Code", "status": "partial_outage"},
+                {"name": "claude.ai", "status": "degraded_performance"},
+                {"name": "Claude Cowork", "status": "operational"},
+            ],
+            "incidents": [
+                {"id": "r1", "name": "Code fixed", "status": "resolved",
+                 "impact": "major", "updated_at": "2026-06-18T12:00:00Z",
+                 "components": [{"name": "Claude Code"}]},
+                {"id": "r2", "name": "AI fixed", "status": "resolved",
+                 "impact": "minor", "updated_at": "2026-06-18T13:00:00Z",
+                 "components": [{"name": "claude.ai"}]},
+            ],
+            "scheduled_maintenances": [],
+        }
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("kind"), "resolved",
+                         f"All-resolved-explained must return green resolved; got {result!r}")
+        self.assertIn(result.get("incident_id"), ("r1", "r2"),
+                      f"Resolved verdict must bind an explaining incident_id; got {result!r}")
+
 
 # ---------------------------------------------------------------------------
 # Task 3: fetch_claude_status
@@ -1712,6 +1801,8 @@ class TestClaudeStatusRenderSuppression(unittest.TestCase):
         sec = self._fresh_section(
             noteworthy=True, severity="resolved",
             label="API errors now cleared", kind="resolved",
+            # Phase 07.1 CR-02 contract: the section binds to its EXPLAINING incident id.
+            incident_id="inc-resolved-001", component="Claude Code",
             tracked_incidents=[resolved_inc],
         )
         # The only explaining incident is dismissed at matching impact (dismissal stands)
@@ -1731,6 +1822,7 @@ class TestClaudeStatusRenderSuppression(unittest.TestCase):
         sec = self._fresh_section(
             noteworthy=True, severity="resolved",
             label="Mythos access restored", kind="resolved",
+            incident_id="inc-resolved-001", component="Claude Code",
             tracked_incidents=[resolved_inc],
         )
         result = self._segment(
@@ -1754,6 +1846,9 @@ class TestClaudeStatusRenderSuppression(unittest.TestCase):
         sec = self._fresh_section(
             noteworthy=True, severity="minor",
             label="claude.ai: degraded performance", kind="degraded",
+            # Phase 07.1 CR-02: a degraded component whose only explanation is a muted
+            # incident bakes that incident id so the render mute re-check returns None.
+            incident_id="inc-active-001", component="claude.ai",
             tracked_incidents=[degraded_inc],
         )
         dismissal_store = {
@@ -1834,6 +1929,80 @@ class TestClaudeStatusRenderSuppression(unittest.TestCase):
                                     f"Must return str|None on garbage input; got {result!r}")
                 except Exception as exc:
                     self.fail(f"_claude_status_segment raised on garbage resolved section: {exc}")
+
+    # ---- WR-03 / CR-02 regression: multi-incident mute binding ----
+
+    def test_cr02_dismissed_explaining_incident_with_unrelated_survivor_returns_none(self):
+        """CR-02: baked resolved for A; dismiss ONLY A; unrelated B survives → segment None.
+
+        The render-time mute re-check must bind to the EXPLAINING incident (A), not
+        to 'any surviving tracked incident'. Before the fix, unrelated non-suppressed
+        B kept the section alive and re-surfaced A's label in GREEN — leaking the very
+        incident the user muted (D-06 Risk #2). Must return None: no green, no red.
+        """
+        inc_a = {"id": "A", "impact": "major", "status": "resolved",
+                 "title": "Claude Code fixed", "component": "Claude Code"}
+        inc_b = {"id": "B", "impact": "minor", "status": "resolved",
+                 "title": "Unrelated AI thing", "component": "claude.ai"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="resolved",
+            label="Claude Code fixed", kind="resolved",
+            incident_id="A", component="Claude Code",
+            tracked_incidents=[inc_a, inc_b],  # A explains; B is unrelated + non-suppressed
+        )
+        dismissal_store = {
+            "A": {"impact_at_dismiss": "major", "dismissed_at": time.time() - 10},
+        }
+        result = self._segment(sec, dismissal_store=dismissal_store)
+        self.assertIsNone(result,
+                          "Dismissed explaining incident must mute the section even when an "
+                          "unrelated incident survives (CR-02 / D-06 Risk #2); "
+                          f"got {result!r}")
+
+    def test_cr02_unrelated_survivor_does_not_leak_when_explaining_present(self):
+        """CR-02 positive control: explaining incident A non-suppressed → renders green for A.
+
+        With no dismissals, the bound resolved section renders its OWN label (A),
+        never B's — proving the binding selects the explaining incident, not the
+        first surviving one.
+        """
+        inc_a = {"id": "A", "impact": "major", "status": "resolved",
+                 "title": "Claude Code fixed", "component": "Claude Code"}
+        inc_b = {"id": "B", "impact": "minor", "status": "resolved",
+                 "title": "Unrelated AI thing", "component": "claude.ai"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="resolved",
+            label="Claude Code fixed", kind="resolved",
+            incident_id="A", component="Claude Code",
+            tracked_incidents=[inc_b, inc_a],  # B sorts first — must NOT be picked
+        )
+        result = self._segment(sec, dismissal_store={})
+        self.assertIsNotNone(result, "Non-suppressed explaining incident must render")
+        self.assertIn(self.mod.GREEN, result, f"Resolved must be green; got {result!r}")
+        self.assertIn("Claude Code fixed", result,
+                      f"Must render the EXPLAINING incident's label, not the unrelated one; "
+                      f"got {result!r}")
+        self.assertNotIn("Unrelated AI thing", result,
+                         f"Unrelated incident label must not leak; got {result!r}")
+
+    def test_cr02_explaining_incident_absent_from_feed_returns_none(self):
+        """CR-02: baked resolved id no longer present in tracked_incidents → segment None.
+
+        If the explaining incident has dropped out of the live feed, the resolved
+        verdict has no live justification → render nothing (never green, never red).
+        """
+        inc_b = {"id": "B", "impact": "minor", "status": "resolved",
+                 "title": "Unrelated AI thing", "component": "claude.ai"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="resolved",
+            label="Claude Code fixed", kind="resolved",
+            incident_id="A", component="Claude Code",
+            tracked_incidents=[inc_b],  # A is gone
+        )
+        result = self._segment(sec, dismissal_store={})
+        self.assertIsNone(result,
+                          "Explaining incident absent from feed must mute the section; "
+                          f"got {result!r}")
 
 
 # ---------------------------------------------------------------------------
