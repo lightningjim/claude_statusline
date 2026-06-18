@@ -2312,6 +2312,14 @@ def fetch_claude_status(cfg: dict) -> None:
                 "severity":          derived.get("severity"),
                 "label":             derived.get("label"),
                 "kind":              derived.get("kind"),
+                # WR-02 (CR-02 enabler): bake the EXPLAINING incident id + component so
+                # the render-time mute re-check (_claude_status_segment) can bind its
+                # suppression decision to the SPECIFIC driving incident rather than to
+                # "any surviving tracked incident".  Present only for degraded/resolved
+                # verdicts (None for incident/maintenance kinds); the render path reads
+                # both defensively (missing → safe None → falls back to prior behavior).
+                "incident_id":       derived.get("incident_id"),
+                "component":         derived.get("component"),
                 "tracked_incidents": tracked_incidents,
             }
         else:
