@@ -1730,6 +1730,17 @@ def _derive_claude_status(
     when something noteworthy is found.  The label is stored RAW (unsanitized)
     so the cache is a faithful record — sanitization is the render path's job (Plan 02).
 
+    Phase 07.1 (CR-02/WR-02): degraded/resolved verdicts (kind in {"degraded",
+    "resolved"}) additionally carry two binding fields so the render-time mute
+    re-check can key off the SPECIFIC explaining incident rather than "any
+    surviving incident":
+        {"incident_id": str | None, "component": str}
+    - ``incident_id`` is the resolved incident that explains a "resolved" verdict
+      (None for "degraded", which has no explaining incident by definition).
+    - ``component`` is the tracked component name that drove the verdict.
+    Rule 1 (incident) / Rule 2 (maintenance) returns DO NOT carry these keys; all
+    consumers read them defensively (missing field → safe None fallback).
+
     Derivation priority (first match wins):
       1. Unresolved incident whose components[] intersect the tracked set AND is
          NOT suppressed by the filter → kind="incident"
@@ -1865,58 +1876,101 @@ def _derive_claude_status(
             "major_outage",
             "under_maintenance",
         )
+        severity_map = {
+            "degraded_performance": "minor",
+            "partial_outage":       "major",
+            "major_outage":         "critical",
+            "under_maintenance":    "maintenance",
+        }
+        # CR-01/WR-01 fix: classify EVERY degraded tracked component before deciding
+        # the verdict, instead of scanning-and-returning on the first.  Truth-telling
+        # priority (D-05 / [[statusline-omit-not-fake]]): a genuinely-broken,
+        # UNEXPLAINED degraded component (red) MUST win over a resolved-explained one
+        # (green) — otherwise a green "resolved" for an early-sorted component masks a
+        # real RED outage on a later-sorted component (order-dependent masking bug).
+        # We therefore collect the resolved match (if any) but keep scanning; only when
+        # EVERY degraded component is explained by a non-suppressed resolved incident do
+        # we emit the green resolved verdict (newest updated_at among the resolved wins).
+        #
+        # CR-02/WR-02 fix: bake the EXPLAINING incident id + component into the returned
+        # dict so the render-time mute re-check can bind the suppression decision to the
+        # specific driving incident, not to "any surviving incident".
+        resolved_result = None
         for comp_name in sorted(_CLAUDE_TRACKED_COMPONENTS):  # deterministic order
             status = comp_status.get(comp_name, "operational")
-            if status in non_operational:
-                # --- Phase 07.1: resolved-incident scan for this degraded component ---
-                try:
-                    resolved_candidates = []
-                    for inc in incidents_raw:
-                        if not isinstance(inc, dict):
-                            continue
-                        inc_status = inc.get("status", "")
-                        if not isinstance(inc_status, str):
-                            continue
-                        if inc_status != "resolved":
-                            continue  # only resolved incidents qualify (D-05)
-                        # Must touch THIS specific degraded component (D-05)
-                        tracked = _tracked_component_names(inc.get("components", []))
-                        if comp_name not in tracked:
-                            continue
-                        # Reuse the SAME suppression gate Rule 1 uses (D-06 — single ordering)
-                        if _is_suppressed(
-                            inc.get("id", ""),
-                            inc.get("impact", "none"),
-                            inc.get("name", ""),
-                            dismissals,
-                            cfg,
-                        ):
-                            continue  # skip — suppressed; fall through to red (D-06)
-                        resolved_candidates.append(inc)
-                    if resolved_candidates:
-                        # Newest wins: ISO-8601 updated_at string compare; empty/garbage sorts low
-                        best_resolved = max(
-                            resolved_candidates,
-                            key=lambda i: i.get("updated_at", "") if isinstance(i.get("updated_at"), str) else "",
-                        )
-                        res_label = best_resolved.get("name", "")
-                        if not isinstance(res_label, str):
-                            res_label = ""
-                        return {"severity": "resolved", "label": res_label, "kind": "resolved"}
-                except Exception:
-                    pass  # resolved scan failure → fall through to existing red return (D-10)
-                # --- end Phase 07.1 resolved scan ---
+            if status not in non_operational:
+                continue
+            # --- Phase 07.1: resolved-incident scan for THIS degraded component ---
+            best_resolved = None
+            try:
+                resolved_candidates = []
+                for inc in incidents_raw:
+                    if not isinstance(inc, dict):
+                        continue
+                    inc_status = inc.get("status", "")
+                    if not isinstance(inc_status, str):
+                        continue
+                    if inc_status != "resolved":
+                        continue  # only resolved incidents qualify (D-05)
+                    # Must touch THIS specific degraded component (D-05)
+                    tracked = _tracked_component_names(inc.get("components", []))
+                    if comp_name not in tracked:
+                        continue
+                    # Reuse the SAME suppression gate Rule 1 uses (D-06 — single ordering)
+                    if _is_suppressed(
+                        inc.get("id", ""),
+                        inc.get("impact", "none"),
+                        inc.get("name", ""),
+                        dismissals,
+                        cfg,
+                    ):
+                        continue  # skip — suppressed; counts as UNEXPLAINED (D-06)
+                    resolved_candidates.append(inc)
+                if resolved_candidates:
+                    # Newest wins: ISO-8601 updated_at string compare; empty/garbage sorts low
+                    best_resolved = max(
+                        resolved_candidates,
+                        key=lambda i: i.get("updated_at", "") if isinstance(i.get("updated_at"), str) else "",
+                    )
+            except Exception:
+                best_resolved = None  # resolved scan failure → treat as unexplained → red (D-10)
+            # --- end Phase 07.1 resolved scan ---
+
+            if best_resolved is None:
+                # UNEXPLAINED degraded component → red wins immediately, regardless of
+                # any resolved-explained component found before it (CR-01 truth-telling).
                 human_state = _CLAUDE_STATUS_LABELS.get(status, status.replace("_", " "))
                 label = f"{comp_name}: {human_state}"
-                # Map component status to severity tier
-                severity_map = {
-                    "degraded_performance": "minor",
-                    "partial_outage":       "major",
-                    "major_outage":         "critical",
-                    "under_maintenance":    "maintenance",
-                }
                 severity = severity_map.get(status, "minor")
-                return {"severity": severity, "label": label, "kind": "degraded"}
+                return {
+                    "severity":     severity,
+                    "label":        label,
+                    "kind":         "degraded",
+                    "incident_id":  None,        # degraded has no explaining incident
+                    "component":    comp_name,
+                }
+
+            # Resolved-explained component — remember it, but keep scanning in case a
+            # later-sorted degraded component is unexplained (red must still win).
+            if resolved_result is None:
+                res_label = best_resolved.get("name", "")
+                if not isinstance(res_label, str):
+                    res_label = ""
+                res_id = best_resolved.get("id", "")
+                if not isinstance(res_id, str):
+                    res_id = ""
+                resolved_result = {
+                    "severity":     "resolved",
+                    "label":        res_label,
+                    "kind":         "resolved",
+                    "incident_id":  res_id,       # CR-02: explaining incident bound to section
+                    "component":    comp_name,
+                }
+
+        # Every degraded component (if any) was explained by a non-suppressed resolved
+        # incident → emit the green resolved verdict.  None if nothing was degraded.
+        if resolved_result is not None:
+            return resolved_result
 
         # --- Rule 4: All healthy (D-01) ---
         return None
