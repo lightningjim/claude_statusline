@@ -116,6 +116,12 @@ class TestClaudeStatusColor(unittest.TestCase):
         self.assertEqual(result, self.mod.YELLOW,
                          f"None input must return YELLOW; got {result!r}")
 
+    def test_resolved_returns_green(self):
+        """resolved severity → GREEN (D-03: broke-then-fixed, non-alarming)."""
+        result = self.mod._claude_status_color("resolved")
+        self.assertEqual(result, self.mod.GREEN,
+                         f"resolved must return GREEN; got {result!r}")
+
 
 # ---------------------------------------------------------------------------
 # Task 1: DEFAULTS keys
