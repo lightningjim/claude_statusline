@@ -2041,15 +2041,17 @@ def fetch_alerts(cfg: dict) -> None:
 
 
 def _collect_tracked_incidents(summary: object) -> list:
-    """Extract the list of tracked (unresolved) incidents from a Statuspage.io summary.
+    """Extract the list of tracked (unresolved and resolved) incidents from a Statuspage.io summary.
 
     Returns a list of compact dicts, each with:
         {"id", "impact", "status", "title", "component"}
     where component is the first matching tracked component name (or "" if none).
 
     Titles are stored RAW/unsanitized (matches Phase 6 cache contract, T-07-03/T-06-01).
-    Only incidents with status in ("investigating", "identified", "monitoring") and at
-    least one tracked component are included — mirrors the _derive_claude_status filter.
+    Incidents with status in ("investigating", "identified", "monitoring", "resolved") and
+    at least one tracked component are included — "resolved" added in Phase 07.1 Plan 01
+    (D-06/D-07) so render-time suppression re-check and --status-incidents can see them.
+    The "status" field now may carry "resolved"; Wave-3 render and CLI branch on it.
 
     Returns [] on any error or malformed input — never raises (D-10).
     """
@@ -2067,7 +2069,7 @@ def _collect_tracked_incidents(summary: object) -> list:
                 inc_status = inc.get("status", "")
                 if not isinstance(inc_status, str):
                     continue
-                if inc_status not in ("investigating", "identified", "monitoring"):
+                if inc_status not in ("investigating", "identified", "monitoring", "resolved"):
                     continue
                 component_refs = inc.get("components", [])
                 if not isinstance(component_refs, list):
