@@ -2935,6 +2935,126 @@ class TestEscalationFixtureAndAutoPrune(unittest.TestCase):
         self.assertEqual(store, {},
                          "All dismissed ids must be pruned when live feed has no incidents (D-04)")
 
+    # ---- Phase 07.1 Plan 02: resolved-but-degraded retention (D-06) ----
+    #
+    # A dismissed incident that resolves while its tracked component is still
+    # non-operational must NOT be pruned (D-06: muting wins through the resolved
+    # phase). The dismissal must survive so the incident cannot re-surface green.
+    # Only when the component returns to operational (or the incident disappears)
+    # should the dismissal be pruned as genuinely stale.
+
+    def test_dismissed_resolved_degraded_component_dismissal_retained(self):
+        """Dismissed resolved incident whose tracked component is still degraded → dismissal RETAINED.
+
+        D-06: muting wins through the resolved phase. A dismissed incident that has
+        resolved but whose component (Claude Code) is still in partial_outage must
+        keep its dismissal alive so it cannot re-surface green.
+
+        Uses status_resolved_degraded.json: inc-resolved-001 (status=resolved),
+        Claude Code in partial_outage.
+        """
+        initial_store = {
+            "inc-resolved-001": {"impact_at_dismiss": "major", "dismissed_at": 1700000000.0},
+        }
+        self.mod.write_dismissals(initial_store, self.dismissals_path)
+
+        # Fetch against the resolved-but-degraded fixture.
+        # inc-resolved-001 is resolved but Claude Code is still partial_outage →
+        # live_ids MUST include inc-resolved-001 → dismissal survives prune.
+        self._fetch_with_fixture("status_resolved_degraded.json")
+
+        store = self.mod.read_dismissals(self.dismissals_path)
+        self.assertIn("inc-resolved-001", store,
+                      "Dismissed resolved incident with still-degraded component must "
+                      "be RETAINED in the dismissal store (D-06: muting wins through resolved phase)")
+
+    def test_dismissed_resolved_operational_component_dismissal_pruned(self):
+        """Dismissed resolved incident whose tracked component is back to operational → dismissal PRUNED.
+
+        D-06: once the component is operational, the incident is truly stale and
+        the dismissal can be safely removed. Uses an inline summary where
+        inc-resolved-001 is resolved and Claude Code is operational.
+        """
+        # Build an inline summary: resolved incident, tracked component back to operational
+        summary_with_resolved_operational = {
+            "page": {"id": "test"},
+            "components": [
+                {"name": "Claude Code", "status": "operational"},
+                {"name": "claude.ai", "status": "operational"},
+                {"name": "Claude Cowork", "status": "operational"},
+            ],
+            "incidents": [
+                {
+                    "id": "inc-resolved-001",
+                    "name": "Claude Code partial outage — now cleared",
+                    "status": "resolved",
+                    "impact": "major",
+                    "updated_at": "2026-06-18T13:00:00Z",
+                    "components": [
+                        {"name": "Claude Code", "status": "operational"},
+                    ],
+                }
+            ],
+            "scheduled_maintenances": [],
+        }
+
+        initial_store = {
+            "inc-resolved-001": {"impact_at_dismiss": "major", "dismissed_at": 1700000000.0},
+        }
+        self.mod.write_dismissals(initial_store, self.dismissals_path)
+
+        # Write the inline summary as a temp fixture file and load via FAKE_STATUS
+        import tempfile as _tempfile
+        import json as _json
+        tmp_fixture = os.path.join(self.tmpdir, "status_resolved_operational_inline.json")
+        with open(tmp_fixture, "w") as fh:
+            _json.dump(summary_with_resolved_operational, fh)
+
+        with patch.dict(os.environ, {"CLAUDE_STATUSLINE_FAKE_STATUS": tmp_fixture}):
+            with patch.object(self.mod, "_CACHE_PATH", self.cache_path):
+                with patch.object(self.mod, "_DISMISSALS_PATH", self.dismissals_path):
+                    self.mod.fetch_claude_status(self.cfg)
+
+        store = self.mod.read_dismissals(self.dismissals_path)
+        self.assertNotIn("inc-resolved-001", store,
+                         "Dismissed resolved incident with operational component must "
+                         "be PRUNED (genuinely stale — D-06 does not protect it once cleared)")
+
+    def test_unresolved_incident_id_still_retained_in_live_ids(self):
+        """Unresolved (monitoring) incident dismissal is still retained after the prune fix.
+
+        Regression: the base behavior for unresolved incidents must remain unchanged.
+        Uses status_incident_tracked.json which has inc-001 (status=monitoring).
+        """
+        initial_store = {
+            "inc-001": {"impact_at_dismiss": "minor", "dismissed_at": 1700000000.0},
+        }
+        self.mod.write_dismissals(initial_store, self.dismissals_path)
+
+        self._fetch_with_fixture("status_incident_tracked.json")
+
+        store = self.mod.read_dismissals(self.dismissals_path)
+        self.assertIn("inc-001", store,
+                      "Unresolved incident dismissal must still be RETAINED (regression guard)")
+
+    def test_vanished_incident_dismissal_still_pruned(self):
+        """Incident that has vanished from the feed entirely → dismissal still pruned.
+
+        Regression: the base prune behavior for incidents no longer in the feed
+        must remain unchanged regardless of the resolved-degraded fix.
+        """
+        initial_store = {
+            "inc-vanished-999": {"impact_at_dismiss": "minor", "dismissed_at": 1700000000.0},
+        }
+        self.mod.write_dismissals(initial_store, self.dismissals_path)
+
+        # status_operational.json has no incidents → vanished id must be pruned
+        self._fetch_with_fixture("status_operational.json")
+
+        store = self.mod.read_dismissals(self.dismissals_path)
+        self.assertNotIn("inc-vanished-999", store,
+                         "Vanished incident dismissal must be PRUNED (truly stale — regression guard)")
+
 
 # ---------------------------------------------------------------------------
 # Phase 07 Plan 03 Task 1: --dismiss / --undismiss store-mutation flags
