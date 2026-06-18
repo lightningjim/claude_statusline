@@ -1896,6 +1896,7 @@ def _derive_claude_status(
         # dict so the render-time mute re-check can bind the suppression decision to the
         # specific driving incident, not to "any surviving incident".
         resolved_result = None
+        muted_result = None
         for comp_name in sorted(_CLAUDE_TRACKED_COMPONENTS):  # deterministic order
             status = comp_status.get(comp_name, "operational")
             if status not in non_operational:
@@ -1958,22 +1959,39 @@ def _derive_claude_status(
             # --- end Phase 07.1 resolved scan ---
 
             if best_resolved is None:
-                # No non-suppressed resolved incident explains this degraded component.
-                # UNEXPLAINED degraded → red wins immediately, regardless of any
-                # resolved-explained component found before it (CR-01 truth-telling).
-                # If a MUTED incident is the only thing touching the component, bake its
-                # id so the render mute re-check returns None (D-06: no red fallback);
-                # otherwise incident_id stays None → genuinely-unexplained → stays RED.
-                human_state = _CLAUDE_STATUS_LABELS.get(status, status.replace("_", " "))
-                label = f"{comp_name}: {human_state}"
-                severity = severity_map.get(status, "minor")
-                return {
-                    "severity":     severity,
-                    "label":        label,
-                    "kind":         "degraded",
-                    "incident_id":  muting_incident_id,  # None → genuinely-unexplained → RED
-                    "component":    comp_name,
-                }
+                if muting_incident_id is None:
+                    # GENUINELY-unexplained degraded (no resolved incident, no muted
+                    # incident touching it) → real RED outage → wins immediately,
+                    # order-independent, regardless of any resolved- or muted-explained
+                    # component seen before it (CR-01 truth-telling, D-05).
+                    human_state = _CLAUDE_STATUS_LABELS.get(status, status.replace("_", " "))
+                    label = f"{comp_name}: {human_state}"
+                    severity = severity_map.get(status, "minor")
+                    return {
+                        "severity":     severity,
+                        "label":        label,
+                        "kind":         "degraded",
+                        "incident_id":  None,   # genuinely-unexplained → stays RED
+                        "component":    comp_name,
+                    }
+                # MUTED-explained degraded (only a suppressed incident touches it).
+                # D-06: this section must render NOTHING (the render mute re-check sees
+                # the baked muted incident_id and returns None — no red fallback).  But
+                # do NOT early-return: a later-sorted component may be genuinely-
+                # unexplained RED, which MUST still win (CR-01 surviving-case fix).
+                # Defer it; resolved-green outranks a muted-None at the end.
+                if muted_result is None:
+                    human_state = _CLAUDE_STATUS_LABELS.get(status, status.replace("_", " "))
+                    label = f"{comp_name}: {human_state}"
+                    severity = severity_map.get(status, "minor")
+                    muted_result = {
+                        "severity":     severity,
+                        "label":        label,
+                        "kind":         "degraded",
+                        "incident_id":  muting_incident_id,  # muted → render returns None (D-06)
+                        "component":    comp_name,
+                    }
+                continue
 
             # Resolved-explained component — remember it, but keep scanning in case a
             # later-sorted degraded component is unexplained (red must still win).
@@ -1992,10 +2010,16 @@ def _derive_claude_status(
                     "component":    comp_name,
                 }
 
-        # Every degraded component (if any) was explained by a non-suppressed resolved
-        # incident → emit the green resolved verdict.  None if nothing was degraded.
+        # No genuinely-unexplained RED degraded component was found (those return
+        # immediately above).  Among the deferred verdicts, a non-suppressed
+        # resolved-explained component (green) outranks a muted-only component
+        # (which renders None) — show the real recovering incident; the muted one
+        # stays hidden (D-06).  If only muted-explained components remain, return the
+        # muted verdict so the render mute re-check renders nothing (no red fallback).
         if resolved_result is not None:
             return resolved_result
+        if muted_result is not None:
+            return muted_result
 
         # --- Rule 4: All healthy (D-01) ---
         return None

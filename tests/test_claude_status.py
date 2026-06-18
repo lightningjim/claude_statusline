@@ -598,6 +598,93 @@ class TestDeriveClaudeStatus(unittest.TestCase):
         self.assertIn(result.get("incident_id"), ("r1", "r2"),
                       f"Resolved verdict must bind an explaining incident_id; got {result!r}")
 
+    # ---- CR-01 surviving case: muted-explained must NOT mask a later unexplained RED ----
+
+    _MUTE_CFG = {"claude_status": {"filter_enabled": True,
+                                   "ignore_title_patterns": ["Mythos"]}}
+
+    def test_cr01_muted_explained_first_does_not_mask_unexplained_red(self):
+        """CR-01 (surviving case): 'Claude Code' degraded explained ONLY by a muted
+        incident + 'claude.ai' degraded UNEXPLAINED → verdict RED for claude.ai.
+
+        The muted-explained component sorts first; it must NOT early-return None and
+        short-circuit the scan — a genuinely-unexplained RED outage on a later-sorted
+        component must still win (truth-telling, D-05/D-06 interaction).
+        """
+        summary = {
+            "components": [
+                {"name": "Claude Code", "status": "partial_outage"},
+                {"name": "claude.ai", "status": "partial_outage"},
+                {"name": "Claude Cowork", "status": "operational"},
+            ],
+            "incidents": [
+                {"id": "m1", "name": "Mythos access removed", "status": "resolved",
+                 "impact": "minor", "updated_at": "2026-06-18T12:00:00Z",
+                 "components": [{"name": "Claude Code"}]},
+            ],
+            "scheduled_maintenances": [],
+        }
+        result = self.mod._derive_claude_status(summary, dismissals={}, cfg=self._MUTE_CFG)
+        self.assertIsNotNone(result, "Unexplained RED must surface, not be masked by a muted component")
+        self.assertEqual(result.get("kind"), "degraded",
+                         f"Unexplained degraded must win RED over a muted component; got {result!r}")
+        self.assertEqual(result.get("component"), "claude.ai",
+                         f"The UNEXPLAINED component must drive the verdict; got {result!r}")
+        self.assertEqual(result.get("incident_id"), None,
+                         "Genuinely-unexplained degraded must carry incident_id=None (→ RED)")
+
+    def test_cr01_all_muted_explained_returns_muted_verdict(self):
+        """Boundary: every degraded component explained ONLY by muted incidents → the
+        derivation returns the muted degraded verdict carrying the muting incident_id,
+        so the render-time mute re-check renders None (D-06: no red fallback)."""
+        summary = {
+            "components": [
+                {"name": "Claude Code", "status": "partial_outage"},
+                {"name": "claude.ai", "status": "operational"},
+                {"name": "Claude Cowork", "status": "operational"},
+            ],
+            "incidents": [
+                {"id": "m1", "name": "Mythos access removed", "status": "resolved",
+                 "impact": "minor", "updated_at": "2026-06-18T12:00:00Z",
+                 "components": [{"name": "Claude Code"}]},
+            ],
+            "scheduled_maintenances": [],
+        }
+        result = self.mod._derive_claude_status(summary, dismissals={}, cfg=self._MUTE_CFG)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("kind"), "degraded",
+                         f"All-muted must defer a degraded verdict carrying the muted id; got {result!r}")
+        self.assertEqual(result.get("incident_id"), "m1",
+                         "Muted-only verdict must bake the muting incident id so render returns None")
+
+    def test_cr01_resolved_green_outranks_muted_none(self):
+        """Priority: a non-suppressed resolved-explained component (green) outranks a
+        muted-only component (which renders None), when no unexplained RED exists."""
+        summary = {
+            "components": [
+                {"name": "Claude Code", "status": "partial_outage"},   # muted-explained
+                {"name": "claude.ai", "status": "partial_outage"},     # resolved-explained
+                {"name": "Claude Cowork", "status": "operational"},
+            ],
+            "incidents": [
+                {"id": "m1", "name": "Mythos access removed", "status": "resolved",
+                 "impact": "minor", "updated_at": "2026-06-18T12:00:00Z",
+                 "components": [{"name": "Claude Code"}]},
+                {"id": "r2", "name": "API errors", "status": "resolved",
+                 "impact": "major", "updated_at": "2026-06-18T13:00:00Z",
+                 "components": [{"name": "claude.ai"}]},
+            ],
+            "scheduled_maintenances": [],
+        }
+        result = self.mod._derive_claude_status(summary, dismissals={}, cfg=self._MUTE_CFG)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("kind"), "resolved",
+                         f"Resolved-green must outrank a muted-None component; got {result!r}")
+        self.assertEqual(result.get("component"), "claude.ai",
+                         f"The resolved (non-muted) component must drive the verdict; got {result!r}")
+        self.assertEqual(result.get("incident_id"), "r2",
+                         "Resolved verdict must bind the non-suppressed explaining incident id")
+
 
 # ---------------------------------------------------------------------------
 # Task 3: fetch_claude_status
