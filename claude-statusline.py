@@ -1522,6 +1522,9 @@ def _claude_status_color(severity: object) -> str:
             # Neutral hue for maintenance: DIM, not a severity color (D-04).
             # Using DIM (not DEFAULT_FG) so scheduled maintenance reads as low-key/informational.
             "maintenance": DIM,
+            # Resolved = GREEN: broke-then-fixed, non-alarming (D-03, Phase 07.1).
+            # Reuses the existing GREEN constant — no new color constant needed.
+            "resolved":    GREEN,
         }
         if not isinstance(severity, str):
             return YELLOW
