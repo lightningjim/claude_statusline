@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
+status: executing
 stopped_at: Phase 07.1 context gathered
-last_updated: "2026-06-18T15:12:41.648Z"
-last_activity: "2026-06-17 -- Phase 07 complete: render-time suppression gap closed"
+last_updated: "2026-06-18T15:13:56.658Z"
+last_activity: 2026-06-18 -- Phase 07.1 execution started
 progress:
   total_phases: 1
   completed_phases: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Phase 07 — filter-dismiss-claude-status-incidents-let-the-user-suppress
+**Current focus:** Phase 07.1 — distinguish-resolved-from-unresolved-claude-status-incidents
 
 ## Current Position
 
-Phase: 07 (filter-dismiss-claude-status-incidents-let-the-user-suppress) — COMPLETE
-Plan: 4 of 4
-Status: planning
-Last activity: 2026-06-17 -- Phase 07 complete: render-time suppression gap closed
+Phase: 07.1 (distinguish-resolved-from-unresolved-claude-status-incidents) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 07.1
+Last activity: 2026-06-18 -- Phase 07.1 execution started
 
 Progress: [██████████] 100%
 
