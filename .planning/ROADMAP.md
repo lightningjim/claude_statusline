@@ -13,18 +13,17 @@ Two vertical slices deliver a complete working statusline. Phase 1 wires up ever
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 1: Core Statusline** - Colored two-line bar from stdin — project, model+thinking, context bar, rate limits with reset times, TOML config, graceful degradation — DONE 2026-05-28
-- [x] **Phase 2: Weather Layer** - NWS conditions/temp/precip, cached alerts, local sunrise/sunset via astral, weather degradation (completed 2026-05-28)
-- [x] **Phase 02.1: Nerd Font icon set (INSERTED)** - Nerd Font glyphs across four segments (weather conditions/alerts, sun events, thinking, rate-limit) behind a single icon_set toggle; emoji retained as fallback (completed 2026-05-29)
-- [x] **Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)** (completed 2026-05-29)
-- [x] **Phase 03.1: Resolve default bar gradient vs shade test drift (INSERTED)** - Decide whether the default progress bar should render gradient or ▓ shade, then realign the two failing test_bottom_line.py tests with that decision (completed 2026-05-29)
-- [x] **Phase 4: git info including active worktree** (completed 2026-05-29)
-- [x] **Phase 5: GSD status info especially the active Plan(s) being run** (completed 2026-05-29)
-- [x] **Phase 05.1: Fix TestGsdSegmentBuilder environment-leak test failures (INSERTED)** - Make the 9 failing TestGsdSegmentBuilder tests hermetic by refreshing the handoff timestamp to now at call time (mirroring _make_live_state) + add a wall-clock-independence guard test; test-only, source unchanged (completed 2026-05-30)
-- [x] **Phase 6: Add Claude Status onto the right end of the Claude usage line** - A quiet-when-healthy Claude service-health indicator at the right end of the bottom line — triggered only by the tracked components (Claude Code / claude.ai / Claude Cowork), surfacing unresolved incidents (severity glyph + sanitized title) and scheduled maintenance (neutral glyph), on the existing detached ~5min cache, omitting silently when healthy/cold — not yet started (completed 2026-06-16)
-- [x] **Phase 7: Filter/dismiss Claude-status incidents** - Let the user suppress specific status.claude.com incidents (e.g. the perpetual Mythos/Fable access-removal incident) so non-actionable, long-lived incidents stop perpetually lighting the Phase 6 service-health segment — config-driven filter under `[claude_status]` (dismiss-by-incident-id + optional title keyword/regex and/or impact/status threshold) — 3 plans (completed 2026-06-17)
-- [x] **Phase 07.1: Distinguish resolved from unresolved Claude status incidents (INSERTED)** - Keep surfacing important recently-resolved incidents but render them GREEN (check-circle + `resolved:` prefix) while the affected component is still degraded, instead of an alarming red outage; unexplained-degraded stays red; muted incidents stay quiet through resolution; `--status-incidents` gains a `resolved` STATE (completed 2026-06-18)
-- [ ] **Phase 8: Fix incorrect weather condition icon selection** - In some cases the statusline grabs the wrong weather icon (e.g. a non-weather glyph showing next to 88°F / Heat Advisory) — not yet planned
+- [x] **Phase 1: Core Statusline** - Colored two-line bar from stdin — project, model+thinking, context bar, rate limits with reset times, TOML config, graceful degradation — DONE 2008-05-28
+- [x] **Phase 2: Weather Layer** - NWS conditions/temp/precip, cached alerts, local sunrise/sunset via astral, weather degradation (completed 2008-05-28)
+- [x] **Phase 02.1: Nerd Font icon set (INSERTED)** - Nerd Font glyphs across four segments (weather conditions/alerts, sun events, thinking, rate-limit) behind a single icon_set toggle; emoji retained as fallback (completed 2008-05-29)
+- [x] **Phase 3: Presets for the type of block fill for the progress bar (including the one in place but I'm sure there's other visually interesting variations)** (completed 2008-05-29)
+- [x] **Phase 03.1: Resolve default bar gradient vs shade test drift (INSERTED)** - Decide whether the default progress bar should render gradient or ▓ shade, then realign the two failing test_bottom_line.py tests with that decision (completed 2008-05-29)
+- [x] **Phase 4: git info including active worktree** (completed 2008-05-29)
+- [x] **Phase 5: GSD status info especially the active Plan(s) being run** (completed 2008-05-29)
+- [x] **Phase 05.1: Fix TestGsdSegmentBuilder environment-leak test failures (INSERTED)** - Make the 9 failing TestGsdSegmentBuilder tests hermetic by refreshing the handoff timestamp to now at call time (mirroring _make_live_state) + add a wall-clock-independence guard test; test-only, source unchanged (completed 2008-05-30)
+- [x] **Phase 6: Add Claude Status onto the right end of the Claude usage line** - A quiet-when-healthy Claude service-health indicator at the right end of the bottom line — triggered only by the tracked components (Claude Code / claude.ai / Claude Cowork), surfacing unresolved incidents (severity glyph + sanitized title) and scheduled maintenance (neutral glyph), on the existing detached ~5min cache, omitting silently when healthy/cold — not yet started (completed 2008-06-16)
+- [x] **Phase 7: Filter/dismiss Claude-status incidents** - Let the user suppress specific status.claude.com incidents (e.g. the perpetual Mythos/Fable access-removal incident) so non-actionable, long-lived incidents stop perpetually lighting the Phase 6 service-health segment — config-driven filter under `[claude_status]` (dismiss-by-incident-id + optional title keyword/regex and/or impact/status threshold) — 3 plans (completed 2008-06-17)
+- [x] **Phase 07.1: Distinguish resolved from unresolved Claude status incidents (INSERTED)** - Keep surfacing important recently-resolved incidents but render them GREEN (check-circle + `resolved:` prefix) while the affected component is still degraded, instead of an alarming red outage; unexplained-degraded stays red; muted incidents stay quiet through resolution; `--status-incidents` gains a `resolved` STATE (completed 2008-06-18)
 
 ## Phase Details
 
@@ -46,15 +45,15 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [x] 01-01-PLAN.md — Walking Skeleton: executable script reads stdin, renders top line `[project] [model 💭]`, graceful degradation, install helper wires settings.json (RUN-01/02, TOP-01/02/03) — DONE 2026-05-28
+- [x] 01-01-PLAN.md — Walking Skeleton: executable script reads stdin, renders top line `[project] [model 💭]`, graceful degradation, install helper wires settings.json (RUN-01/02, TOP-01/02/03) — DONE 2008-05-28
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [x] 01-02-PLAN.md — Bottom line: 20-wide context bar + %, 5h/weekly with threshold colors and non-green reset times (CTX-01/02, LIM-01/02/03/04, FMT-01) — DONE 2026-05-28
+- [x] 01-02-PLAN.md — Bottom line: 20-wide context bar + %, 5h/weekly with threshold colors and non-green reset times (CTX-01/02, LIM-01/02/03/04, FMT-01) — DONE 2008-05-28
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [x] 01-03-PLAN.md — TOML config at ~/.claude/claude-statusline.toml via tomllib: silent defaults, per-segment toggles, thresholds, units (CFG-01) — DONE 2026-05-28
+- [x] 01-03-PLAN.md — TOML config at ~/.claude/claude-statusline.toml via tomllib: silent defaults, per-segment toggles, thresholds, units (CFG-01) — DONE 2008-05-28
 
 ### Phase 2: Weather Layer
 
@@ -75,11 +74,11 @@ Plans:
 
 **Wave 1**
 
-- [x] 02-01-PLAN.md — Packaging (subfolder + venv + self-re-exec) + extended config + sun-only weather segment with degradation (WX-03, WX-06) — DONE 2026-05-28
+- [x] 02-01-PLAN.md — Packaging (subfolder + venv + self-re-exec) + extended config + sun-only weather segment with degradation (WX-03, WX-06) — DONE 2008-05-28
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [x] 02-02-PLAN.md — Sectioned cache + fire-and-forget detached NWS fetch + condition icon/temp/precip (WX-01, WX-02, WX-05) — DONE 2026-05-28
+- [x] 02-02-PLAN.md — Sectioned cache + fire-and-forget detached NWS fetch + condition icon/temp/precip (WX-01, WX-02, WX-05) — DONE 2008-05-28
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -191,7 +190,7 @@ Plans:
 
 ### Phase 05.1: Fix TestGsdSegmentBuilder environment-leak test failures (INSERTED)
 
-**Goal:** Make the 9 failing `TestGsdSegmentBuilder` tests in `tests/test_gsd_segment.py` hermetic. The failures are not a product bug — `_gsd_segment` is correct. The shared fixtures carry a hardcoded timestamp (`2026-05-29T20:00:00.000Z`) that ages past the 1-hour staleness window (`_GSD_HANDOFF_STALE_SECONDS = 3600`); once the suite runs >1 hour later, handoffs read as stale → roadmap fallback → empty roadmap → `None` → 9 `assertIsNotNone` failures. Refresh the handoff timestamp to `now` at call time inside `_call` (mirroring `TestInferGsdLifecycle._make_live_state`), keeping the real staleness path exercised, and add a wall-clock-independence guard test. Test-only; source unchanged.
+**Goal:** Make the 9 failing `TestGsdSegmentBuilder` tests in `tests/test_gsd_segment.py` hermetic. The failures are not a product bug — `_gsd_segment` is correct. The shared fixtures carry a hardcoded timestamp (`2008-05-29T20:00:00.000Z`) that ages past the 1-hour staleness window (`_GSD_HANDOFF_STALE_SECONDS = 3600`); once the suite runs >1 hour later, handoffs read as stale → roadmap fallback → empty roadmap → `None` → 9 `assertIsNotNone` failures. Refresh the handoff timestamp to `now` at call time inside `_call` (mirroring `TestInferGsdLifecycle._make_live_state`), keeping the real staleness path exercised, and add a wall-clock-independence guard test. Test-only; source unchanged.
 **Requirements**: None mapped (phase_req_ids null; scope tracked against CONTEXT D-01..D-03).
 **Depends on:** Phase 05
 **Plans:** 1/1 plans complete
@@ -226,19 +225,18 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Statusline | 3/3 | DONE | 2026-05-28 |
-| 2. Weather Layer | 3/3 | Complete   | 2026-05-29 |
-| 02.2. Watch/Warning/Advisory differentiation | 2/2 | Complete    | 2026-06-07 |
-| 02.1. Nerd Font icon set | 3/3 | Complete    | 2026-05-29 |
-| 3. Presets for block fill | 2/2 | Complete   | 2026-05-29 |
-| 03.1. Default bar gradient vs shade | 1/1 | Complete | 2026-05-29 |
-| 4. git info incl. active worktree | 2/2 | Complete   | 2026-05-29 |
-| 5. GSD status info | 2/2 | Complete   | 2026-05-29 |
-| 05.1. Fix TestGsdSegmentBuilder test failures | 1/1 | Complete    | 2026-05-30 |
-| 6. Add Claude Status to usage line | 2/2 | Complete   | 2026-06-16 |
-| 7. Filter/dismiss Claude-status incidents | 4/4 | Complete | 2026-06-17 |
-| 07.1. Distinguish resolved from unresolved incidents | 3/3 | Complete | 2026-06-18 |
-| 8. Fix incorrect weather condition icon selection | 0/0 | Pending | — |
+| 1. Core Statusline | 3/3 | DONE | 2008-05-28 |
+| 2. Weather Layer | 3/3 | Complete   | 2008-05-29 |
+| 02.2. Watch/Warning/Advisory differentiation | 2/2 | Complete    | 2008-06-07 |
+| 02.1. Nerd Font icon set | 3/3 | Complete    | 2008-05-29 |
+| 3. Presets for block fill | 2/2 | Complete   | 2008-05-29 |
+| 03.1. Default bar gradient vs shade | 1/1 | Complete | 2008-05-29 |
+| 4. git info incl. active worktree | 2/2 | Complete   | 2008-05-29 |
+| 5. GSD status info | 2/2 | Complete   | 2008-05-29 |
+| 05.1. Fix TestGsdSegmentBuilder test failures | 1/1 | Complete    | 2008-05-30 |
+| 6. Add Claude Status to usage line | 2/2 | Complete   | 2008-06-16 |
+| 7. Filter/dismiss Claude-status incidents | 4/4 | Complete | 2008-06-17 |
+| 07.1. Distinguish resolved from unresolved incidents | 3/3 | Complete | 2008-06-18 |
 
 ### Phase 7: Filter/dismiss Claude-status incidents
 
@@ -286,12 +284,3 @@ Plans:
 **Wave 3** *(blocked on Wave 2)*
 
 - [x] 07.1-03-PLAN.md — Render + CLI: GREEN check-circle `resolved:` branch in `_claude_status_segment`, D-06 fall-through guard Risk #2 (muted degraded/resolved → None, not red/green), `resolved` STATE in `--status-incidents` + full behavior test matrix (D-03,D-04,D-05,D-06,D-07)
-
-### Phase 8: Fix incorrect weather condition icon selection — in some cases the statusline grabs the wrong weather icon (e.g. a non-weather glyph showing next to 88°F / Heat Advisory)
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 7
-
-Plans:
-- [ ] TBD (run /gsd:plan-phase 8 to break down)
