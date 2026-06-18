@@ -1901,7 +1901,12 @@ def _derive_claude_status(
             if status not in non_operational:
                 continue
             # --- Phase 07.1: resolved-incident scan for THIS degraded component ---
+            # Also remember any SUPPRESSED incident (active or resolved) touching this
+            # component: if the component's only explanation is a muted incident, D-06
+            # demands the section render NOTHING (no red fallback) — so we bake that
+            # muting incident's id and let the render-time mute re-check return None.
             best_resolved = None
+            muting_incident_id = None
             try:
                 resolved_candidates = []
                 for inc in incidents_raw:
@@ -1910,22 +1915,37 @@ def _derive_claude_status(
                     inc_status = inc.get("status", "")
                     if not isinstance(inc_status, str):
                         continue
-                    if inc_status != "resolved":
-                        continue  # only resolved incidents qualify (D-05)
+                    # Consider incidents that could explain THIS component's degradation:
+                    # resolved (the 07.1 signal) or still-active (suppressed → fell past
+                    # Rule 1).  Other statuses are irrelevant here.
+                    if inc_status not in ("investigating", "identified", "monitoring", "resolved"):
+                        continue
                     # Must touch THIS specific degraded component (D-05)
                     tracked = _tracked_component_names(inc.get("components", []))
                     if comp_name not in tracked:
                         continue
                     # Reuse the SAME suppression gate Rule 1 uses (D-06 — single ordering)
-                    if _is_suppressed(
+                    suppressed = _is_suppressed(
                         inc.get("id", ""),
                         inc.get("impact", "none"),
                         inc.get("name", ""),
                         dismissals,
                         cfg,
-                    ):
-                        continue  # skip — suppressed; counts as UNEXPLAINED (D-06)
-                    resolved_candidates.append(inc)
+                    )
+                    if suppressed:
+                        # Muted incident touching this component — remember its id so the
+                        # render mute re-check can return None (D-06: muting wins, no red
+                        # fallback).  Counts as UNEXPLAINED for the resolved-vs-red verdict.
+                        if muting_incident_id is None:
+                            mid = inc.get("id", "")
+                            if isinstance(mid, str) and mid:
+                                muting_incident_id = mid
+                        continue
+                    # Non-suppressed RESOLVED incident → explains a green resolved verdict.
+                    if inc_status == "resolved":
+                        resolved_candidates.append(inc)
+                    # Non-suppressed active incidents would already have triggered Rule 1;
+                    # ignore them here.
                 if resolved_candidates:
                     # Newest wins: ISO-8601 updated_at string compare; empty/garbage sorts low
                     best_resolved = max(
@@ -1934,11 +1954,16 @@ def _derive_claude_status(
                     )
             except Exception:
                 best_resolved = None  # resolved scan failure → treat as unexplained → red (D-10)
+                muting_incident_id = None
             # --- end Phase 07.1 resolved scan ---
 
             if best_resolved is None:
-                # UNEXPLAINED degraded component → red wins immediately, regardless of
-                # any resolved-explained component found before it (CR-01 truth-telling).
+                # No non-suppressed resolved incident explains this degraded component.
+                # UNEXPLAINED degraded → red wins immediately, regardless of any
+                # resolved-explained component found before it (CR-01 truth-telling).
+                # If a MUTED incident is the only thing touching the component, bake its
+                # id so the render mute re-check returns None (D-06: no red fallback);
+                # otherwise incident_id stays None → genuinely-unexplained → stays RED.
                 human_state = _CLAUDE_STATUS_LABELS.get(status, status.replace("_", " "))
                 label = f"{comp_name}: {human_state}"
                 severity = severity_map.get(status, "minor")
@@ -1946,7 +1971,7 @@ def _derive_claude_status(
                     "severity":     severity,
                     "label":        label,
                     "kind":         "degraded",
-                    "incident_id":  None,        # degraded has no explaining incident
+                    "incident_id":  muting_incident_id,  # None → genuinely-unexplained → RED
                     "component":    comp_name,
                 }
 
