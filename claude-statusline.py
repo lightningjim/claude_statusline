@@ -3765,10 +3765,49 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
         _label_override    = None
         _kind_override     = None
 
-        if tracked_incs:
-            # Re-run _is_suppressed over the cached incidents (in the same order
-            # _collect_tracked_incidents produced them) to find the first non-suppressed
-            # incident that should drive the segment.
+        baked_kind = sec.get("kind", "incident")
+
+        # CR-02/WR-02 fix: for a component-driven verdict (kind in {resolved, degraded})
+        # the section carries the SPECIFIC explaining incident id (baked by derivation /
+        # fetch_claude_status).  The render-time mute decision MUST bind to THAT incident,
+        # not to "any surviving tracked incident" — otherwise a baked resolved item whose
+        # own explaining incident was dismissed re-surfaces GREEN kept alive by an
+        # unrelated incident, leaking the muted incident's label (D-06 Risk #2 violation).
+        if baked_kind in ("resolved", "degraded"):
+            # Read the explaining-incident id defensively (missing → None safe fallback).
+            explaining_id = sec.get("incident_id")
+            if isinstance(explaining_id, str) and explaining_id:
+                # Find the explaining incident among the cached tracked_incidents.
+                explaining_inc = None
+                for inc in tracked_incs:
+                    if not isinstance(inc, dict):
+                        continue
+                    if inc.get("id") == explaining_id:
+                        explaining_inc = inc
+                        break
+                # If the explaining incident is gone from the live feed OR is suppressed
+                # at render time → the verdict has no live justification → render NOTHING
+                # (D-06 "muting wins in every state": never green, never red).
+                if explaining_inc is None:
+                    return None
+                if _is_suppressed(
+                    explaining_inc.get("id"),
+                    explaining_inc.get("impact", "none"),
+                    explaining_inc.get("title", ""),
+                    dismissals,
+                    _cfg,
+                ):
+                    return None
+                # Explaining incident survives → render the baked resolved/degraded values
+                # unchanged (kind/severity already correct from derivation).
+            # else: no baked explaining id.  A "degraded" verdict legitimately has
+            # incident_id == None (a genuinely UNEXPLAINED outage with no tracked
+            # incident — must STAY red, D-05).  Fall through to the baked path: there is
+            # no specific incident to mute against, so the red item renders as derived.
+        elif tracked_incs:
+            # Active-incident path (kind=="incident" / "maintenance"): preserve the
+            # existing first-non-suppressed override so the bar falls through to the next
+            # relevant incident instead of showing a muted one.
             surviving_inc = None
             for inc in tracked_incs:
                 if not isinstance(inc, dict):
@@ -3785,26 +3824,15 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
                 # (instant mute, mirrors Phase 6 quiet-when-healthy D-01).
                 return None
 
-            # A surviving incident was found.
-            # For baked kind=="incident" sections, recompute severity/label/kind from
-            # the surviving incident's live cached fields so the bar falls through to
-            # the next relevant item instead of showing the muted one.
-            # For baked kind=="degraded" or "resolved" sections (component-driven),
-            # preserve the baked kind/severity — the section already carries the correct
-            # resolved or degraded signal; the suppression re-check only gate-keeps
-            # whether the item renders at all (D-06 Risk #2: resolved baked items whose
-            # only explaining incident is muted must render nothing, not green or red).
-            baked_kind = sec.get("kind", "incident")
             if baked_kind == "incident":
-                # Active-incident path: override severity/label/kind from surviving inc
+                # Override severity/label/kind from the surviving incident's live fields.
                 _severity_override = _CLAUDE_IMPACT_SEVERITY.get(
                     surviving_inc.get("impact", "none"), "minor"
                 )
                 _label_override = surviving_inc.get("title", sec.get("label", ""))
                 _kind_override  = "incident"
-            # else degraded/resolved baked item with a surviving inc: use baked values
-            # unchanged (kind/severity already baked from derivation; only mute-gate applied).
-        # else: empty tracked_incs → maintenance/degraded baked item → fall through
+            # else maintenance baked item with a surviving inc: use baked values unchanged.
+        # else: empty tracked_incs on an incident/maintenance baked item → fall through
         # unchanged to the existing baked path (no suppression applied).
 
         # Step 4: resolve severity, label, kind from section
