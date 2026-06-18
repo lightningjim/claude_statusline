@@ -467,11 +467,17 @@ class TestDeriveClaudeStatus(unittest.TestCase):
                          f"Maintenance must outrank resolved-degraded; got {result.get('kind')!r}")
 
     def test_suppressed_resolved_incident_falls_through_to_red(self):
-        """A suppressed resolved incident is NOT matched → falls through to red degraded (D-06)."""
+        """A suppressed resolved incident is NOT matched → falls through to red degraded (D-06).
+
+        Per CONTEXT: a resolving incident has falling impact so the escalation re-surface
+        never voids a dismissal on the resolved path — the dismissal stands (D-06).
+        The fixture incident has impact='major'; we store impact_at_dismiss='major' so
+        live_rank == stored_rank (no escalation void), and suppression holds.
+        """
         summary = _load_fixture("status_resolved_degraded.json")
         incident_id = summary["incidents"][0]["id"]
-        # Dismiss the resolved incident
-        dismissals = {incident_id: {"impact_at_dismiss": "minor", "dismissed_at": "2026-06-18T08:00:00Z"}}
+        # Dismiss at the same impact level as the incident (major=major: no escalation re-surface)
+        dismissals = {incident_id: {"impact_at_dismiss": "major", "dismissed_at": "2026-06-18T08:00:00Z"}}
         cfg = {
             "claude_status": {"filter_enabled": True, "ignore_title_patterns": []},
         }
