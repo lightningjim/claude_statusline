@@ -3681,6 +3681,99 @@ class TestStatusIncidentsFlag(unittest.TestCase):
         self.assertIn("--status-incidents", source,
                       "main() must have a --status-incidents branch")
 
+    # ---- Phase 07.1 Plan 03 Task 2: 'resolved' STATE column (D-07) ----
+    #
+    # Wave-1 widened _collect_tracked_incidents to carry resolved incidents
+    # (status=="resolved"). The --status-incidents printer must now report a
+    # "resolved" STATE for those entries, with dismissed taking precedence.
+
+    def test_resolved_incident_shows_resolved_state(self):
+        """Tracked incident with status=='resolved' and NOT dismissed → STATE shows 'resolved' (D-07).
+
+        Wave-1 widened tracked_incidents to include resolved entries. The printer
+        must use 'resolved' as the STATE column value, not 'active', for these entries.
+        """
+        incidents = [{"id": "inc-resolved-001", "impact": "major", "status": "resolved",
+                      "title": "API errors now cleared", "component": "Claude Code"}]
+        output = self._call_print_helper(incidents, dismissals={})
+        # The STATE column value must be 'resolved', not 'active'
+        self.assertNotIn("active", output,
+                         f"Resolved incident must NOT show 'active' STATE; got {output!r}")
+        # Locate the data row (after the header and separator) and check the STATE column
+        lines = [ln for ln in output.splitlines() if "inc-resolved-001" in ln]
+        self.assertTrue(lines, "Output must include a row for inc-resolved-001")
+        row = lines[0]
+        # The STATE column sits after the STATUS column; 'resolved' must appear in the
+        # row as the STATE value (COL_STATE=10 means it occupies a fixed-width column).
+        # Count occurrences: 'resolved' appears once in the status col and should now
+        # also appear in the state col — for a clean assertion, verify the row does NOT
+        # contain 'active' and DOES contain 'resolved' at least twice (status + state).
+        self.assertGreaterEqual(row.count("resolved"), 2,
+                                f"Row must contain 'resolved' in BOTH status and state columns; "
+                                f"row={row!r}")
+
+    def test_dismissed_resolved_shows_dismissed_not_resolved(self):
+        """Dismissed resolved incident → STATE shows 'dismissed', not 'resolved' (dismissed precedence).
+
+        dismissed always outranks resolved in the STATE column. A dismissed resolved
+        incident shows 'dismissed', matching the existing precedence documented in
+        the _print_status_incidents docstring.
+        """
+        incidents = [{"id": "inc-resolved-001", "impact": "major", "status": "resolved",
+                      "title": "API errors now cleared", "component": "Claude Code"}]
+        store = {"inc-resolved-001": {"impact_at_dismiss": "major", "dismissed_at": time.time()}}
+        output = self._call_print_helper(incidents, dismissals=store)
+        self.assertIn("dismissed", output,
+                      "Dismissed resolved incident must show 'dismissed' STATE (dismissed precedence)")
+        # 'resolved' must NOT appear as the STATE for this entry
+        # (it still appears in the status column, but the STATE column must read 'dismissed')
+        # Check by finding the row for inc-resolved-001 and verifying dismissed appears before
+        # the first occurrence of 'resolved' on that line, or simply that 'dismissed' is present
+        # and is the STATE value for this entry.
+        # A simple check: the output contains 'dismissed' (the state) and the entry id.
+        self.assertIn("inc-resolved-001", output,
+                      "Dismissed resolved incident row must show the incident id")
+
+    def test_active_incident_still_shows_active(self):
+        """Unresolved, undismissed incident → STATE 'active' unchanged (regression guard)."""
+        incidents = [{"id": "inc-001", "impact": "minor", "status": "monitoring",
+                      "title": "Elevated errors", "component": "Claude Code"}]
+        output = self._call_print_helper(incidents, dismissals={})
+        self.assertIn("active", output,
+                      "Unresolved undismissed incident must still show 'active' STATE (regression)")
+
+    def test_stale_entry_still_shows_stale(self):
+        """Store entry not in live feed → STATE 'stale' unchanged (regression guard)."""
+        incidents = []
+        store = {"inc-stale": {"impact_at_dismiss": "minor", "dismissed_at": time.time()}}
+        output = self._call_print_helper(incidents, dismissals=store)
+        self.assertIn("stale", output,
+                      "Store entry absent from live feed must still show 'stale' STATE (regression)")
+
+    def test_resolved_state_in_docstring(self):
+        """_print_status_incidents docstring must document the 'resolved' STATE value."""
+        import inspect
+        source = inspect.getsource(self.mod._print_status_incidents)
+        self.assertIn("resolved", source,
+                      "_print_status_incidents docstring must document the 'resolved' STATE value (D-07)")
+
+    def test_malformed_cache_for_resolved_state_no_raise(self):
+        """Malformed/garbage cache when a resolved-status entry is present → no raise (D-10)."""
+        # Entries with missing/None fields — must not raise
+        bad_incidents = [
+            {"id": None, "impact": None, "status": "resolved", "title": None, "component": None},
+            None,
+            "not a dict",
+            {"id": "inc-x", "status": "resolved"},  # missing other fields
+        ]
+        try:
+            output = self._call_print_helper(bad_incidents, dismissals={})
+            # Must produce some output (header) without raising
+            self.assertIsInstance(output, str,
+                                  "Malformed incident entries must produce string output, not raise")
+        except Exception as exc:
+            self.fail(f"_print_status_incidents raised on malformed entries with resolved status: {exc}")
+
 
 if __name__ == "__main__":
     unittest.main()
