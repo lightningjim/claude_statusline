@@ -378,6 +378,131 @@ class TestDeriveClaudeStatus(unittest.TestCase):
         except Exception as e:
             self.fail(f"_derive_claude_status raised on malicious title: {e}")
 
+    # ---- Phase 07.1 Plan 01: resolved-vs-red branch (D-04/D-05/D-01/D-06) ----
+
+    def test_resolved_degraded_fixture_returns_resolved_kind(self):
+        """Resolved incident + still-degraded tracked component → kind=='resolved' (D-05)."""
+        summary = _load_fixture("status_resolved_degraded.json")
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result,
+                             "Resolved-degraded fixture must return a non-None dict")
+        self.assertEqual(result.get("kind"), "resolved",
+                         f"kind must be 'resolved'; got {result.get('kind')!r}")
+
+    def test_resolved_degraded_fixture_returns_resolved_severity(self):
+        """Resolved incident + still-degraded tracked component → severity=='resolved' (D-03)."""
+        summary = _load_fixture("status_resolved_degraded.json")
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("severity"), "resolved",
+                         f"severity must be 'resolved'; got {result.get('severity')!r}")
+
+    def test_resolved_degraded_fixture_label_is_incident_title(self):
+        """Resolved incident → label is the RAW incident title (no 'resolved:' prefix baked in)."""
+        summary = _load_fixture("status_resolved_degraded.json")
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result)
+        # Label must be the raw incident title, NOT prefixed with 'resolved:'
+        incident_title = summary["incidents"][0]["name"]
+        label = result.get("label", "")
+        self.assertEqual(label, incident_title,
+                         f"Label must equal raw fixture incident title; got {label!r}")
+        self.assertFalse(label.startswith("resolved:"),
+                         "Label must NOT have 'resolved:' prefix baked in (render concern, not cache)")
+
+    def test_degraded_no_matching_resolved_incident_stays_red(self):
+        """Degraded component with NO resolved incident referencing it → kind=='degraded' (D-05)."""
+        summary = _load_fixture("status_degraded_no_title.json")
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("kind"), "degraded",
+                         f"No resolved incident → kind must be 'degraded'; got {result.get('kind')!r}")
+
+    def test_operational_component_with_resolved_incident_returns_none(self):
+        """Operational tracked component → None (quiet) even with a lingering resolved incident (D-01)."""
+        summary = _load_fixture("status_resolved_degraded.json")
+        # Make all tracked components operational
+        for comp in summary.get("components", []):
+            if comp.get("name") in ("Claude Code", "claude.ai", "Claude Cowork"):
+                comp["status"] = "operational"
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNone(result,
+                          f"Operational components → None even with resolved incident; got {result!r}")
+
+    def test_active_incident_outranks_resolved_degraded(self):
+        """Active incident present → kind=='incident' wins over resolved-degraded (Rule 1 > Rule 3)."""
+        summary = _load_fixture("status_incident_tracked.json")
+        # Add a resolved incident for the same component to ensure Rule 3 would match
+        summary["incidents"].append({
+            "id": "inc-resolved",
+            "name": "Earlier resolved issue",
+            "status": "resolved",
+            "impact": "minor",
+            "updated_at": "2026-06-18T10:00:00Z",
+            "components": [{"id": "comp-claude-code", "name": "Claude Code"}],
+        })
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("kind"), "incident",
+                         f"Active incident must outrank resolved-degraded; got {result.get('kind')!r}")
+
+    def test_maintenance_outranks_resolved_degraded(self):
+        """Maintenance present → kind=='maintenance' wins over resolved-degraded (Rule 2 > Rule 3)."""
+        summary = _load_fixture("status_maintenance.json")
+        # Make a tracked component degraded with a resolved incident so Rule 3 would trigger
+        for comp in summary.get("components", []):
+            if comp.get("name") == "Claude Code":
+                comp["status"] = "partial_outage"
+        summary.setdefault("incidents", []).append({
+            "id": "inc-resolved-r3",
+            "name": "Fixed earlier issue",
+            "status": "resolved",
+            "impact": "major",
+            "updated_at": "2026-06-18T09:00:00Z",
+            "components": [{"id": "comp-claude-code", "name": "Claude Code"}],
+        })
+        result = self.mod._derive_claude_status(summary)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("kind"), "maintenance",
+                         f"Maintenance must outrank resolved-degraded; got {result.get('kind')!r}")
+
+    def test_suppressed_resolved_incident_falls_through_to_red(self):
+        """A suppressed resolved incident is NOT matched → falls through to red degraded (D-06)."""
+        summary = _load_fixture("status_resolved_degraded.json")
+        incident_id = summary["incidents"][0]["id"]
+        # Dismiss the resolved incident
+        dismissals = {incident_id: {"impact_at_dismiss": "minor", "dismissed_at": "2026-06-18T08:00:00Z"}}
+        cfg = {
+            "claude_status": {"filter_enabled": True, "ignore_title_patterns": []},
+        }
+        result = self.mod._derive_claude_status(summary, dismissals=dismissals, cfg=cfg)
+        self.assertIsNotNone(result,
+                             "Suppressed resolved → must fall through to red degraded, not None")
+        self.assertEqual(result.get("kind"), "degraded",
+                         f"Suppressed resolved must yield kind='degraded'; got {result.get('kind')!r}")
+
+    def test_resolved_garbage_feed_does_not_raise(self):
+        """Malformed incidents list in resolved scan → no raise, falls back to existing behavior."""
+        # Provide garbage incidents list (non-dicts inside)
+        summary = {
+            "components": [
+                {"name": "Claude Code", "status": "partial_outage"},
+                {"name": "claude.ai", "status": "operational"},
+                {"name": "Claude Cowork", "status": "operational"},
+            ],
+            "incidents": [None, 42, "garbage", {"status": "resolved", "no_components_key": True}],
+            "scheduled_maintenances": [],
+        }
+        try:
+            result = self.mod._derive_claude_status(summary)
+            # Must not raise; should fall back to degraded (no valid resolved match)
+            self.assertIsNotNone(result,
+                                 "Garbage incidents → still detects degraded component, returns dict")
+            self.assertEqual(result.get("kind"), "degraded",
+                             f"Garbage resolved incidents → falls through to 'degraded'; got {result.get('kind')!r}")
+        except Exception as e:
+            self.fail(f"_derive_claude_status raised on garbage resolved incidents: {e}")
+
 
 # ---------------------------------------------------------------------------
 # Task 3: fetch_claude_status
