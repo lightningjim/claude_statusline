@@ -1522,6 +1522,9 @@ def _claude_status_color(severity: object) -> str:
             # Neutral hue for maintenance: DIM, not a severity color (D-04).
             # Using DIM (not DEFAULT_FG) so scheduled maintenance reads as low-key/informational.
             "maintenance": DIM,
+            # Resolved = GREEN: broke-then-fixed, non-alarming (D-03, Phase 07.1).
+            # Reuses the existing GREEN constant — no new color constant needed.
+            "resolved":    GREEN,
         }
         if not isinstance(severity, str):
             return YELLOW
@@ -1836,6 +1839,15 @@ def _derive_claude_status(
             return {"severity": "maintenance", "label": label, "kind": "maintenance"}
 
         # --- Rule 3: Tracked component degraded with no associated incident (D-03 fallback) ---
+        # Phase 07.1 Plan 01 (D-04/D-05): before returning red, scan for a resolved incident
+        # that explains the lingering degradation for this specific component.  The resolved
+        # scan copies the Rule 1 matching shape but inverts the status filter to "resolved"
+        # only, intersects with the specific degraded comp_name (D-05: only paint green when
+        # a resolved incident actually touches *this* component), and reuses the SAME
+        # _is_suppressed gate Rule 1 uses (D-06: single ordering, no second suppression path).
+        # Among matches, newest updated_at wins (ISO-8601 string compare; missing/garbage
+        # timestamps sort low — safe).  A resolved-scan failure inside the try/except
+        # degrades to the existing red return, never raises (D-10 / [[statusline-omit-not-fake]]).
         non_operational = (
             "degraded_performance",
             "partial_outage",
@@ -1845,6 +1857,44 @@ def _derive_claude_status(
         for comp_name in sorted(_CLAUDE_TRACKED_COMPONENTS):  # deterministic order
             status = comp_status.get(comp_name, "operational")
             if status in non_operational:
+                # --- Phase 07.1: resolved-incident scan for this degraded component ---
+                try:
+                    resolved_candidates = []
+                    for inc in incidents_raw:
+                        if not isinstance(inc, dict):
+                            continue
+                        inc_status = inc.get("status", "")
+                        if not isinstance(inc_status, str):
+                            continue
+                        if inc_status != "resolved":
+                            continue  # only resolved incidents qualify (D-05)
+                        # Must touch THIS specific degraded component (D-05)
+                        tracked = _tracked_component_names(inc.get("components", []))
+                        if comp_name not in tracked:
+                            continue
+                        # Reuse the SAME suppression gate Rule 1 uses (D-06 — single ordering)
+                        if _is_suppressed(
+                            inc.get("id", ""),
+                            inc.get("impact", "none"),
+                            inc.get("name", ""),
+                            dismissals,
+                            cfg,
+                        ):
+                            continue  # skip — suppressed; fall through to red (D-06)
+                        resolved_candidates.append(inc)
+                    if resolved_candidates:
+                        # Newest wins: ISO-8601 updated_at string compare; empty/garbage sorts low
+                        best_resolved = max(
+                            resolved_candidates,
+                            key=lambda i: i.get("updated_at", "") if isinstance(i.get("updated_at"), str) else "",
+                        )
+                        res_label = best_resolved.get("name", "")
+                        if not isinstance(res_label, str):
+                            res_label = ""
+                        return {"severity": "resolved", "label": res_label, "kind": "resolved"}
+                except Exception:
+                    pass  # resolved scan failure → fall through to existing red return (D-10)
+                # --- end Phase 07.1 resolved scan ---
                 human_state = _CLAUDE_STATUS_LABELS.get(status, status.replace("_", " "))
                 label = f"{comp_name}: {human_state}"
                 # Map component status to severity tier
@@ -1991,15 +2041,17 @@ def fetch_alerts(cfg: dict) -> None:
 
 
 def _collect_tracked_incidents(summary: object) -> list:
-    """Extract the list of tracked (unresolved) incidents from a Statuspage.io summary.
+    """Extract the list of tracked (unresolved and resolved) incidents from a Statuspage.io summary.
 
     Returns a list of compact dicts, each with:
         {"id", "impact", "status", "title", "component"}
     where component is the first matching tracked component name (or "" if none).
 
     Titles are stored RAW/unsanitized (matches Phase 6 cache contract, T-07-03/T-06-01).
-    Only incidents with status in ("investigating", "identified", "monitoring") and at
-    least one tracked component are included — mirrors the _derive_claude_status filter.
+    Incidents with status in ("investigating", "identified", "monitoring", "resolved") and
+    at least one tracked component are included — "resolved" added in Phase 07.1 Plan 01
+    (D-06/D-07) so render-time suppression re-check and --status-incidents can see them.
+    The "status" field now may carry "resolved"; Wave-3 render and CLI branch on it.
 
     Returns [] on any error or malformed input — never raises (D-10).
     """
@@ -2017,7 +2069,7 @@ def _collect_tracked_incidents(summary: object) -> list:
                 inc_status = inc.get("status", "")
                 if not isinstance(inc_status, str):
                     continue
-                if inc_status not in ("investigating", "identified", "monitoring"):
+                if inc_status not in ("investigating", "identified", "monitoring", "resolved"):
                     continue
                 component_refs = inc.get("components", [])
                 if not isinstance(component_refs, list):
