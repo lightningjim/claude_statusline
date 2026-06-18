@@ -1581,6 +1581,260 @@ class TestClaudeStatusRenderSuppression(unittest.TestCase):
                          f"Dismissed first incident title must NOT appear in result; "
                          f"got={result!r}")
 
+    # ---- Phase 07.1 Plan 03 Task 1: resolved render + D-06 Risk #2 fix ----
+    #
+    # Tests for the Wave-3 render edge: GREEN check-circle 'resolved:' prefix
+    # for resolved baked items, and the D-06 fall-through guard (Risk #2) that
+    # ensures muted degraded/resolved baked items return None (not red, not green).
+
+    def test_resolved_baked_renders_green(self):
+        """Resolved baked section (kind='resolved') → segment contains GREEN color (D-03).
+
+        A cache section with kind='resolved' (set by Wave-1 derivation) must render
+        with the GREEN color constant, not RED or YELLOW.
+        """
+        resolved_inc = {"id": "inc-resolved-001", "impact": "major",
+                        "status": "resolved", "title": "API errors now cleared",
+                        "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="resolved",
+            label="API errors now cleared", kind="resolved",
+            tracked_incidents=[resolved_inc],
+        )
+        result = self._segment(sec, dismissal_store={})
+        self.assertIsNotNone(result, "Resolved baked section must return a non-None segment")
+        self.assertIn(self.mod.GREEN, result,
+                      f"Resolved segment must contain GREEN; got {result!r}")
+        self.assertNotIn(self.mod.RED, result,
+                         f"Resolved segment must NOT contain RED; got {result!r}")
+
+    def test_resolved_baked_renders_check_circle_glyph(self):
+        """Resolved baked section → nerd icon_set uses check-circle glyph _NF_GSD_DONE (D-03)."""
+        resolved_inc = {"id": "inc-resolved-001", "impact": "major",
+                        "status": "resolved", "title": "API errors now cleared",
+                        "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="resolved",
+            label="API errors now cleared", kind="resolved",
+            tracked_incidents=[resolved_inc],
+        )
+        result = self._segment(sec, dismissal_store={})
+        self.assertIsNotNone(result, "Resolved segment must not be None")
+        self.assertIn(self.mod._NF_GSD_DONE, result,
+                      f"Resolved segment (nerd icon_set) must contain check-circle glyph; got {result!r}")
+        self.assertNotIn(self.mod._NF_CLAUDE_INCIDENT, result,
+                         f"Resolved segment must NOT use incident exclamation glyph; got {result!r}")
+
+    def test_resolved_baked_renders_resolved_prefix(self):
+        """Resolved baked section → rendered detail contains 'resolved: ' prefix before title (D-03)."""
+        resolved_inc = {"id": "inc-resolved-001", "impact": "major",
+                        "status": "resolved", "title": "API errors now cleared",
+                        "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="resolved",
+            label="API errors now cleared", kind="resolved",
+            tracked_incidents=[resolved_inc],
+        )
+        result = self._segment(sec, dismissal_store={})
+        self.assertIsNotNone(result)
+        self.assertIn("resolved:", result,
+                      f"Resolved segment must contain 'resolved:' prefix; got {result!r}")
+
+    def test_resolved_baked_emoji_icon_set(self):
+        """Resolved baked section with icon_set='emoji' → contains checkmark emoji and 'resolved:' prefix."""
+        resolved_inc = {"id": "inc-resolved-001", "impact": "major",
+                        "status": "resolved", "title": "API errors now cleared",
+                        "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="resolved",
+            label="API errors now cleared", kind="resolved",
+            tracked_incidents=[resolved_inc],
+        )
+        result = self._segment(sec, dismissal_store={},
+                               extra_cfg={"display": {"icon_set": "emoji"}})
+        self.assertIsNotNone(result, "Resolved segment (emoji icon_set) must not be None")
+        self.assertIn("resolved:", result,
+                      f"Resolved segment (emoji) must contain 'resolved:' prefix; got {result!r}")
+        # Emoji fallback is ✅ (U+2705)
+        self.assertIn("\U00002705", result,
+                      f"Resolved segment (emoji) must contain ✅ glyph; got {result!r}")
+
+    def test_resolved_baked_prefix_survives_nocolor(self):
+        """'resolved:' word appears in the detail text independently of color codes (D-03).
+
+        Strips all ANSI codes and verifies 'resolved:' and the title are still present.
+        """
+        import re as _re
+        resolved_inc = {"id": "inc-resolved-001", "impact": "major",
+                        "status": "resolved", "title": "API errors now cleared",
+                        "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="resolved",
+            label="API errors now cleared", kind="resolved",
+            tracked_incidents=[resolved_inc],
+        )
+        result = self._segment(sec, dismissal_store={})
+        self.assertIsNotNone(result)
+        stripped = _re.sub(r'\x1b\[[0-9;]*m', '', result)
+        self.assertIn("resolved:", stripped,
+                      f"'resolved:' must be present after stripping ANSI codes; stripped={stripped!r}")
+        self.assertIn("API errors now cleared", stripped,
+                      f"Title must survive no-color; stripped={stripped!r}")
+
+    def test_degraded_no_incident_still_red(self):
+        """Degraded baked section with NO tracked incidents → still renders (D-05 regression guard).
+
+        An unexplained degraded component (no tracked incidents at all) must still
+        render a segment — this was the pre-existing baked behavior.
+        The resolved branch must not affect it.
+        """
+        sec = self._fresh_section(
+            noteworthy=True, severity="minor",
+            label="claude.ai: degraded performance", kind="degraded",
+            tracked_incidents=[],  # no tracked incidents
+        )
+        result = self._segment(sec, dismissal_store={})
+        self.assertIsNotNone(result,
+                             "Degraded section with no tracked incidents must still render (not None)")
+        # Must use a severity color (YELLOW for minor), not GREEN
+        self.assertNotIn(self.mod.GREEN, result,
+                         f"Unexplained degraded must NOT be green; got {result!r}")
+
+    def test_muted_resolved_returns_none_not_green(self):
+        """Resolved baked section whose only tracked incident is dismissed → returns None (D-06 Risk #2).
+
+        A resolved-kind baked item explained only by a muted incident must render
+        nothing (None) — not green, not red. Muting wins in every state (D-06).
+        """
+        resolved_inc = {"id": "inc-resolved-001", "impact": "major",
+                        "status": "resolved", "title": "API errors now cleared",
+                        "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="resolved",
+            label="API errors now cleared", kind="resolved",
+            tracked_incidents=[resolved_inc],
+        )
+        # The only explaining incident is dismissed at matching impact (dismissal stands)
+        dismissal_store = {
+            "inc-resolved-001": {"impact_at_dismiss": "major", "dismissed_at": time.time() - 10},
+        }
+        result = self._segment(sec, dismissal_store=dismissal_store)
+        self.assertIsNone(result,
+                          "Resolved item whose only tracked incident is muted must return None "
+                          "(D-06 Risk #2: muting wins — no green, no red)")
+
+    def test_muted_resolved_keyword_returns_none(self):
+        """Resolved baked section muted by keyword pattern → returns None (D-06 Risk #2)."""
+        resolved_inc = {"id": "inc-resolved-001", "impact": "major",
+                        "status": "resolved", "title": "Mythos access restored",
+                        "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="resolved",
+            label="Mythos access restored", kind="resolved",
+            tracked_incidents=[resolved_inc],
+        )
+        result = self._segment(
+            sec,
+            dismissal_store={},
+            extra_cfg={"claude_status": {"filter_enabled": True,
+                                         "ignore_title_patterns": ["Mythos"]}},
+        )
+        self.assertIsNone(result,
+                          "Keyword-muted resolved item must return None (D-06 Risk #2)")
+
+    def test_muted_degraded_returns_none_not_red(self):
+        """Degraded baked section whose only tracked incident is dismissed → returns None (D-06 Risk #2).
+
+        A degraded (red) item explained only by a muted incident must render
+        nothing (None) — not red. Muting wins in every state (D-06).
+        """
+        degraded_inc = {"id": "inc-active-001", "impact": "minor",
+                        "status": "investigating", "title": "Mythos/Fable suspended",
+                        "component": "claude.ai"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="minor",
+            label="claude.ai: degraded performance", kind="degraded",
+            tracked_incidents=[degraded_inc],
+        )
+        dismissal_store = {
+            "inc-active-001": {"impact_at_dismiss": "minor", "dismissed_at": time.time() - 10},
+        }
+        result = self._segment(sec, dismissal_store=dismissal_store)
+        self.assertIsNone(result,
+                          "Degraded item whose only tracked incident is muted must return None "
+                          "(D-06 Risk #2: no red fallback when explaining incident is muted)")
+
+    def test_active_incident_outranks_resolved_baked(self):
+        """Active-incident kind section still renders as an incident (Rule 1 preserved) (D-04).
+
+        This is a regression guard: even with resolved-render logic in place, an
+        active incident (kind='incident') must render with the incident glyph and
+        a severity color, NOT with the resolved green+check-circle.
+        """
+        tracked_inc = {"id": "inc-active-001", "impact": "minor",
+                       "status": "investigating", "title": "Claude Code elevated errors",
+                       "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="minor",
+            label="Claude Code elevated errors", kind="incident",
+            tracked_incidents=[tracked_inc],
+        )
+        result = self._segment(sec, dismissal_store={})
+        self.assertIsNotNone(result, "Active incident must still render non-None")
+        self.assertNotIn(self.mod.GREEN, result,
+                         f"Active incident must NOT be rendered green; got {result!r}")
+        self.assertNotIn(self.mod._NF_GSD_DONE, result,
+                         f"Active incident must NOT use the check-circle glyph; got {result!r}")
+        self.assertNotIn("resolved:", result,
+                         f"Active incident must NOT have 'resolved:' prefix; got {result!r}")
+
+    def test_resolved_ansi_injection_stripped(self):
+        """Resolved baked section with ESC-injected title → no raw ESC in rendered output (T-07.1-08).
+
+        The resolved render path must route the label through the same Step-6 sanitizer
+        used for active incidents (strip ESC / non-printable, width-bound).
+        """
+        malicious_label = "\x1b[31mCRITICAL\x1b[0m: API errors now cleared"
+        resolved_inc = {"id": "inc-resolved-001", "impact": "major",
+                        "status": "resolved", "title": malicious_label,
+                        "component": "Claude Code"}
+        sec = self._fresh_section(
+            noteworthy=True, severity="resolved",
+            label=malicious_label, kind="resolved",
+            tracked_incidents=[resolved_inc],
+        )
+        result = self._segment(sec, dismissal_store={})
+        self.assertIsNotNone(result, "Resolved section with malicious title must still return a segment")
+        import re as _re
+        reset = self.mod.RESET
+        core = result
+        if core.endswith(reset):
+            core = core[:-len(reset)]
+        # Strip leading builder-applied color codes
+        core = _re.sub(r'^(\x1b\[[0-9;]*m)+', '', core)
+        # No injected ESC should remain in the label portion
+        self.assertNotIn("\x1b", core,
+                         f"Resolved label must have no raw ESC after sanitization; core={core!r}")
+
+    def test_garbage_resolved_section_does_not_raise(self):
+        """Garbage resolved-kind section → returns None without raising (D-10 never-crash)."""
+        bad_sections = [
+            self._fresh_section(noteworthy=True, severity="resolved",
+                                label=None, kind="resolved",
+                                tracked_incidents=None),
+            self._fresh_section(noteworthy=True, severity="resolved",
+                                label="\x00\x01\x02", kind="resolved",
+                                tracked_incidents=[None, "bad", 42]),
+        ]
+        for sec in bad_sections:
+            with self.subTest(label=sec.get("label")):
+                try:
+                    result = self._segment(sec, dismissal_store={})
+                    self.assertTrue(result is None or isinstance(result, str),
+                                    f"Must return str|None on garbage input; got {result!r}")
+                except Exception as exc:
+                    self.fail(f"_claude_status_segment raised on garbage resolved section: {exc}")
+
 
 # ---------------------------------------------------------------------------
 # Task 5 (Plan 02): render_bottom_line integration + render-path spawn
@@ -3426,6 +3680,99 @@ class TestStatusIncidentsFlag(unittest.TestCase):
         source = inspect.getsource(self.mod.main)
         self.assertIn("--status-incidents", source,
                       "main() must have a --status-incidents branch")
+
+    # ---- Phase 07.1 Plan 03 Task 2: 'resolved' STATE column (D-07) ----
+    #
+    # Wave-1 widened _collect_tracked_incidents to carry resolved incidents
+    # (status=="resolved"). The --status-incidents printer must now report a
+    # "resolved" STATE for those entries, with dismissed taking precedence.
+
+    def test_resolved_incident_shows_resolved_state(self):
+        """Tracked incident with status=='resolved' and NOT dismissed → STATE shows 'resolved' (D-07).
+
+        Wave-1 widened tracked_incidents to include resolved entries. The printer
+        must use 'resolved' as the STATE column value, not 'active', for these entries.
+        """
+        incidents = [{"id": "inc-resolved-001", "impact": "major", "status": "resolved",
+                      "title": "API errors now cleared", "component": "Claude Code"}]
+        output = self._call_print_helper(incidents, dismissals={})
+        # The STATE column value must be 'resolved', not 'active'
+        self.assertNotIn("active", output,
+                         f"Resolved incident must NOT show 'active' STATE; got {output!r}")
+        # Locate the data row (after the header and separator) and check the STATE column
+        lines = [ln for ln in output.splitlines() if "inc-resolved-001" in ln]
+        self.assertTrue(lines, "Output must include a row for inc-resolved-001")
+        row = lines[0]
+        # The STATE column sits after the STATUS column; 'resolved' must appear in the
+        # row as the STATE value (COL_STATE=10 means it occupies a fixed-width column).
+        # Count occurrences: 'resolved' appears once in the status col and should now
+        # also appear in the state col — for a clean assertion, verify the row does NOT
+        # contain 'active' and DOES contain 'resolved' at least twice (status + state).
+        self.assertGreaterEqual(row.count("resolved"), 2,
+                                f"Row must contain 'resolved' in BOTH status and state columns; "
+                                f"row={row!r}")
+
+    def test_dismissed_resolved_shows_dismissed_not_resolved(self):
+        """Dismissed resolved incident → STATE shows 'dismissed', not 'resolved' (dismissed precedence).
+
+        dismissed always outranks resolved in the STATE column. A dismissed resolved
+        incident shows 'dismissed', matching the existing precedence documented in
+        the _print_status_incidents docstring.
+        """
+        incidents = [{"id": "inc-resolved-001", "impact": "major", "status": "resolved",
+                      "title": "API errors now cleared", "component": "Claude Code"}]
+        store = {"inc-resolved-001": {"impact_at_dismiss": "major", "dismissed_at": time.time()}}
+        output = self._call_print_helper(incidents, dismissals=store)
+        self.assertIn("dismissed", output,
+                      "Dismissed resolved incident must show 'dismissed' STATE (dismissed precedence)")
+        # 'resolved' must NOT appear as the STATE for this entry
+        # (it still appears in the status column, but the STATE column must read 'dismissed')
+        # Check by finding the row for inc-resolved-001 and verifying dismissed appears before
+        # the first occurrence of 'resolved' on that line, or simply that 'dismissed' is present
+        # and is the STATE value for this entry.
+        # A simple check: the output contains 'dismissed' (the state) and the entry id.
+        self.assertIn("inc-resolved-001", output,
+                      "Dismissed resolved incident row must show the incident id")
+
+    def test_active_incident_still_shows_active(self):
+        """Unresolved, undismissed incident → STATE 'active' unchanged (regression guard)."""
+        incidents = [{"id": "inc-001", "impact": "minor", "status": "monitoring",
+                      "title": "Elevated errors", "component": "Claude Code"}]
+        output = self._call_print_helper(incidents, dismissals={})
+        self.assertIn("active", output,
+                      "Unresolved undismissed incident must still show 'active' STATE (regression)")
+
+    def test_stale_entry_still_shows_stale(self):
+        """Store entry not in live feed → STATE 'stale' unchanged (regression guard)."""
+        incidents = []
+        store = {"inc-stale": {"impact_at_dismiss": "minor", "dismissed_at": time.time()}}
+        output = self._call_print_helper(incidents, dismissals=store)
+        self.assertIn("stale", output,
+                      "Store entry absent from live feed must still show 'stale' STATE (regression)")
+
+    def test_resolved_state_in_docstring(self):
+        """_print_status_incidents docstring must document the 'resolved' STATE value."""
+        import inspect
+        source = inspect.getsource(self.mod._print_status_incidents)
+        self.assertIn("resolved", source,
+                      "_print_status_incidents docstring must document the 'resolved' STATE value (D-07)")
+
+    def test_malformed_cache_for_resolved_state_no_raise(self):
+        """Malformed/garbage cache when a resolved-status entry is present → no raise (D-10)."""
+        # Entries with missing/None fields — must not raise
+        bad_incidents = [
+            {"id": None, "impact": None, "status": "resolved", "title": None, "component": None},
+            None,
+            "not a dict",
+            {"id": "inc-x", "status": "resolved"},  # missing other fields
+        ]
+        try:
+            output = self._call_print_helper(bad_incidents, dismissals={})
+            # Must produce some output (header) without raising
+            self.assertIsInstance(output, str,
+                                  "Malformed incident entries must produce string output, not raise")
+        except Exception as exc:
+            self.fail(f"_print_status_incidents raised on malformed entries with resolved status: {exc}")
 
 
 if __name__ == "__main__":

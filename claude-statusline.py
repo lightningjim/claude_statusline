@@ -486,9 +486,12 @@ def _print_status_incidents(cache: dict, dismissals: dict) -> None:
     Reads tracked_incidents from the claude_status cache section + the dismissal store.
     Does NOT fetch (render-path discipline: cheap, no network).
 
-    State column values:
+    State column values (in precedence order):
       - "dismissed" — id is in the store and is in the live tracked_incidents list
-      - "active"    — id is in the live list and NOT dismissed
+                      (takes precedence over all other states, including resolved)
+      - "resolved"  — id is in the live list, NOT dismissed, and entry status=="resolved"
+                      (wave-1 widened tracked_incidents to include resolved-but-degraded entries)
+      - "active"    — id is in the live list, NOT dismissed, and status is not resolved
       - "stale"     — id is in the store but NOT in the live tracked_incidents list
 
     Titles (and any feed-derived string) are ANSI-sanitized using the verbatim
@@ -557,7 +560,15 @@ def _print_status_incidents(cache: dict, dismissals: dict) -> None:
             component = _sanitize(entry.get("component", ""), COL_COMPONENT)
             title = _sanitize(entry.get("title", ""), COL_TITLE)
             raw_id = entry.get("id", "")
-            state = "dismissed" if raw_id in dismissals else "active"
+            # STATE precedence: dismissed > resolved > active (D-07, Plan 07.1-03)
+            # dismissed always wins; resolved entries (widened by Wave-1) show 'resolved'
+            # so the CLI gives a complete picture of what is or was driving the segment.
+            if raw_id in dismissals:
+                state = "dismissed"
+            elif entry.get("status") == "resolved":
+                state = "resolved"
+            else:
+                state = "active"
             print(
                 f"{inc_id:<{COL_ID}}  {impact:<{COL_IMPACT}}  {status:<{COL_STATUS}}"
                 f"  {state:<{COL_STATE}}  {component:<{COL_COMPONENT}}  {title}"
@@ -3712,14 +3723,25 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
                 # (instant mute, mirrors Phase 6 quiet-when-healthy D-01).
                 return None
 
-            # A surviving incident was found; recompute severity/label/kind from its
-            # live cached fields so the bar falls through to the next relevant item
-            # instead of showing the muted one.
-            _severity_override = _CLAUDE_IMPACT_SEVERITY.get(
-                surviving_inc.get("impact", "none"), "minor"
-            )
-            _label_override = surviving_inc.get("title", sec.get("label", ""))
-            _kind_override  = "incident"
+            # A surviving incident was found.
+            # For baked kind=="incident" sections, recompute severity/label/kind from
+            # the surviving incident's live cached fields so the bar falls through to
+            # the next relevant item instead of showing the muted one.
+            # For baked kind=="degraded" or "resolved" sections (component-driven),
+            # preserve the baked kind/severity — the section already carries the correct
+            # resolved or degraded signal; the suppression re-check only gate-keeps
+            # whether the item renders at all (D-06 Risk #2: resolved baked items whose
+            # only explaining incident is muted must render nothing, not green or red).
+            baked_kind = sec.get("kind", "incident")
+            if baked_kind == "incident":
+                # Active-incident path: override severity/label/kind from surviving inc
+                _severity_override = _CLAUDE_IMPACT_SEVERITY.get(
+                    surviving_inc.get("impact", "none"), "minor"
+                )
+                _label_override = surviving_inc.get("title", sec.get("label", ""))
+                _kind_override  = "incident"
+            # else degraded/resolved baked item with a surviving inc: use baked values
+            # unchanged (kind/severity already baked from derivation; only mute-gate applied).
         # else: empty tracked_incs → maintenance/degraded baked item → fall through
         # unchanged to the existing baked path (no suppression applied).
 
@@ -3743,6 +3765,15 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
             else:
                 glyph = "\U0001f527"   # 🔧 emoji fallback (wrench)
             color = _claude_status_color("maintenance")  # DIM (neutral, not severity)
+        elif kind == "resolved" or severity == "resolved":
+            # Resolved path (D-03, Plan 07.1): check-circle glyph + GREEN color.
+            # Mirror the WR-01 dual-key guard (kind OR severity) for maintenance above.
+            # Glyph: reuse _NF_GSD_DONE (nf-fa-check_circle, U+F058 — already in repo).
+            if icon_set == "nerd":
+                glyph = _NF_GSD_DONE
+            else:
+                glyph = "\U00002705"   # ✅ emoji fallback (check mark button)
+            color = _claude_status_color(severity)  # returns GREEN for "resolved" (Plan 07.1-01)
         else:
             # Incident / degraded path: exclamation glyph + severity color (D-03)
             if icon_set == "nerd":
@@ -3762,7 +3793,13 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
             safe_label = kind or "incident"  # kind is already a safe string
 
         # Step 7: assemble and return (matches alert-override assembly, :2915-2921)
-        detail = f"{glyph} {safe_label}"
+        # For resolved items, prepend the 'resolved: ' prefix so it survives no-color /
+        # glyph-fallback terminals — the word and glyph both convey the resolved state
+        # (D-03). The prefix is applied here (render concern, not baked into cache — RAW-in-cache).
+        if kind == "resolved" or severity == "resolved":
+            detail = f"{glyph} resolved: {safe_label}"
+        else:
+            detail = f"{glyph} {safe_label}"
         return f"{color}{detail}{RESET}"
 
     except Exception:
