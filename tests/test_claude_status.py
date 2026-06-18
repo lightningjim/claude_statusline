@@ -2264,6 +2264,89 @@ class TestFetchClaudeStatusWidenedPayload(unittest.TestCase):
         self.assertFalse(section.get("noteworthy"),
                          "noteworthy must be False in healthy section")
 
+    # ---- Phase 07.1 Plan 01: resolved-incident tracking (D-06/D-07 enabler) ----
+
+    def test_resolved_degraded_fixture_tracked_incidents_has_resolved_entry(self):
+        """Resolved-degraded fixture → tracked_incidents contains entry with status=='resolved'."""
+        section = self._fetch_with_fixture("status_resolved_degraded.json")
+        incidents = section.get("tracked_incidents", [])
+        self.assertIsInstance(incidents, list, "tracked_incidents must be a list")
+        resolved_entries = [e for e in incidents if isinstance(e, dict) and e.get("status") == "resolved"]
+        self.assertTrue(len(resolved_entries) > 0,
+                        f"tracked_incidents must contain at least one resolved entry; got {incidents!r}")
+
+    def test_resolved_degraded_fixture_resolved_entry_component(self):
+        """Resolved-degraded fixture → resolved entry has correct tracked component."""
+        section = self._fetch_with_fixture("status_resolved_degraded.json")
+        incidents = section.get("tracked_incidents", [])
+        entry = next((e for e in incidents if isinstance(e, dict) and e.get("status") == "resolved"), None)
+        self.assertIsNotNone(entry, "Resolved entry must be present in tracked_incidents")
+        self.assertEqual(entry.get("component"), "Claude Code",
+                         f"Resolved entry component must be 'Claude Code'; got {entry.get('component')!r}")
+
+    def test_resolved_degraded_fixture_resolved_entry_has_id(self):
+        """Resolved-degraded fixture → resolved entry has 'id' == 'inc-resolved-001'."""
+        section = self._fetch_with_fixture("status_resolved_degraded.json")
+        incidents = section.get("tracked_incidents", [])
+        entry = next((e for e in incidents if isinstance(e, dict) and e.get("status") == "resolved"), None)
+        self.assertIsNotNone(entry, "Resolved entry must be present")
+        self.assertEqual(entry.get("id"), "inc-resolved-001",
+                         f"Entry id must match fixture; got {entry.get('id')!r}")
+
+    def test_resolved_degraded_fixture_resolved_entry_shape_keys(self):
+        """Resolved-degraded fixture → resolved entry has exactly the 5 expected keys (shape unchanged)."""
+        section = self._fetch_with_fixture("status_resolved_degraded.json")
+        incidents = section.get("tracked_incidents", [])
+        entry = next((e for e in incidents if isinstance(e, dict) and e.get("status") == "resolved"), None)
+        self.assertIsNotNone(entry, "Resolved entry must be present")
+        expected_keys = {"id", "impact", "status", "title", "component"}
+        actual_keys = set(entry.keys())
+        self.assertEqual(actual_keys, expected_keys,
+                         f"Resolved entry must have exactly {expected_keys}; got {actual_keys!r}")
+
+    def test_untracked_resolved_incident_not_collected(self):
+        """An untracked resolved incident (no tracked component) is NOT collected."""
+        # Use operational fixture — no tracked incidents; add an untracked resolved incident
+        # by building a minimal summary dict directly via _collect_tracked_incidents
+        mod = self.mod
+        summary = {
+            "components": [
+                {"name": "Claude Code", "status": "operational"},
+                {"name": "claude.ai", "status": "operational"},
+                {"name": "Claude Cowork", "status": "operational"},
+            ],
+            "incidents": [
+                {
+                    "id": "inc-untracked-resolved",
+                    "name": "Untracked component resolved",
+                    "status": "resolved",
+                    "impact": "minor",
+                    "components": [
+                        {"id": "comp-api", "name": "Claude API (api.anthropic.com)"},
+                    ],
+                }
+            ],
+            "scheduled_maintenances": [],
+        }
+        result = mod._collect_tracked_incidents(summary)
+        self.assertIsInstance(result, list)
+        self.assertEqual(result, [],
+                         f"Untracked resolved incident must NOT be collected; got {result!r}")
+
+    def test_collect_garbage_input_returns_empty_list(self):
+        """_collect_tracked_incidents(garbage) → [] never raises (D-10)."""
+        mod = self.mod
+        for bad in [None, [], "garbage", 42, {"incidents": "not-a-list"}]:
+            with self.subTest(input=bad):
+                try:
+                    result = mod._collect_tracked_incidents(bad)
+                    self.assertIsInstance(result, list,
+                                         f"Must return list on bad input {bad!r}; got {type(result)}")
+                    self.assertEqual(result, [],
+                                     f"Must return [] on bad input {bad!r}; got {result!r}")
+                except Exception as e:
+                    self.fail(f"_collect_tracked_incidents raised on {bad!r}: {e}")
+
 
 # ---------------------------------------------------------------------------
 # Phase 7 Plan 02: Task 1 — _is_suppressed + filter integration in _derive_claude_status
