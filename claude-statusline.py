@@ -2162,20 +2162,63 @@ def fetch_claude_status(cfg: dict) -> None:
         try:
             dismissals = read_dismissals(_DISMISSALS_PATH)
             # Build set of live tracked incident ids (defensive: only string ids).
-            # Only UNRESOLVED incidents (investigating/identified/monitoring) count as
-            # "live" — matching _collect_tracked_incidents (WR-03). A resolved incident
-            # lingers in the API feed for days (Statuspage.io history), so keying live_ids
-            # off all incidents would defer the prune until the entry fully disappears,
-            # leaving the store retaining a dismissal that --status-incidents already
-            # reports as stale. Aligning the filter prunes as soon as the incident resolves.
+            #
+            # WR-03 (Phase 07.1 Plan 02 update): An incident id is added to live_ids when
+            # EITHER (a) its status is unresolved (investigating/identified/monitoring), OR
+            # (b) its status is "resolved" AND at least one of its tracked components is
+            # still non-operational in the live feed.
+            #
+            # Rationale — D-06 ("muting wins in every state"): under Phase 07.1, a resolved
+            # incident is still actively surfaced while its tracked component remains degraded
+            # (D-01 lifecycle). Dropping the dismissal at resolution would let it re-surface
+            # green (no longer muted) — violating D-06. Retaining the id in live_ids keeps
+            # the dismissal alive for exactly as long as the incident can drive the segment.
+            # Once the component returns to operational (or the incident vanishes), the
+            # dismissal is genuinely stale and prunes as before (consistent with WR-03 intent).
+            #
+            # A resolved incident whose tracked components are ALL operational stays OUT of
+            # live_ids — its dismissal prunes exactly as if it were a vanished incident.
+            # String-id guard is preserved; inner try/except below catches any error.
+
+            # Step 1: build tracked component name→status map from the live feed.
+            # Mirror the normalization in _derive_claude_status (≈:1748-1759): only tracked
+            # names, default "operational" for missing status.  Bounded to ≤3 tracked names.
+            _prune_comp_map: dict = {}
+            for _comp in (summary.get("components", []) or []):
+                if not isinstance(_comp, dict):
+                    continue
+                _cname = _comp.get("name", "")
+                if isinstance(_cname, str) and _cname in _CLAUDE_TRACKED_COMPONENTS:
+                    _cstatus = _comp.get("status", "operational")
+                    _prune_comp_map[_cname] = _cstatus if isinstance(_cstatus, str) else "operational"
+
+            # Step 2: populate live_ids with unresolved ids (rule a) and
+            # resolved-but-still-degraded ids (rule b).
             live_ids: set = set()
             for _inc in (summary.get("incidents", []) or []):
-                if isinstance(_inc, dict):
-                    _status = _inc.get("status", "")
-                    if _status not in ("investigating", "identified", "monitoring"):
-                        continue          # resolved incident — do not keep in live_ids
-                    _id = _inc.get("id", "")
-                    if isinstance(_id, str) and _id:
+                if not isinstance(_inc, dict):
+                    continue
+                _status = _inc.get("status", "")
+                if not isinstance(_status, str):
+                    continue
+                _id = _inc.get("id", "")
+                if not (isinstance(_id, str) and _id):
+                    continue
+                if _status in ("investigating", "identified", "monitoring"):
+                    # Rule (a): unresolved incident — always live
+                    live_ids.add(_id)
+                elif _status == "resolved":
+                    # Rule (b): resolved but still-degraded — retain while component is
+                    # non-operational (D-01/D-06).  Resolved + all-operational → prunable.
+                    _inc_tracked = set()
+                    for _ref in (_inc.get("components", []) or []):
+                        if isinstance(_ref, dict):
+                            _rname = _ref.get("name", "")
+                            if isinstance(_rname, str) and _rname in _CLAUDE_TRACKED_COMPONENTS:
+                                _inc_tracked.add(_rname)
+                    # Any tracked component still non-operational → keep the dismissal alive
+                    if any(_prune_comp_map.get(n, "operational") != "operational"
+                           for n in _inc_tracked):
                         live_ids.add(_id)
             pruned = _prune_dismissals(dismissals, live_ids)
             if pruned != dismissals:
