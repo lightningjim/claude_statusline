@@ -1425,5 +1425,214 @@ class TestWeatherSegmentAlertOverrideV2(unittest.TestCase):
                              f"Raw control byte {ctl!r} must not appear in output: {result!r}")
 
 
+# ---------------------------------------------------------------------------
+# Plan 08-01 Task 1 + 2: _fmt_alert_time and _fmt_alert_timing — pure formatter tests
+# No _WEATHER_OK guard: these functions use only stdlib datetime, no astral/requests.
+# ---------------------------------------------------------------------------
+
+class TestAlertTimingFormatter(unittest.TestCase):
+    """Tests for _fmt_alert_time and _fmt_alert_timing (pure stdlib formatters)."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        # Anchor: 2026-06-20 (Saturday) 12:00:00 UTC
+        self._now = datetime(2026, 6, 20, 12, 0, 0, tzinfo=timezone.utc)
+
+    # ------------------------------------------------------------------
+    # _fmt_alert_time: same-day arm
+    # ------------------------------------------------------------------
+
+    def test_same_day_3pm_returns_bare_time(self):
+        """A datetime at 15:00 same calendar day → '3:00 PM'."""
+        dt = datetime(2026, 6, 20, 15, 0, 0, tzinfo=timezone.utc)
+        result = self.mod._fmt_alert_time(dt, self._now)
+        self.assertEqual(result, "3:00 PM")
+
+    def test_same_day_9_05am_zero_padded_minutes(self):
+        """A datetime at 09:05 same day → '9:05 AM' (minutes zero-padded, hour not)."""
+        dt = datetime(2026, 6, 20, 9, 5, 0, tzinfo=timezone.utc)
+        result = self.mod._fmt_alert_time(dt, self._now)
+        self.assertEqual(result, "9:05 AM")
+
+    def test_same_day_noon_uppercase_pm(self):
+        """12:00 same day → '12:00 PM' (uppercase, no leading zero for 12)."""
+        dt = datetime(2026, 6, 20, 12, 0, 0, tzinfo=timezone.utc)
+        result = self.mod._fmt_alert_time(dt, self._now)
+        self.assertEqual(result, "12:00 PM")
+
+    # ------------------------------------------------------------------
+    # _fmt_alert_time: tomorrow arm (+1 calendar day)
+    # ------------------------------------------------------------------
+
+    def test_next_day_returns_tmrw_prefix(self):
+        """A datetime 1 calendar day ahead → 'Tmrw. at 3:00 PM'."""
+        dt = datetime(2026, 6, 21, 15, 0, 0, tzinfo=timezone.utc)
+        result = self.mod._fmt_alert_time(dt, self._now)
+        self.assertEqual(result, "Tmrw. at 3:00 PM")
+
+    # ------------------------------------------------------------------
+    # _fmt_alert_time: weekday arm (2-6 calendar days)
+    # ------------------------------------------------------------------
+
+    def test_3_days_ahead_returns_weekday(self):
+        """3 calendar days ahead → '<Wkdy> at 3:00 PM' (abbreviated, no period)."""
+        # 2026-06-20 + 3 = 2026-06-23 (Tuesday)
+        dt = datetime(2026, 6, 23, 15, 0, 0, tzinfo=timezone.utc)
+        result = self.mod._fmt_alert_time(dt, self._now)
+        self.assertIn(" at 3:00 PM", result)
+        self.assertNotIn("Tmrw", result)
+        self.assertNotIn("Jun", result)
+
+    def test_6_days_ahead_still_weekday_arm(self):
+        """6 calendar days ahead → weekday form (boundary: threshold is >=7)."""
+        # 2026-06-20 + 6 = 2026-06-26 (Friday)
+        dt = datetime(2026, 6, 26, 15, 0, 0, tzinfo=timezone.utc)
+        result = self.mod._fmt_alert_time(dt, self._now)
+        self.assertIn(" at 3:00 PM", result)
+        self.assertNotIn("Tmrw", result)
+        self.assertNotIn("Jun", result)
+
+    # ------------------------------------------------------------------
+    # _fmt_alert_time: dated arm (7+ calendar days)
+    # ------------------------------------------------------------------
+
+    def test_7_days_ahead_returns_dated_form(self):
+        """Exactly 7 calendar days ahead → dated form (contains month + ' at ')."""
+        # 2026-06-20 + 7 = 2026-06-27 (Saturday)
+        dt = datetime(2026, 6, 27, 15, 0, 0, tzinfo=timezone.utc)
+        result = self.mod._fmt_alert_time(dt, self._now)
+        self.assertIsNotNone(result)
+        self.assertIn(" at ", result)
+        # Dated form starts with abbreviated month, not 'Tmrw' or a bare weekday
+        self.assertNotIn("Tmrw", result)
+        # Should start with 'Jun' (the month of 2026-06-27)
+        self.assertTrue(result.startswith("Jun"), f"Expected 'Jun ...' but got {result!r}")
+
+    def test_30_days_ahead_returns_dated_form(self):
+        """30 calendar days ahead → dated form."""
+        # 2026-06-20 + 30 = 2026-07-20
+        dt = datetime(2026, 7, 20, 15, 0, 0, tzinfo=timezone.utc)
+        result = self.mod._fmt_alert_time(dt, self._now)
+        self.assertIsNotNone(result)
+        self.assertIn(" at ", result)
+        self.assertTrue(result.startswith("Jul"), f"Expected 'Jul ...' but got {result!r}")
+
+    # ------------------------------------------------------------------
+    # _fmt_alert_time: None / garbage inputs → None (D-10)
+    # ------------------------------------------------------------------
+
+    def test_none_input_returns_none(self):
+        """`_fmt_alert_time(None, now)` must return None without raising."""
+        result = self.mod._fmt_alert_time(None, self._now)
+        self.assertIsNone(result)
+
+    def test_garbage_string_returns_none(self):
+        """`_fmt_alert_time('garbage', now)` must return None without raising."""
+        result = self.mod._fmt_alert_time("garbage", self._now)
+        self.assertIsNone(result)
+
+    def test_int_returns_none(self):
+        """`_fmt_alert_time(12345, now)` must return None without raising."""
+        result = self.mod._fmt_alert_time(12345, self._now)
+        self.assertIsNone(result)
+
+    # ------------------------------------------------------------------
+    # _fmt_alert_timing: upcoming arm (start > now)
+    # ------------------------------------------------------------------
+
+    def test_upcoming_future_start_valid_end_returns_from(self):
+        """Future start with valid end → string starting with 'from '."""
+        # now = 2026-06-20T12:00:00Z; start = 18:00Z same day; end = next day
+        start_raw = "2026-06-20T18:00:00+00:00"
+        end_raw = "2026-06-21T18:00:00+00:00"
+        result = self.mod._fmt_alert_timing(start_raw, end_raw, now=self._now)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.startswith("from "), f"Expected 'from ...' but got {result!r}")
+
+    def test_upcoming_future_start_with_Z_suffix(self):
+        """Trailing-Z ISO timestamps parse correctly → non-None 'from' fragment."""
+        start_raw = "2026-06-20T18:00:00Z"
+        end_raw = "2026-06-21T18:00:00Z"
+        result = self.mod._fmt_alert_timing(start_raw, end_raw, now=self._now)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.startswith("from "), f"Expected 'from ...' but got {result!r}")
+
+    # ------------------------------------------------------------------
+    # _fmt_alert_timing: active arm (start <= now)
+    # ------------------------------------------------------------------
+
+    def test_active_past_start_valid_end_returns_until(self):
+        """Start before now with valid end → string starting with 'until '."""
+        # start = 6 hours ago; end = 9 PM UTC today
+        start_raw = "2026-06-20T06:00:00+00:00"
+        end_raw = "2026-06-20T21:00:00+00:00"
+        result = self.mod._fmt_alert_timing(start_raw, end_raw, now=self._now)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.startswith("until "), f"Expected 'until ...' but got {result!r}")
+
+    def test_active_start_equals_now_returns_until(self):
+        """Start exactly == now → active branch → string starting with 'until '."""
+        start_raw = "2026-06-20T12:00:00+00:00"
+        end_raw = "2026-06-20T21:00:00+00:00"
+        result = self.mod._fmt_alert_timing(start_raw, end_raw, now=self._now)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.startswith("until "), f"Expected 'until ...' but got {result!r}")
+
+    # ------------------------------------------------------------------
+    # _fmt_alert_timing: D-03a anomaly guard
+    # ------------------------------------------------------------------
+
+    def test_d03a_future_start_no_end_returns_none(self):
+        """D-03a: future start with end=None → None (omit, not 'from')."""
+        start_raw = "2026-06-20T18:00:00+00:00"
+        result = self.mod._fmt_alert_timing(start_raw, None, now=self._now)
+        self.assertIsNone(result)
+
+    def test_d03a_future_start_past_end_returns_none(self):
+        """D-03a: future start with end already in the past → None."""
+        start_raw = "2026-06-20T18:00:00+00:00"
+        end_raw = "2026-06-20T06:00:00+00:00"   # 6 AM — before now (12:00)
+        result = self.mod._fmt_alert_timing(start_raw, end_raw, now=self._now)
+        self.assertIsNone(result)
+
+    def test_d03a_future_start_unparseable_end_returns_none(self):
+        """D-03a: future start with unparseable end → None."""
+        start_raw = "2026-06-20T18:00:00+00:00"
+        end_raw = "not-a-timestamp"
+        result = self.mod._fmt_alert_timing(start_raw, end_raw, now=self._now)
+        self.assertIsNone(result)
+
+    # ------------------------------------------------------------------
+    # _fmt_alert_timing: active branch with missing/bad end → None
+    # ------------------------------------------------------------------
+
+    def test_active_no_end_returns_none(self):
+        """Active alert with end=None → None (can't show 'until', D-10)."""
+        start_raw = "2026-06-20T06:00:00+00:00"
+        result = self.mod._fmt_alert_timing(start_raw, None, now=self._now)
+        self.assertIsNone(result)
+
+    def test_active_unparseable_end_returns_none(self):
+        """Active alert with unparseable end → None."""
+        start_raw = "2026-06-20T06:00:00+00:00"
+        end_raw = "garbage"
+        result = self.mod._fmt_alert_timing(start_raw, end_raw, now=self._now)
+        self.assertIsNone(result)
+
+    # ------------------------------------------------------------------
+    # _fmt_alert_timing: both inputs None / malformed
+    # ------------------------------------------------------------------
+
+    def test_both_none_returns_none(self):
+        """Both start and end None → None."""
+        result = self.mod._fmt_alert_timing(None, None, now=self._now)
+        self.assertIsNone(result)
+
+    def test_malformed_start_returns_none(self):
+        """Malformed start ISO string → None, no exception raised."""
+        result = self.mod._fmt_alert_timing("not-a-date", "2026-06-21T00:00:00Z", now=self._now)
+        self.assertIsNone(result)
+
+
 if __name__ == "__main__":
     unittest.main()
