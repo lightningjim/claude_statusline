@@ -138,7 +138,17 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Clickable links for both any Claude Status events and any weather alerts — deferred from a v1.0 Phase 8; include in the v1.1 "QOL and fixes" milestone scope (OSC 8 hyperlinks; must degrade to plain text where the terminal doesn't support them)
+**Planned for v1.1 "QOL and fixes" (build into the roadmap when /gsd:new-milestone runs):**
+
+- **v1.1 Phase 8 — Clickable links** for both any Claude Status events and any weather alerts — deferred from a v1.0 Phase 8 (OSC 8 hyperlinks; must degrade to plain text where the terminal doesn't support them).
+- **v1.1 Phase 9 — v1.0 tech-debt cleanup** (per user 2026-06-20: take ALL v1.0-MILESTONE-AUDIT.md tech debt into one phase under v1.1). Items:
+  1. Bump `pyproject.toml` version 0.1.0 → match `_APP_VERSION` (0.2.0) in `claude-statusline.py:629`.
+  2. Backfill `requirements-completed` SUMMARY frontmatter for the 15/19 requirements missing it (or formally retire the field if redundant with VERIFICATION/traceability).
+  3. Refresh the stale `REQUIREMENTS.md` footer ("Last updated 2026-05-28 after Plan 01-01") and reconcile the traceability table.
+  4. Make the 60 astral/requests weather tests runnable (or explicitly gated) under system python3 so WX-01..06 isn't only covered via the venv interpreter.
+  5. Resolve the WX-05 text/code drift — requirement says "~15min", code defaults to 10 min (`claude-statusline.py:152`); align the requirement text (or the default) so they agree.
+
+  Full source: `.planning/v1.0-MILESTONE-AUDIT.md` (audited 2026-06-20, status passed) tech_debt block.
 
 ### Blockers/Concerns
 
