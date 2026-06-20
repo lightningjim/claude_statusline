@@ -1,14 +1,16 @@
 ---
 phase: 08-alert-timing
 verified: 2026-06-20T00:00:00Z
-status: human_needed
+status: passed
 score: 7/7 must-haves verified
 has_blocking_gaps: false
 overrides_applied: 0
+human_verification_resolved: 2026-06-20
 human_verification:
   - test: "Run the statusline against a live NWS active alert (or inject a real cached alert JSON) and confirm the rendered output shows the correct `from`/`until` text and time in the terminal's status bar."
     expected: "Primary alert line reads e.g. `🔴 Tornado Warning · until 3:00 PM  +2` (with correct class color from ANSI wrap); time matches local clock; tally appears only for secondary alerts."
     why_human: "ANSI color rendering and real-time clock correctness cannot be verified programmatically; integration tests are _WEATHER_OK-gated (skip under system python3 without venv)."
+    result: "PASSED — UAT 2026-06-20 (08-UAT.md). User confirmed via .examples/alert_timing_demo.py: active `· until`, upcoming `· from`, far-out dated form, expired alert omits timing (CR-01), primary-only tally; middot/Nerd-Font glyphs/class color all render correctly; live Heat Advisory rendered `· from Tmrw. at 1:00 PM`."
 ---
 
 # Phase 8: Alert Timing Verification Report
