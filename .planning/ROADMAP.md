@@ -45,7 +45,7 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
   3. Alert times on the same calendar day render as bare 12hr times (`3:00 PM`), the next calendar day as `Tmrw. at 3:00 PM`, and further out as `<Wkdy> at 3:00 PM`
   4. A null or missing `onset`/`ends`/`effective`/`expires` causes the time portion to be omitted rather than faked or errored
 **Plans**: 2 plans
-- [ ] 08-01-PLAN.md — Pure _fmt_alert_time relative-day formatter + _fmt_alert_timing upcoming/active decision (TDD)
+- [x] 08-01-PLAN.md — Pure _fmt_alert_time relative-day formatter + _fmt_alert_timing upcoming/active decision (TDD)
 - [ ] 08-02-PLAN.md — Splice timing fragment into _weather_segment Step 3c + integration render tests
 
 ### Phase 9: Clickable Links
@@ -86,6 +86,6 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 | 6. Claude Status indicator | v1.0 | 2/2 | Complete | 2026-06-16 |
 | 7. Filter/dismiss incidents | v1.0 | 4/4 | Complete | 2026-06-17 |
 | 07.1. Resolved vs unresolved | v1.0 | 3/3 | Complete | 2026-06-18 |
-| 8. Alert Timing | v1.1 | 0/2 | Not started | - |
+| 8. Alert Timing | v1.1 | 1/2 | In Progress|  |
 | 9. Clickable Links | v1.1 | 0/? | Not started | - |
 | 10. Tech-Debt Cleanup | v1.1 | 0/? | Not started | - |
