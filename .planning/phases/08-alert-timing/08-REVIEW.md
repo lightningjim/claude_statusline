@@ -1,198 +1,80 @@
 ---
 phase: 08-alert-timing
-reviewed: 2026-06-20T00:00:00Z
+reviewed: 2026-06-20T20:04:10Z
 depth: deep
 files_reviewed: 2
 files_reviewed_list:
   - claude-statusline.py
   - tests/test_weather_alerts.py
 findings:
-  critical: 1
-  warning: 3
-  info: 1
-  total: 5
+  critical: 0
+  warning: 1
+  info: 2
+  total: 3
 status: issues_found
 ---
 
-# Phase 8: Alert Timing — Code Review Report
+# Phase 8: Alert Timing — Code Review Report (Re-review)
 
-**Reviewed:** 2026-06-20
-**Depth:** deep (cross-function tracing)
-**Files Reviewed:** 2 (diff range `5e7f15f..HEAD`)
-**Status:** issues_found
+**Reviewed:** 2026-06-20T20:04:10Z
+**Depth:** deep
+**Files Reviewed:** 2 (`git diff 5e7f15f..HEAD`)
+**Status:** issues_found (0 critical, 1 warning, 2 info)
 
 ## Summary
 
-Phase 8 adds `_fmt_alert_time` and `_fmt_alert_timing` in `claude-statusline.py` (~L2562–2646)
-and splices them into `_weather_segment` Step 3c (~L3772–3782). The implementation is
-well-structured: pure functions, inner `try/except` guards, `_parse` inner function for
-ISO-8601 handling, and D-03a anomaly guard. Test coverage is broad for the formatter
-(15 unit tests) and integration (8 tests for `_weather_segment`).
+This is the adversarial re-review of the Phase 8 implementation after the
+earlier CR-01 fix was applied. Scope is `_fmt_alert_time` and
+`_fmt_alert_timing` (~L2562–2655), the timing splice in `_weather_segment`
+Step 3c (~L3781–3791), and the two new test classes
+(`TestAlertTimingFormatter`, `TestWeatherSegmentAlertTiming`).
 
-One correctness bug (BLOCKER) was found that violates the omit-not-fake principle: the
-active branch of `_fmt_alert_timing` emits `"until <past time>"` for an alert whose `end`
-timestamp has already passed — factually incorrect output that can occur within the
-`alerts_max_stale` window. Two gaps in test coverage (WARNING) let this bug through and
-leave the negative-delta behavior of `_fmt_alert_time` entirely untested. One redundant
-`props` re-fetch is noted (WARNING, code quality). One test import style issue is noted
-(INFO).
+**CR-01 is confirmed resolved.** Both guards are present and correct:
 
----
+- `_fmt_alert_time` L2582: `if delta_days < 0: return None` — guards against
+  past calendar dates returning a misleading weekday string.
+- `_fmt_alert_timing` active branch L2648: `if end is None or end <= now_local: return None`
+  — omits timing when the hazard end has already passed.
+- `_fmt_alert_timing` upcoming D-03a L2636: `if end is None or end <= now_local: return None`
+  — anomaly guard for contradictory stale records.
 
-## Critical Issues
+All three comparisons are tz-aware (`now_local = now.astimezone()`, both `start`
+and `end` are `_parse()`-returned tz-aware datetimes). No path exists that emits
+a past time. The runtime contract is preserved — no I/O, no blocking, pure
+computation only.
 
-### CR-01: Active branch emits `"until <past time>"` for expired-but-cached alerts
-
-**File:** `claude-statusline.py:2637–2644`
-
-**Issue:** `_fmt_alert_timing`'s active branch (`else:`) checks only `end is None` before
-calling `_fmt_alert_time`. It does NOT check `end <= now_local`. An alert that has already
-expired but is still present in the cache (within the 900-second `alerts_max_stale` ceiling)
-will produce output like `"until 6:30 AM"` when it is already noon — a factually false
-claim that the alert is still active until a past time.
-
-The bug is directly reproducible:
-- `start = "2026-06-20T06:00:00Z"` (in past), `end = "2026-06-20T11:30:00Z"` (30 min ago)
-- Active branch fires (start <= now). `end` is not None.
-- `_fmt_alert_time(end, now_local)` with `delta_days = 0` → returns `"6:30 AM"`.
-- Output: `"until 6:30 AM"` at 12:00 — factually wrong.
-
-Compounding issue: `_fmt_alert_time` itself has no guard against negative `delta_days`.
-For dates in the past, `delta_days` is negative, and the condition `elif delta_days <= 6`
-is True for ALL negative values, so past dates in different calendar days produce
-`"<Weekday> at <time>"` (e.g. `"Mon at 3:00 PM"`) rather than `None`. This means:
-- Same-day past → `"until 6:30 AM"` (confusingly past)
-- Yesterday/last-week past → `"until Mon at 3:00 PM"` (wrong weekday, looks like a future date)
-
-The D-03a anomaly guard in the **upcoming** branch correctly rejects a past `end`. The same
-guard is missing from the **active** branch.
-
-This violates the omit-not-fake principle (D-10): an already-expired `end` timestamp is
-incoherent for display and must be omitted.
-
-**Fix — `_fmt_alert_timing`, active branch (~L2637):**
-```python
-        else:
-            # Active branch (start is None, or start <= now)
-            if end is None or end <= now_local:   # ← add guard: omit if already expired
-                return None
-            frag = _fmt_alert_time(end, now_local)
-            if frag is None:
-                return None
-            return f"until {frag}"
-```
-
-**Fix — `_fmt_alert_time`, branch ladder (~L2581):**
-
-Add a guard for negative `delta_days` so that a past datetime passed by mistake returns
-`None` rather than a misleading weekday string:
-
-```python
-        if delta_days < 0:
-            return None          # past date — caller should not reach here; omit safely
-        elif delta_days == 0:
-            return time_str
-        elif delta_days == 1:
-            return f"Tmrw. at {time_str}"
-        elif delta_days <= 6:
-            weekday = dt_local.strftime("%a")
-            return f"{weekday} at {time_str}"
-        else:  # >= 7
-            month = dt_local.strftime("%b")
-            day = dt_local.strftime("%-d")
-            return f"{month} {day} at {time_str}"
-```
-
-With the `_fmt_alert_timing` fix in place, `_fmt_alert_time` would never be called with a
-past `end`; the `_fmt_alert_time` guard is a defense-in-depth safeguard for future callers.
+One warning (redundant variable) and two info items (test import style,
+missing docstring precondition) were found. After the adversarial refutation
+pass, none of the three rise to BLOCKER.
 
 ---
 
 ## Warnings
 
-### WR-01: No test for active branch with past `end` timestamp (gap that hid CR-01)
+### WR-01: Redundant `props_timing` variable re-fetches `props` already in scope
 
-**File:** `tests/test_weather_alerts.py` — `TestAlertTimingFormatter`
+**File:** `claude-statusline.py:3783`
 
-**Issue:** The test suite covers D-03a (future start, past end → None in the upcoming
-branch) but has no test for the symmetric active-branch case: `start` in the past AND
-`end` also in the past (stale-cached record). This is the scenario described in CR-01.
+**Issue:** Line 3783 computes `props_timing = best.get("properties") or best`
+inside the timing try-block. An identical expression was already computed four
+lines earlier as `props = best.get("properties") or best` (L3759), and `props`
+is in scope at L3783. Both variables reference the same dict object (Python
+returns the same reference; no copy is made). The redundant re-fetch is not a
+correctness bug but it carries two maintenance costs:
 
-The test `test_active_past_start_valid_end_returns_until` always uses a `end` 9 hours in
-the future. No test exercises `start` past + `end` past.
+1. If the `"properties"` extraction idiom changes (e.g., a helper is introduced),
+   there are now two call sites in the same function that must be updated in tandem.
+2. A reviewer reading L3785–3786 sees `props_timing.get("onset")` and must
+   backtrack to L3783 to confirm it is the same dict as `props` — unnecessary
+   cognitive overhead.
 
-**Fix:** Add a unit test to `TestAlertTimingFormatter`:
-```python
-def test_active_past_start_past_end_returns_none(self):
-    """Active alert where end has already passed → None (omit stale expired alert, D-10)."""
-    # start 6h ago, end 30min ago — alert is over but still in cache window
-    start_raw = "2026-06-20T06:00:00+00:00"
-    end_raw   = "2026-06-20T11:30:00+00:00"   # 30 min before noon anchor
-    result = self.mod._fmt_alert_timing(start_raw, end_raw, now=self._now_utc)
-    self.assertIsNone(result, "Expired-end active alert must omit timing (D-10)")
-```
+The inner `try/except` at L3782 also adds an extra exception layer around code
+that is already protected by the outer `try/except` at L3752/3798. The inner
+layer is not harmful, but it obscures that `props.get()` on a known-good dict
+(guarded by L3759's outer block) cannot raise.
 
-Also add a cross-day past-end variant to cover the negative-delta weekday-arm bug in
-`_fmt_alert_time`:
-```python
-def test_past_dt_in_fmt_alert_time_returns_none(self):
-    """_fmt_alert_time with dt in the past returns None (defense-in-depth, not a weekday)."""
-    dt = datetime(2026, 6, 17, 15, 0, 0)   # 3 days before now_naive anchor
-    result = self.mod._fmt_alert_time(dt, self._now_naive)
-    self.assertIsNone(result)
-```
+**Fix:** Remove `props_timing`; use `props` directly:
 
-
-### WR-02: `test_all_timestamps_null_omits_middot_fragment` tests an unreachable production state
-
-**File:** `tests/test_weather_alerts.py:1826–1845`
-
-**Issue:** The test builds an alert, then removes its `expires` field
-(`alert["properties"].pop("expires", None)`), so all four timing fields are absent. It then
-injects this alert directly into the cache `active` list.
-
-In the production pipeline, `dedup_alerts` calls `continue` (skips) on any alert with a
-missing or unparseable `expires` field (see `claude-statusline.py:1396–1397`). An alert
-with no `expires` would never survive dedup and never appear in the `active` cache.
-
-The test therefore validates render robustness against data that cannot arrive via the real
-data path. This is not wrong per se (it's a useful defense-in-depth check), but the test
-docstring claims it models a real scenario ("all four timing fields absent") without
-acknowledging that `expires`-absent records are pre-filtered. A reader may incorrectly
-believe this is a realistic production case.
-
-**Fix:** Clarify the docstring to explain this is a defense-in-depth test against
-corrupted/hand-injected cache data, not a scenario producible through the normal NWS fetch
-path. Alternatively, restructure to leave `expires` present (far future) and only omit
-`onset`/`effective`/`ends` — which is the realistic production scenario for alerts that
-lack precise onset/ends data.
-
-```python
-def test_onset_effective_ends_all_null_omits_middot_fragment(self):
-    """When onset, effective, and ends are all absent but expires is present (realistic
-    production state — dedup requires expires), active branch has no end (None), so the
-    timing fragment is omitted per D-10."""
-    ...
-    # Leave expires in place (its presence is required for the alert to survive dedup)
-    # Only pop onset/effective/ends
-    for field in ("onset", "effective", "ends"):
-        alert["properties"].pop(field, None)
-```
-
-
-### WR-03: Redundant `best.get("properties") or best` re-fetch in `_weather_segment` Step 3c
-
-**File:** `claude-statusline.py:3774`
-
-**Issue:** At line 3774, `props_timing = best.get("properties") or best` duplicates the
-identical expression already computed at line 3750 as `props`. The variable `props` is in
-scope and holds the same value; `props_timing` is unnecessary.
-
-This is not a correctness bug — the result is identical — but the duplication is a
-maintenance hazard: if the `properties` extraction idiom ever changes, it must be changed
-in two places in the same try block.
-
-**Fix:** Remove `props_timing` and use the already-bound `props`:
 ```python
                         detail = f"{class_glyph} {safe_event}"
                         # D-01/D-02/D-03: Build and splice timing fragment
@@ -204,34 +86,108 @@ in two places in the same try block.
                             if timing_fragment:
                                 detail += f" · {timing_fragment}"
                         except Exception:
-                            pass
+                            pass  # timing parse failed → omit silently (D-10)
 ```
 
 ---
 
 ## Info
 
-### IN-01: `timedelta` accessed via `__import__("datetime")` in integration tests instead of top-level import
+### IN-01: `__import__("datetime").timedelta` anti-pattern repeated 13 times in integration tests
 
-**File:** `tests/test_weather_alerts.py:1750, 1751, 1770, 1771, 1790, 1791, 1809, 1810, 1856, 1858, 1878, 1879, 1913, 1914` (14 occurrences)
+**File:** `tests/test_weather_alerts.py:1777` (and L1778, 1797, 1798, 1817,
+1818, 1836, 1837, 1883, 1885, 1905, 1906, 1940, 1941 — 13 total occurrences)
 
-**Issue:** The integration tests in `TestWeatherSegmentAlertTiming` compute relative
-timestamps using `__import__("datetime").timedelta(hours=N)`. This is an unusual pattern
-that works but avoids a standard top-level import. `timedelta` is not in the file's
-existing `from datetime import datetime, timezone` import statement, so each use reaches
-for `__import__` as a workaround.
+**Issue:** `TestWeatherSegmentAlertTiming` computes relative timestamps via
+`__import__("datetime").timedelta(hours=N)`. The idiom is correct — `__import__`
+returns the `datetime` module and `.timedelta` retrieves the class — but it is
+unusual. `__import__` is the primitive underlying `import` statements; its
+conventional use is for dynamic/conditional imports and plugin loading, not as a
+substitute for a forgotten top-level import. Readers will pause to verify no
+side-effect is intended.
 
-This is verbose, visually noisy, and deviates from standard Python idiom.
+The `from datetime import datetime, timezone` import on L29 does not include
+`timedelta`. Rather than adding it, the author worked around the omission with
+`__import__`. The one counter-example in the same file (`from datetime import
+timedelta` as a local import inside `test_fmt_alert_time_past_date_returns_none`
+at L1659) shows the clean pattern was available.
 
-**Fix:** Add `timedelta` to the existing import at line 29:
+**Fix:** Add `timedelta` to the existing module-level import at L29:
+
 ```python
+# Before:
+from datetime import datetime, timezone
+
+# After:
 from datetime import datetime, timedelta, timezone
 ```
-Then replace all 14 occurrences of `__import__("datetime").timedelta(hours=N)` with
-`timedelta(hours=N)`.
+
+Then replace all 13 `__import__("datetime").timedelta(hours=N)` occurrences
+with `timedelta(hours=N)`.
 
 ---
 
-_Reviewed: 2026-06-20_
+### IN-02: `_fmt_alert_time` has no docstring precondition stating `dt` must be `>= now`
+
+**File:** `claude-statusline.py:2562`
+
+**Issue:** `_fmt_alert_time` guards against past calendar dates via
+`if delta_days < 0: return None`. However, it does not guard against a datetime
+that falls on today's calendar date but earlier than `now` (e.g., `now = 3:00 PM`,
+`dt = 1:00 PM` same day → `delta_days == 0` → returns `"1:00 PM"`, a past time).
+
+In the current codebase this cannot surface in production: both call sites in
+`_fmt_alert_timing` are gated by `end > now_local` or `start > now_local` before
+the call, so `_fmt_alert_time` never receives a same-day-past datetime. But the
+function's docstring documents only the four output forms and the "returns None on
+error" behavior — it does not state the `dt >= now` precondition that callers must
+satisfy to avoid a same-day-past-time string.
+
+An independent future caller reading only the docstring could pass a past same-day
+datetime and receive a misleading time string with no warning.
+
+**Fix:** Add a precondition note to the docstring:
+
+```python
+def _fmt_alert_time(dt, now) -> str | None:
+    """Format a tz-aware datetime as a WX-10 relative-day time string.
+
+    Returns one of four forms:
+      - Same calendar day   → '3:00 PM'         (bare 12-hour time, uppercase AM/PM)
+      - Next calendar day   → 'Tmrw. at 3:00 PM'
+      - 2–6 days ahead      → 'Wed at 3:00 PM'   (abbreviated weekday, no period)
+      - 7+ days ahead       → 'Jul 3 at 3:00 PM' (dated form, no leading zero on day)
+
+    Precondition: `dt` must be >= `now` (in the future or at least today-future).
+    Past calendar dates return None; same-day-past times are the caller's responsibility
+    to exclude — this function does not guard against them.
+
+    Day arithmetic is by calendar-date delta (not 24h windows), per D-05.
+    Returns None on any error / non-datetime input — omit-not-fake (D-10, T-08-01).
+    """
+```
+
+---
+
+## CR-01 Resolution Verification (Required by Review Brief)
+
+All three CR-01 guards confirmed present and correct in the committed code:
+
+| Guard | Location | Code | Correct? |
+|---|---|---|---|
+| Past date in `_fmt_alert_time` | L2582 | `if delta_days < 0: return None` | Yes |
+| Active branch past-end | L2648 | `if end is None or end <= now_local: return None` | Yes |
+| Upcoming D-03a past-end | L2636 | `if end is None or end <= now_local: return None` | Yes |
+
+Regression tests `test_active_past_end_same_day_returns_none` (L1636) and
+`test_active_past_end_prior_day_returns_none` (L1648) in `TestAlertTimingFormatter`
+cover both same-day and cross-day past-end scenarios for the active branch.
+`test_d03a_future_start_past_end_returns_none` (L1608) covers the upcoming D-03a
+guard. The `delta_days < 0` guard in `_fmt_alert_time` is covered by
+`test_fmt_alert_time_past_date_returns_none` (L1658). CR-01 is fully resolved.
+
+---
+
+_Reviewed: 2026-06-20T20:04:10Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: deep_
