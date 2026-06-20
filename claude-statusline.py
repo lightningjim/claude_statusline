@@ -2568,6 +2568,10 @@ def _fmt_alert_time(dt, now) -> str | None:
       - 2–6 days ahead      → 'Wed at 3:00 PM'   (abbreviated weekday, no period)
       - 7+ days ahead       → 'Jul 3 at 3:00 PM' (dated form, no leading zero on day)
 
+    Precondition: `dt` must be >= `now` (in the future or at least today-future).
+    Past calendar dates return None; same-day-past times are the caller's responsibility
+    to exclude — this function does not guard against them.
+
     Day arithmetic is by calendar-date delta (not 24h windows), per D-05.
     Returns None on any error / non-datetime input — omit-not-fake (D-10, T-08-01).
     """
