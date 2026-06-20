@@ -1655,5 +1655,288 @@ class TestAlertTimingFormatter(unittest.TestCase):
         self.assertTrue(result.startswith("until "), f"Expected 'until ...' but got {result!r}")
 
 
+# ---------------------------------------------------------------------------
+# Plan 08-02: _weather_segment integration tests for alert timing rendering
+# Tests call _weather_segment so every test requires the _WEATHER_OK guard.
+# Timestamps are relative to datetime.now() so the tests stay correct at any
+# wall-clock time.
+# ---------------------------------------------------------------------------
+
+class TestWeatherSegmentAlertTiming(unittest.TestCase):
+    """Integration render tests for alert timing in _weather_segment.
+
+    Verifies that the Plan 08-02 timing splice produces the correct
+    '· from <time>' / '· until <time>' fragments in the rendered output, with
+    all fallbacks and omit-not-fake guards (D-01..D-04, D-10, WX-07..10).
+
+    Every test that calls _weather_segment uses the _WEATHER_OK guard so the
+    class passes cleanly (skip) under system python3 without the venv.
+    """
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        self.tmpdir = tempfile.mkdtemp()
+        self.cfg_emoji = {
+            "location": {"lat": 35.4676, "lon": -97.5164},
+            "weather": {"contact_email": "test@example.com", "show_weather": True},
+            "units": {"temp_unit": "F"},
+            "cache": {
+                "weather_ttl": 600,
+                "alerts_ttl": 300,
+                "weather_max_stale": 3600,
+                "alerts_max_stale": 900,
+            },
+            "toggles": {"show_thinking_glyph": True},
+            "thresholds": {"warn": 70, "crit": 90},
+            "display": {"icon_set": "emoji"},
+        }
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run_segment(self, cache_dict, cfg=None):
+        cache_path = os.path.join(self.tmpdir, "cache.json")
+        with open(cache_path, "w") as f:
+            json.dump(cache_dict, f)
+        cfg = cfg or self.cfg_emoji
+
+        def no_op_spawn(cfg_, cache_):
+            pass
+
+        with patch.object(self.mod, "_CACHE_PATH", cache_path):
+            with patch.object(self.mod, "maybe_spawn_refresh", side_effect=no_op_spawn):
+                return self.mod._weather_segment(None, cfg)
+
+    def _make_active_cache(self, alerts, age_seconds=60):
+        now = time.time()
+        return {
+            "weather": {"fetched_at": now - age_seconds, "icon": "☀️", "temp": 72, "pop": 0},
+            "alerts": {"fetched_at": now - age_seconds, "active": alerts},
+        }
+
+    def _make_timed_alert(self, onset=None, ends=None, effective=None, expires_override=None,
+                          event="Tornado Warning", severity="Extreme",
+                          vtec="/O.NEW.KTLX.TO.W.0001.000000T0000Z-000000T0000Z/"):
+        """Build an alert dict with explicit timing fields injected into properties.
+
+        Uses _make_alert as the base, then injects onset/effective/ends into the
+        properties dict (the _make_alert factory already accepts expires as a kwarg,
+        but the other timing fields must be injected separately).
+        """
+        expires_str = expires_override if expires_override is not None else "2099-12-31T23:59:59Z"
+        alert = _make_alert(
+            "timing-1", event, severity,
+            expires=expires_str,
+            vtec=[vtec],
+        )
+        props = alert["properties"]
+        if onset is not None:
+            props["onset"] = onset
+        if effective is not None:
+            props["effective"] = effective
+        if ends is not None:
+            props["ends"] = ends
+        return alert
+
+    # ------------------------------------------------------------------
+    # Upcoming: onset 2h in the future
+    # ------------------------------------------------------------------
+
+    def test_upcoming_alert_renders_from_fragment(self):
+        """An alert with onset 2h in the future renders '· from <time>' (D-02, D-03, WX-07/08)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        now = datetime.now().astimezone()
+        onset = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
+        ends  = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=4)).isoformat()
+        alert = self._make_timed_alert(onset=onset, ends=ends)
+        cache = self._make_active_cache([alert])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result, "Segment must not be None with a valid alert")
+        self.assertIn("· from ", result,
+                      f"Upcoming alert must contain '· from ': {result!r}")
+        self.assertNotIn("until", result,
+                         f"Upcoming alert must NOT contain 'until': {result!r}")
+
+    # ------------------------------------------------------------------
+    # Active: onset 1h in the past, ends 2h in the future
+    # ------------------------------------------------------------------
+
+    def test_active_alert_renders_until_fragment(self):
+        """An alert with onset 1h past and ends 2h future renders '· until <time>' (D-02, D-03, WX-07/09)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        now = datetime.now().astimezone()
+        onset = (now.replace(microsecond=0) - __import__("datetime").timedelta(hours=1)).isoformat()
+        ends  = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
+        alert = self._make_timed_alert(onset=onset, ends=ends)
+        cache = self._make_active_cache([alert])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result, "Segment must not be None with a valid alert")
+        self.assertIn("· until ", result,
+                      f"Active alert must contain '· until ': {result!r}")
+        self.assertNotIn("from ", result,
+                         f"Active alert must NOT contain 'from ': {result!r}")
+
+    # ------------------------------------------------------------------
+    # Fallback: onset null but effective set in the future
+    # ------------------------------------------------------------------
+
+    def test_fallback_effective_used_when_onset_null(self):
+        """When onset is absent but effective is set in the future, '· from ' still renders (WX-08 fallback)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        now = datetime.now().astimezone()
+        effective = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
+        ends      = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=4)).isoformat()
+        # onset is deliberately omitted (None) — only effective is set
+        alert = self._make_timed_alert(effective=effective, ends=ends)
+        cache = self._make_active_cache([alert])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result, "Segment must not be None with valid alert")
+        self.assertIn("· from ", result,
+                      f"Effective fallback must still render '· from ': {result!r}")
+
+    # ------------------------------------------------------------------
+    # Fallback: ends null but expires set → active alert uses expires
+    # ------------------------------------------------------------------
+
+    def test_fallback_expires_used_when_ends_null(self):
+        """When ends is absent, expires is used for active alert '· until' (WX-09 fallback)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        now = datetime.now().astimezone()
+        onset   = (now.replace(microsecond=0) - __import__("datetime").timedelta(hours=1)).isoformat()
+        expires = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=3)).isoformat()
+        # ends is deliberately omitted (None) — only expires is set via the factory kwarg
+        alert = self._make_timed_alert(onset=onset, expires_override=expires)
+        # Verify 'ends' is absent from properties (only 'expires' is set)
+        self.assertNotIn("ends", alert["properties"],
+                         "Test setup: 'ends' must not be in properties for this test")
+        cache = self._make_active_cache([alert])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result, "Segment must not be None with valid alert")
+        self.assertIn("· until ", result,
+                      f"Expires fallback must render '· until ': {result!r}")
+
+    # ------------------------------------------------------------------
+    # Null/unparseable: all four timestamps null → omit fragment (D-10)
+    # ------------------------------------------------------------------
+
+    def test_all_timestamps_null_omits_middot_fragment(self):
+        """When all four timing fields are absent/null, event renders with no '· ' fragment (D-10)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        # Build alert with no timing fields at all (onset/effective/ends/expires all absent)
+        alert = _make_alert("null-timing-1", "Tornado Warning", "Extreme",
+                            vtec=["/O.NEW.KTLX.TO.W.0001.000000T0000Z-000000T0000Z/"])
+        # Remove the 'expires' that _make_alert set (we want all timing fields absent)
+        alert["properties"].pop("expires", None)
+        # Verify none of the timing fields are present
+        for field in ("onset", "effective", "ends", "expires"):
+            self.assertNotIn(field, alert["properties"],
+                             f"Test setup: '{field}' must not be in properties")
+        cache = self._make_active_cache([alert])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result, "Segment must not be None (event still renders)")
+        self.assertIn("Tornado Warning", result,
+                      f"Event name must still render with no timing: {result!r}")
+        self.assertNotIn("· ", result,
+                         f"Middot fragment must be absent when all timestamps null: {result!r}")
+
+    # ------------------------------------------------------------------
+    # D-03a anomaly guard: onset in future but ends already in the past
+    # ------------------------------------------------------------------
+
+    def test_d03a_future_onset_past_ends_omits_fragment(self):
+        """D-03a: onset in future but ends already past → omit timing fragment entirely (D-10)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        now = datetime.now().astimezone()
+        onset = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
+        # ends is already in the past — contradictory/stale record
+        ends  = (now.replace(microsecond=0) - __import__("datetime").timedelta(hours=1)).isoformat()
+        alert = self._make_timed_alert(onset=onset, ends=ends)
+        cache = self._make_active_cache([alert])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result, "Segment must not be None with valid alert")
+        self.assertIn("Tornado Warning", result,
+                      f"Event must still render with D-03a anomaly: {result!r}")
+        self.assertNotIn("· ", result,
+                         f"Middot fragment must be absent for D-03a anomaly: {result!r}")
+
+    # ------------------------------------------------------------------
+    # D-04 best-only: timing appears only on primary; tally still renders
+    # ------------------------------------------------------------------
+
+    def test_d04_timing_only_on_primary_alert(self):
+        """D-04: With 2+ alerts, the timing middot appears at most once, and the tally renders (D-04)."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        now = datetime.now().astimezone()
+        # Primary: active Tornado Warning
+        onset_primary = (now.replace(microsecond=0) - __import__("datetime").timedelta(hours=1)).isoformat()
+        ends_primary  = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
+        primary = self._make_timed_alert(
+            onset=onset_primary,
+            ends=ends_primary,
+            event="Tornado Warning",
+            severity="Extreme",
+            vtec="/O.NEW.KTLX.TO.W.0001.000000T0000Z-000000T0000Z/",
+        )
+        # Secondary: a Watch (lower severity) — no timing fields
+        secondary = _make_alert("sec-1", "Flood Watch", "Moderate",
+                                vtec=["/O.NEW.KOUN.FF.A.0001.000000T0000Z-000000T0000Z/"])
+        cache = self._make_active_cache([primary, secondary])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result, "Segment must not be None with valid alerts")
+        # Timing appears at most once (only on the primary)
+        self.assertLessEqual(result.count("· "), 1,
+                             f"Timing middot must appear at most once (D-04 best-only): {result!r}")
+        # Primary event gets timing
+        self.assertIn("· until ", result,
+                      f"Primary active alert must have '· until ': {result!r}")
+        # Tally for the Watch must also appear
+        watch_glyph = self.mod._ALERT_CLASS_GLYPHS_EMOJI["Watch"]
+        self.assertIn(watch_glyph, result,
+                      f"Watch tally glyph must appear: {result!r}")
+
+    # ------------------------------------------------------------------
+    # Ordering: timing falls between event text and tally
+    # ------------------------------------------------------------------
+
+    def test_timing_falls_between_event_and_tally(self):
+        """When timing and tally are both present, the middot fragment comes before the tally."""
+        if not self.mod._WEATHER_OK:
+            self.skipTest("_WEATHER_OK False — astral/requests not installed")
+        now = datetime.now().astimezone()
+        onset_primary = (now.replace(microsecond=0) - __import__("datetime").timedelta(hours=1)).isoformat()
+        ends_primary  = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
+        primary = self._make_timed_alert(
+            onset=onset_primary,
+            ends=ends_primary,
+            event="Tornado Warning",
+            severity="Extreme",
+            vtec="/O.NEW.KTLX.TO.W.0001.000000T0000Z-000000T0000Z/",
+        )
+        secondary = _make_alert("sec-2", "Flood Watch", "Moderate",
+                                vtec=["/O.NEW.KOUN.FF.A.0001.000000T0000Z-000000T0000Z/"])
+        cache = self._make_active_cache([primary, secondary])
+        result = self._run_segment(cache)
+        self.assertIsNotNone(result, "Segment must not be None")
+        # Strip ANSI escapes for position check
+        ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
+        plain = ansi_escape.sub("", result)
+        middot_pos = plain.find("· ")
+        watch_glyph = self.mod._ALERT_CLASS_GLYPHS_EMOJI["Watch"]
+        tally_pos = plain.find(watch_glyph)
+        self.assertGreater(middot_pos, 0,
+                           f"Middot must appear in plain output: {plain!r}")
+        self.assertGreater(tally_pos, 0,
+                           f"Watch tally glyph must appear in plain output: {plain!r}")
+        self.assertLess(middot_pos, tally_pos,
+                        f"Timing (middot at {middot_pos}) must come before tally (at {tally_pos}): {plain!r}")
+
+
 if __name__ == "__main__":
     unittest.main()
