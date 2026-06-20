@@ -3769,6 +3769,17 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
                         if not safe_event:
                             safe_event = best_class
                         detail = f"{class_glyph} {safe_event}"
+                        # D-01/D-02/D-03: Build and splice timing fragment
+                        try:
+                            props_timing = best.get("properties") or best
+                            # D-03: start = onset → effective fallback; end = ends → expires fallback
+                            start_raw = props_timing.get("onset") or props_timing.get("effective")
+                            end_raw   = props_timing.get("ends")  or props_timing.get("expires")
+                            timing_fragment = _fmt_alert_timing(start_raw, end_raw)
+                            if timing_fragment:
+                                detail += f" · {timing_fragment}"
+                        except Exception:
+                            pass  # timing parse failed → omit silently (D-10)
                         # D-08: per-class tally of remaining alerts (not flat +N)
                         if remaining_alerts:
                             tally = _build_alert_tally(remaining_alerts, icon_set)
