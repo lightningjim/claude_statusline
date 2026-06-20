@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: QOL and fixes
-status: Roadmap defined; awaiting first phase
+status: executing
 stopped_at: Phase 8 context gathered
-last_updated: "2026-06-20T19:24:07.618Z"
-last_activity: 2026-06-20 — v1.1 roadmap created (Phases 8–10)
+last_updated: "2026-06-20T19:25:08.383Z"
+last_activity: 2026-06-20 -- Phase 8 execution started
 progress:
   total_phases: 3
   completed_phases: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-20)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Milestone v1.1 — roadmap defined, ready for Phase 8
+**Current focus:** Phase 8 — alert-timing
 
 ## Current Position
 
-Phase: Not started
-Plan: —
-Status: Roadmap defined; awaiting first phase
-Last activity: 2026-06-20 — v1.1 roadmap created (Phases 8–10)
+Phase: 8 (alert-timing) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 8
+Last activity: 2026-06-20 -- Phase 8 execution started
 
 ## Performance Metrics
 
