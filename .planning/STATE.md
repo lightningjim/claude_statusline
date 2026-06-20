@@ -4,12 +4,12 @@ milestone: v1.1
 milestone_name: QOL and fixes
 status: Roadmap defined; awaiting first phase
 stopped_at: Phase 8 context gathered
-last_updated: "2026-06-20T19:08:30.354Z"
+last_updated: "2026-06-20T19:24:07.618Z"
 last_activity: 2026-06-20 — v1.1 roadmap created (Phases 8–10)
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 0
+  total_plans: 2
   completed_plans: 0
   percent: 0
 ---
