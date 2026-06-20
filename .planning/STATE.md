@@ -132,8 +132,9 @@ Recent decisions affecting current work:
 - Phase 02.2 inserted after Phase 2: Differentiate between watches, warnings, and advisories (URGENT)
 - Phase 6 added: Add Claude Status onto the right end of the Claude usage line
 - Phase 7 added: Filter/dismiss Claude-status incidents
-- Phase 8 added: Fix incorrect weather condition icon selection — statusline sometimes grabs the wrong weather glyph (e.g. non-weather glyph next to 88°F / Heat Advisory)
+- Phase 8 added then REMOVED: Fix incorrect weather condition icon selection — root cause was a missing Nerd Font in WebStorm's terminal, not a code bug; no source change needed (removed in fe27a33)
 - Phase 07.1 inserted after Phase 7: Distinguish resolved from unresolved Claude status incidents — keep showing important resolved-but-not-cleared incidents marked as resolved (URGENT)
+- Phase 8 added: clickable links for both any Claude Status events as well as for any weather alerts (number 8 reused after prior Phase 8 removed)
 
 ### Pending Todos
 
