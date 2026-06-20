@@ -3780,10 +3780,9 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
                         detail = f"{class_glyph} {safe_event}"
                         # D-01/D-02/D-03: Build and splice timing fragment
                         try:
-                            props_timing = best.get("properties") or best
                             # D-03: start = onset → effective fallback; end = ends → expires fallback
-                            start_raw = props_timing.get("onset") or props_timing.get("effective")
-                            end_raw   = props_timing.get("ends")  or props_timing.get("expires")
+                            start_raw = props.get("onset") or props.get("effective")
+                            end_raw   = props.get("ends")  or props.get("expires")
                             timing_fragment = _fmt_alert_timing(start_raw, end_raw)
                             if timing_fragment:
                                 detail += f" · {timing_fragment}"
