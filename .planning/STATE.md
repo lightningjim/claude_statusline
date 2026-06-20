@@ -134,11 +134,11 @@ Recent decisions affecting current work:
 - Phase 7 added: Filter/dismiss Claude-status incidents
 - Phase 8 added then REMOVED: Fix incorrect weather condition icon selection — root cause was a missing Nerd Font in WebStorm's terminal, not a code bug; no source change needed (removed in fe27a33)
 - Phase 07.1 inserted after Phase 7: Distinguish resolved from unresolved Claude status incidents — keep showing important resolved-but-not-cleared incidents marked as resolved (URGENT)
-- Phase 8 added: clickable links for both any Claude Status events as well as for any weather alerts (number 8 reused after prior Phase 8 removed)
+- Phase 8 (clickable links) added to v1.0 then pulled back out: deferred into the v1.1 "QOL and fixes" milestone scope rather than closing v1.0 with an unplanned trailing phase
 
 ### Pending Todos
 
-None yet.
+- Clickable links for both any Claude Status events and any weather alerts — deferred from a v1.0 Phase 8; include in the v1.1 "QOL and fixes" milestone scope (OSC 8 hyperlinks; must degrade to plain text where the terminal doesn't support them)
 
 ### Blockers/Concerns
 

@@ -24,7 +24,6 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Add Claude Status onto the right end of the Claude usage line** - A quiet-when-healthy Claude service-health indicator at the right end of the bottom line — triggered only by the tracked components (Claude Code / claude.ai / Claude Cowork), surfacing unresolved incidents (severity glyph + sanitized title) and scheduled maintenance (neutral glyph), on the existing detached ~5min cache, omitting silently when healthy/cold — not yet started (completed 2008-06-16)
 - [x] **Phase 7: Filter/dismiss Claude-status incidents** - Let the user suppress specific status.claude.com incidents (e.g. the perpetual Mythos/Fable access-removal incident) so non-actionable, long-lived incidents stop perpetually lighting the Phase 6 service-health segment — config-driven filter under `[claude_status]` (dismiss-by-incident-id + optional title keyword/regex and/or impact/status threshold) — 3 plans (completed 2008-06-17)
 - [x] **Phase 07.1: Distinguish resolved from unresolved Claude status incidents (INSERTED)** - Keep surfacing important recently-resolved incidents but render them GREEN (check-circle + `resolved:` prefix) while the affected component is still degraded, instead of an alarming red outage; unexplained-degraded stays red; muted incidents stay quiet through resolution; `--status-incidents` gains a `resolved` STATE (completed 2008-06-18)
-- [ ] **Phase 8: clickable links for both any Claude Status events as well as for any weather alerts.** - not yet started
 
 ## Phase Details
 
@@ -222,7 +221,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 → 05.1 → 6 → 7 → 07.1 → 8
+Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 → 05.1 → 6 → 7 → 07.1
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -238,7 +237,6 @@ Phases execute in numeric order: 1 → 2 → 02.1 → 02.2 → 3 → 4 → 5 →
 | 6. Add Claude Status to usage line | 2/2 | Complete   | 2008-06-16 |
 | 7. Filter/dismiss Claude-status incidents | 4/4 | Complete | 2008-06-17 |
 | 07.1. Distinguish resolved from unresolved incidents | 3/3 | Complete | 2008-06-18 |
-| 8. Clickable links for status events & weather alerts | 0/0 | Not planned | — |
 
 ### Phase 7: Filter/dismiss Claude-status incidents
 
@@ -286,13 +284,3 @@ Plans:
 **Wave 3** *(blocked on Wave 2)*
 
 - [x] 07.1-03-PLAN.md — Render + CLI: GREEN check-circle `resolved:` branch in `_claude_status_segment`, D-06 fall-through guard Risk #2 (muted degraded/resolved → None, not red/green), `resolved` STATE in `--status-incidents` + full behavior test matrix (D-03,D-04,D-05,D-06,D-07)
-
-### Phase 8: clickable links for both any Claude Status events as well as for any weather alerts.
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 7
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd-plan-phase 8 to break down)
