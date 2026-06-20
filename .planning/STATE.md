@@ -1,34 +1,34 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: Awaiting next milestone
-stopped_at: Phase 07.1 context gathered
-last_updated: "2026-06-20T18:04:07.643Z"
-last_activity: 2026-06-20 — Milestone v1.0 completed and archived
+milestone: v1.1
+milestone_name: QOL and fixes
+status: executing
+stopped_at: Phase 8 context gathered
+last_updated: "2026-06-20T19:25:08.383Z"
+last_activity: 2026-06-20 -- Phase 8 execution started
 progress:
-  total_phases: 12
-  completed_phases: 12
-  total_plans: 28
-  completed_plans: 28
-  percent: 100
+  total_phases: 3
+  completed_phases: 0
+  total_plans: 2
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-28)
+See: .planning/PROJECT.md (updated 2026-06-20)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Milestone complete
+**Current focus:** Phase 8 — alert-timing
 
 ## Current Position
 
-Phase: Milestone v1.0 complete
-Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-20 — Milestone v1.0 completed and archived
+Phase: 8 (alert-timing) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 8
+Last activity: 2026-06-20 -- Phase 8 execution started
 
 ## Performance Metrics
 
@@ -118,6 +118,8 @@ Recent decisions affecting current work:
 - DEFAULTS["claude_status"] added as top-level table with filter_enabled=True + ignore_title_patterns=[] (D-06); tool never writes TOML (D-05)
 - Dismissal store at ~/.claude/claude-statusline/status_dismissals.json; flat dict id→{impact_at_dismiss,dismissed_at}; _prune_dismissals is pure (D-04/D-05)
 - tracked_incidents widened into both noteworthy and healthy claude_status cache payload branches for stable --status-incidents offline display (D-02)
+- Alert timing: onset/ends are primary, effective/expires are fallbacks; null time → omit, never fake (WX-07..10, 2026-06-20)
+- OSC 8 hyperlink emission: capability-gated + config toggle; terminals without support see plain text, never raw escapes (LINK-03, 2026-06-20)
 
 ### Roadmap Evolution
 
@@ -133,24 +135,15 @@ Recent decisions affecting current work:
 - Phase 8 added then REMOVED: Fix incorrect weather condition icon selection — root cause was a missing Nerd Font in WebStorm's terminal, not a code bug; no source change needed (removed in fe27a33)
 - Phase 07.1 inserted after Phase 7: Distinguish resolved from unresolved Claude status incidents — keep showing important resolved-but-not-cleared incidents marked as resolved (URGENT)
 - Phase 8 (clickable links) added to v1.0 then pulled back out: deferred into the v1.1 "QOL and fixes" milestone scope rather than closing v1.0 with an unplanned trailing phase
+- v1.1 roadmap defined 2026-06-20: Phase 8 (Alert Timing), Phase 9 (Clickable Links), Phase 10 (Tech-Debt Cleanup)
 
 ### Pending Todos
 
-**Planned for v1.1 "QOL and fixes" (build into the roadmap when /gsd:new-milestone runs):**
-
-- **v1.1 Phase 8 — Clickable links** for both any Claude Status events and any weather alerts — deferred from a v1.0 Phase 8 (OSC 8 hyperlinks; must degrade to plain text where the terminal doesn't support them).
-- **v1.1 Phase 9 — v1.0 tech-debt cleanup** (per user 2026-06-20: take ALL v1.0-MILESTONE-AUDIT.md tech debt into one phase under v1.1). Items:
-  1. Bump `pyproject.toml` version 0.1.0 → match `_APP_VERSION` (0.2.0) in `claude-statusline.py:629`.
-  2. Backfill `requirements-completed` SUMMARY frontmatter for the 15/19 requirements missing it (or formally retire the field if redundant with VERIFICATION/traceability).
-  3. Refresh the stale `REQUIREMENTS.md` footer ("Last updated 2026-05-28 after Plan 01-01") and reconcile the traceability table.
-  4. Make the 60 astral/requests weather tests runnable (or explicitly gated) under system python3 so WX-01..06 isn't only covered via the venv interpreter.
-  5. Resolve the WX-05 text/code drift — requirement says "~15min", code defaults to 10 min (`claude-statusline.py:152`); align the requirement text (or the default) so they agree.
-
-  Full source: `.planning/v1.0-MILESTONE-AUDIT.md` (audited 2026-06-20, status passed) tech_debt block.
+None. All pending todos from v1.0 are now captured in the v1.1 roadmap phases.
 
 ### Blockers/Concerns
 
-None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
+None.
 
 ### Quick Tasks Completed
 
@@ -168,10 +161,10 @@ None. (The `import requests` in main.py was removed in Plan 01-01 per D-13.)
 
 ## Session Continuity
 
-Last session: 2026-06-18T14:56:33.227Z
-Stopped at: Phase 07.1 context gathered
-Resume file: .planning/phases/07.1-distinguish-resolved-from-unresolved-claude-status-incidents/07.1-CONTEXT.md
+Last session: 2026-06-20T19:08:30.347Z
+Stopped at: Phase 8 context gathered
+Resume file: .planning/phases/08-alert-timing/08-CONTEXT.md
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Start Phase 8 with `/gsd:plan-phase 8`
