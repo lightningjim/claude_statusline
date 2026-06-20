@@ -8,6 +8,15 @@ A Python statusline command for Claude Code. It reads the session JSON that Clau
 
 At a glance, the bottom of the terminal tells the truth about the current session — how much context and rate-limit headroom remains (and when limits reset) — without slowing Claude Code down.
 
+## Current Milestone: v1.1 QOL and fixes
+
+**Goal:** Harden and polish the shipped statusline through daily use — fix issues surfaced in real usage and clear carried-over tech debt.
+
+**Target features:**
+- OSC 8 clickable links for Claude Status events and weather alerts, degrading to plain text where unsupported
+- Alert timing display — distinguish issued-but-not-yet-active from active alerts (`from <start>` vs `until <end>`), 12hr am/pm with same-day / `Tmrw. at` / `Wed at` formatting
+- v1.0 tech-debt cleanup — the 5-item audit bundle (version sync, `requirements-completed` backfill, REQUIREMENTS footer/traceability, system-python weather tests, WX-05 TTL drift)
+
 ## Current State
 
 **Shipped:** v1.0 MVP — 2026-06-20 (12 phases, 28 plans; milestone audit PASSED, 19/19 requirements). See `.planning/MILESTONES.md` and `.planning/milestones/v1.0-*`.
@@ -30,8 +39,9 @@ Single-file `claude-statusline.py` + a stdlib-only test suite (727 passing, 60 v
 ### Active (v1.1 "QOL and fixes")
 
 - [ ] Clickable links (OSC 8) for Claude Status events and weather alerts, degrading to plain text where unsupported
+- [ ] Alert timing display — distinguish issued-but-not-yet-active alerts (`from <onset>`) from active alerts (`until <ends>`), with `effective`/`expires` fallbacks and 12hr am/pm same-day / `Tmrw. at` / `Wed at` time formatting
 - [ ] Tech-debt cleanup phase: pyproject/`_APP_VERSION` sync, SUMMARY `requirements-completed` backfill, REQUIREMENTS footer, system-python weather-test coverage, WX-05 TTL text/code drift (full list in `milestones/v1.0-MILESTONE-AUDIT.md`)
-- [ ] Further QOL improvements discovered through daily use (scoped during v1.1 questioning)
+- [ ] Further QOL improvements discovered through daily use (insert-phase as they surface)
 
 ### Out of Scope
 
@@ -102,4 +112,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-20 after v1.0 MVP milestone completion*
+*Last updated: 2026-06-20 after starting milestone v1.1 QOL and fixes*
