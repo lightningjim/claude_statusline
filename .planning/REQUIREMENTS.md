@@ -64,24 +64,24 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WX-07 | Phase TBD | Pending |
-| WX-08 | Phase TBD | Pending |
-| WX-09 | Phase TBD | Pending |
-| WX-10 | Phase TBD | Pending |
-| LINK-01 | Phase TBD | Pending |
-| LINK-02 | Phase TBD | Pending |
-| LINK-03 | Phase TBD | Pending |
-| DEBT-01 | Phase TBD | Pending |
-| DEBT-02 | Phase TBD | Pending |
-| DEBT-03 | Phase TBD | Pending |
-| DEBT-04 | Phase TBD | Pending |
-| DEBT-05 | Phase TBD | Pending |
+| WX-07 | Phase 8 | Pending |
+| WX-08 | Phase 8 | Pending |
+| WX-09 | Phase 8 | Pending |
+| WX-10 | Phase 8 | Pending |
+| LINK-01 | Phase 9 | Pending |
+| LINK-02 | Phase 9 | Pending |
+| LINK-03 | Phase 9 | Pending |
+| DEBT-01 | Phase 10 | Pending |
+| DEBT-02 | Phase 10 | Pending |
+| DEBT-03 | Phase 10 | Pending |
+| DEBT-04 | Phase 10 | Pending |
+| DEBT-05 | Phase 10 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 12 total
-- Mapped to phases: 0 (set during roadmap creation)
-- Unmapped: 12 ⚠️ (resolved by roadmapper)
+- Mapped to phases: 12
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-20*
-*Last updated: 2026-06-20 after v1.1 definition*
+*Last updated: 2026-06-20 after v1.1 roadmap creation*

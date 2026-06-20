@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — 12 phases (8 integer + 4 inserted decimals) — shipped 2026-06-20
-- 🚧 **v1.1 QOL and fixes** — planned (continues at Phase 8)
+- 🚧 **v1.1 QOL and fixes** — in progress (Phases 8–10)
 
 ## Phases
 
@@ -27,12 +27,46 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 
 </details>
 
-### 🚧 v1.1 QOL and fixes (Planned)
+### 🚧 v1.1 QOL and fixes
 
-Phases will be created by `/gsd:new-milestone`. Carried-forward scope (see STATE.md → Pending Todos):
+- [ ] **Phase 8: Alert Timing** - Display alert onset and expiry times in 12hr relative-day format
+- [ ] **Phase 9: Clickable Links** - OSC 8 hyperlinks for status events and weather alerts with plain-text fallback
+- [ ] **Phase 10: Tech-Debt Cleanup** - Clear the v1.0 audit's five-item tech-debt bundle
 
-- [ ] Phase 8 (intended): Clickable links (OSC 8) for Claude Status events & weather alerts, with plain-text fallback
-- [ ] Phase 9 (intended): v1.0 tech-debt cleanup (see `milestones/v1.0-MILESTONE-AUDIT.md` tech_debt block)
+## Phase Details
+
+### Phase 8: Alert Timing
+**Goal**: Alert segments tell the user whether a weather alert is upcoming or currently active, and when it starts or ends, in plain readable time
+**Depends on**: Nothing (can run first; produces alert-rendering changes Phase 9 builds on)
+**Requirements**: WX-07, WX-08, WX-09, WX-10
+**Success Criteria** (what must be TRUE):
+  1. An alert that has not yet started shows `from <time>` using NWS `onset` (or `effective` when `onset` is null), making clear it is not yet in effect
+  2. An alert that is currently active shows `until <time>` using NWS `ends` (or `expires` when `ends` is null), making clear when it ends
+  3. Alert times on the same calendar day render as bare 12hr times (`3:00 PM`), the next calendar day as `Tmrw. at 3:00 PM`, and further out as `<Wkdy> at 3:00 PM`
+  4. A null or missing `onset`/`ends`/`effective`/`expires` causes the time portion to be omitted rather than faked or errored
+**Plans**: TBD
+
+### Phase 9: Clickable Links
+**Goal**: Status events and weather alerts are clickable hyperlinks in terminals that support OSC 8, with no visible escape-sequence noise in terminals that do not
+**Depends on**: Phase 8 (both phases touch alert rendering; clickable links wrap the alert text that Phase 8 finalizes)
+**Requirements**: LINK-01, LINK-02, LINK-03
+**Success Criteria** (what must be TRUE):
+  1. In a supporting terminal, Claude Status incident text is a clickable link opening the relevant status.claude.com page
+  2. In a supporting terminal, weather alert text is a clickable link opening the NWS alert detail URL for that alert
+  3. In a terminal that does not support OSC 8 (or when the config toggle is off), the same text renders as plain text with no stray escape sequences
+**Plans**: TBD
+
+### Phase 10: Tech-Debt Cleanup
+**Goal**: All five items from the v1.0 audit tech-debt block are resolved; version metadata, planning artifacts, and test coverage are consistent and accurate
+**Depends on**: Nothing (independent housekeeping; can run in parallel with or after Phases 8-9)
+**Requirements**: DEBT-01, DEBT-02, DEBT-03, DEBT-04, DEBT-05
+**Success Criteria** (what must be TRUE):
+  1. `pyproject.toml` version matches `_APP_VERSION` in `claude-statusline.py` (both read 0.2.0 or whatever the current canonical value is)
+  2. SUMMARY `requirements-completed` frontmatter is either backfilled for all requirements or formally retired with a clear note, leaving no silent gaps in the audit trail
+  3. The REQUIREMENTS.md traceability table and footer are current for this milestone and reconciled with what shipped
+  4. The 60 astral/requests weather tests are runnable (pass or are explicitly skipped with a reason) under system `python3`, not only under the venv interpreter
+  5. The WX-05 cache-TTL text and code default agree — the requirement text and `claude-statusline.py` default use the same number
+**Plans**: TBD
 
 ## Progress
 
@@ -50,3 +84,6 @@ Phases will be created by `/gsd:new-milestone`. Carried-forward scope (see STATE
 | 6. Claude Status indicator | v1.0 | 2/2 | Complete | 2026-06-16 |
 | 7. Filter/dismiss incidents | v1.0 | 4/4 | Complete | 2026-06-17 |
 | 07.1. Resolved vs unresolved | v1.0 | 3/3 | Complete | 2026-06-18 |
+| 8. Alert Timing | v1.1 | 0/? | Not started | - |
+| 9. Clickable Links | v1.1 | 0/? | Not started | - |
+| 10. Tech-Debt Cleanup | v1.1 | 0/? | Not started | - |
