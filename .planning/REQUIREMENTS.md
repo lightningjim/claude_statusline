@@ -12,10 +12,10 @@ Requirements for the QOL-and-fixes milestone. Each maps to a roadmap phase.
 
 Extends the v1.0 weather/alert segment (WX-01..06). Continues the WX numbering.
 
-- [ ] **WX-07**: The alert segment distinguishes an issued-but-not-yet-active alert (onset in the future) from an active alert (in effect now), and labels each accordingly.
-- [ ] **WX-08**: A not-yet-active alert shows its start as `from <time>`, using the NWS `onset` timestamp and falling back to `effective` when `onset` is null.
-- [ ] **WX-09**: An active alert shows its end as `until <time>`, using the NWS `ends` timestamp and falling back to `expires` when `ends` is null.
-- [ ] **WX-10**: Alert times render in 12-hour am/pm form: same-day as the bare time (`3:00 PM`), next calendar day as `Tmrw. at 3:00 PM`, and further out as `<Wkdy> at 3:00 PM` (abbreviated weekday).
+- [x] **WX-07**: The alert segment distinguishes an issued-but-not-yet-active alert (onset in the future) from an active alert (in effect now), and labels each accordingly.
+- [x] **WX-08**: A not-yet-active alert shows its start as `from <time>`, using the NWS `onset` timestamp and falling back to `effective` when `onset` is null.
+- [x] **WX-09**: An active alert shows its end as `until <time>`, using the NWS `ends` timestamp and falling back to `expires` when `ends` is null.
+- [x] **WX-10**: Alert times render in 12-hour am/pm form: same-day as the bare time (`3:00 PM`), next calendar day as `Tmrw. at 3:00 PM`, and further out as `<Wkdy> at 3:00 PM` (abbreviated weekday).
 
 ### Clickable Links
 
@@ -64,10 +64,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WX-07 | Phase 8 | Pending |
-| WX-08 | Phase 8 | Pending |
-| WX-09 | Phase 8 | Pending |
-| WX-10 | Phase 8 | Pending |
+| WX-07 | Phase 8 | Complete |
+| WX-08 | Phase 8 | Complete |
+| WX-09 | Phase 8 | Complete |
+| WX-10 | Phase 8 | Complete |
 | LINK-01 | Phase 9 | Pending |
 | LINK-02 | Phase 9 | Pending |
 | LINK-03 | Phase 9 | Pending |

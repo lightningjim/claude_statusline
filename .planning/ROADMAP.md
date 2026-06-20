@@ -86,6 +86,6 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 | 6. Claude Status indicator | v1.0 | 2/2 | Complete | 2026-06-16 |
 | 7. Filter/dismiss incidents | v1.0 | 4/4 | Complete | 2026-06-17 |
 | 07.1. Resolved vs unresolved | v1.0 | 3/3 | Complete | 2026-06-18 |
-| 8. Alert Timing | v1.1 | 2/2 | Complete   | 2026-06-20 |
+| 8. Alert Timing | v1.1 | 2/2 | Complete    | 2026-06-20 |
 | 9. Clickable Links | v1.1 | 0/? | Not started | - |
 | 10. Tech-Debt Cleanup | v1.1 | 0/? | Not started | - |

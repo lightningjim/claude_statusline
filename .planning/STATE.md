@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: QOL and fixes
-status: executing
-stopped_at: Phase 8 context gathered
-last_updated: "2026-06-20T19:25:08.383Z"
+status: ready_to_plan
+stopped_at: Phase 8 complete (2/2) — ready to discuss Phase 9
+last_updated: 2026-06-20T22:11:55.096Z
 last_activity: 2026-06-20 -- Phase 8 execution started
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 2
-  completed_plans: 0
+  completed_plans: 2
   percent: 0
 ---
 
@@ -21,20 +21,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-20)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Phase 8 — alert-timing
+**Current focus:** Phase 9 — clickable links
 
 ## Current Position
 
-Phase: 8 (alert-timing) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 8
-Last activity: 2026-06-20 -- Phase 8 execution started
+Phase: 9
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-06-20
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 23
+- Total plans completed: 25
 - Average duration: 14 min
 - Total execution time: 0.6 hours
 
@@ -53,6 +53,7 @@ Last activity: 2026-06-20 -- Phase 8 execution started
 | 02.2 | 2 | - | - |
 | 06 | 2 | - | - |
 | 07.1 | 3 | - | - |
+| 8 | 2 | - | - |
 
 **Recent Trend:**
 
