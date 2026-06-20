@@ -2,45 +2,36 @@
 
 ## What This Is
 
-A Python statusline command for Claude Code. It reads the session JSON that Claude Code pipes to stdin and prints a two-line, color-coded status bar showing the active project, model (with a thinking indicator), local weather + alerts, context-window usage, and rolling rate-limit usage. It replaces an earlier bash implementation (`.examples/statusline-command.sh`) with cleaner data handling and better formatting. Built for the author's personal use.
+A Python statusline command for Claude Code. It reads the session JSON that Claude Code pipes to stdin and prints a two-line, color-coded status bar showing the active project, git branch/worktree, GSD planning status, model (with a thinking indicator), local weather + alerts, context-window usage, rolling rate-limit usage, and a quiet-when-healthy Claude service-health indicator. It replaces an earlier bash implementation (`.examples/statusline-command.sh`) with cleaner data handling and better formatting. Built for the author's personal use.
 
 ## Core Value
 
 At a glance, the bottom of the terminal tells the truth about the current session — how much context and rate-limit headroom remains (and when limits reset) — without slowing Claude Code down.
 
+## Current State
+
+**Shipped:** v1.0 MVP — 2026-06-20 (12 phases, 28 plans; milestone audit PASSED, 19/19 requirements). See `.planning/MILESTONES.md` and `.planning/milestones/v1.0-*`.
+
+Single-file `claude-statusline.py` + a stdlib-only test suite (727 passing, 60 venv-gated skips). Installed at `~/.claude/claude-statusline/` (script + `.venv` + TOML config); `main()` re-execs into the venv so `requests`/`astral` resolve at runtime.
+
 ## Requirements
 
-### Validated
+### Validated (v1.0)
 
-(None yet — ship to validate)
+- ✓ Two-line bar from stdin — `[project] [model 💭]` top line — v1.0 (RUN-01/02, TOP-01/02/03)
+- ✓ NWS weather — condition icon + temp + precip, local sun events, active-alert override — v1.0 (WX-01..06)
+- ✓ 20-wide `▓░` context bar + explicit % — v1.0 (CTX-01/02)
+- ✓ 5h + weekly rate limits, threshold-colored, reset time shown for non-green — v1.0 (LIM-01..04, FMT-01)
+- ✓ Single TOML config: lat/lon, thresholds, units, toggles, cache TTLs — v1.0 (CFG-01)
+- ✓ Non-blocking cached weather/alerts + graceful degradation (exit 0 on any bad input) — v1.0 (WX-05/06, RUN-02)
 
-### Active
+**Enhancements shipped beyond the v1 requirement set** (CONTEXT-driven, no v1 REQ-IDs): Nerd Font icon set with live moon phases (Ph 02.1) · Watch/Warning/Advisory classification (Ph 02.2) · context-bar fill presets (Ph 3) · git segment (Ph 4) · GSD-status segment (Ph 5) · Claude service-health indicator + incident filter/dismiss + resolved-vs-unresolved (Ph 6/7/07.1).
 
-**Top line — `[project] [model 💭] [weather]`**
+### Active (v1.1 "QOL and fixes")
 
-- [ ] Show the running project (basename of `workspace.project_dir`)
-- [ ] Show the model (`model.display_name`)
-- [ ] Append a thinking glyph (💭) when `thinking.enabled` is true
-- [ ] Show weather as `<icon> <temp>[|🌧️<precip>]|<details>`
-- [ ] `<details>` = the next sun event: 🌅 sunrise or 🌇 sunset, whichever comes next
-- [ ] Replace `<details>` with an active NWS weather alert when one exists for the configured location
-
-**Second line — context + rate limits**
-
-- [ ] Show context usage as a 20-wide filled/empty bar (`▓░`), colored by threshold
-- [ ] Show context usage as an explicit percentage number alongside the bar
-- [ ] Show 5-hour rate-limit usage (`rate_limits.five_hour.used_percentage`), colored
-- [ ] Show weekly rate-limit usage (`rate_limits.seven_day.used_percentage`), colored
-- [ ] For whichever rate-limit indicator is **not green** (≥70%), append its reset time
-- [ ] Reset time shorthand: same-day → `5:15pm`; otherwise `Mon 5:15pm`
-
-**Behavior / quality**
-
-- [ ] Color bands: green <70%, yellow 70–90%, red >90% (applied to context, 5h, weekly)
-- [ ] Weather and alerts are cached (weather ~10min, alerts ~5min) so rendering never blocks on the network
-- [ ] Sunrise/sunset computed locally (no network) from configured lat/lon
-- [ ] All settings (lat/lon, thresholds, units, feature toggles, cache TTLs) live in a single config file (TOML)
-- [ ] Degrades gracefully: missing stdin fields, no network, or stale cache still produce a valid line
+- [ ] Clickable links (OSC 8) for Claude Status events and weather alerts, degrading to plain text where unsupported
+- [ ] Tech-debt cleanup phase: pyproject/`_APP_VERSION` sync, SUMMARY `requirements-completed` backfill, REQUIREMENTS footer, system-python weather-test coverage, WX-05 TTL text/code drift (full list in `milestones/v1.0-MILESTONE-AUDIT.md`)
+- [ ] Further QOL improvements discovered through daily use (scoped during v1.1 questioning)
 
 ### Out of Scope
 
@@ -80,13 +71,13 @@ At a glance, the bottom of the terminal tells the truth about the current sessio
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| All session data from stdin, not external tools | The stdin payload already includes context, rate limits, thinking state | — Pending |
-| NWS + local `astral` sun times (not wttr.in) | Need official weather alerts; NWS lacks sun times so compute them locally | — Pending |
-| Cache weather (~10min) / alerts (~5min) to a temp file | Statusline runs often; never block rendering on network | — Pending |
-| Inline weather, no right-alignment | No terminal width in stdin; avoids fragile padding | — Pending |
-| Project name replaces user@host:cwd prefix | "Project being run" is the useful signal; path was noise | — Pending |
-| Single TOML config file | Centralize lat/lon, thresholds, units, toggles, TTLs | — Pending |
-| Color bands green<70 / yellow 70–90 / red>90 | Matches the bash predecessor's `perc_color` | — Pending |
+| All session data from stdin, not external tools | The stdin payload already includes context, rate limits, thinking state | ✅ v1.0 |
+| NWS + local `astral` sun times (not wttr.in) | Need official weather alerts; NWS lacks sun times so compute them locally | ✅ v1.0 |
+| Cache weather (~10min) / alerts (~5min) to a temp file | Statusline runs often; never block rendering on network | ✅ v1.0 |
+| Inline weather, no right-alignment | No terminal width in stdin; avoids fragile padding | ✅ v1.0 |
+| Project name replaces user@host:cwd prefix | "Project being run" is the useful signal; path was noise | ✅ v1.0 |
+| Single TOML config file | Centralize lat/lon, thresholds, units, toggles, TTLs | ✅ v1.0 |
+| Color bands green<70 / yellow 70–90 / red>90 | Matches the bash predecessor's `perc_color` | ✅ v1.0 |
 | Nerd Font icon set with `icon_set` toggle (default nerd, emoji fallback) | Installed Nerd Fonts unlock granular day/night + live moon-phase glyphs with semantic color; cmap-guarded | ✅ Phase 02.1 |
 | Context-bar fill presets via `display.bar_style` (shade default / solid / solid-dim / gradient) | Selectable fill styles incl. a sub-cell eighth-block gradient; filled=threshold color, empty=dim gray; independent of `icon_set`; unknown values degrade to shade | ✅ Phase 3 |
 | Read-only git segment via `display.show_git` (branch/dirty/ahead-behind + linked-worktree marker) | Timeout-guarded, runs every render (no cache), neutral label + colored state, scoped to `current_dir`; omits silently off-repo | ✅ Phase 4 |
@@ -111,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-29 after Phase 05.1 (TestGsdSegmentBuilder wall-clock test-leak fix) completion*
+*Last updated: 2026-06-20 after v1.0 MVP milestone completion*
