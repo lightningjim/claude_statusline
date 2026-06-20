@@ -2559,6 +2559,93 @@ def fmt_reset(epoch) -> str | None:
         return None
 
 
+def _fmt_alert_time(dt, now) -> str | None:
+    """Format a tz-aware datetime as a WX-10 relative-day time string.
+
+    Returns one of four forms:
+      - Same calendar day   → '3:00 PM'         (bare 12-hour time, uppercase AM/PM)
+      - Next calendar day   → 'Tmrw. at 3:00 PM'
+      - 2–6 days ahead      → 'Wed at 3:00 PM'   (abbreviated weekday, no period)
+      - 7+ days ahead       → 'Jul 3 at 3:00 PM' (dated form, no leading zero on day)
+
+    Day arithmetic is by calendar-date delta (not 24h windows), per D-05.
+    Returns None on any error / non-datetime input — omit-not-fake (D-10, T-08-01).
+    """
+    try:
+        # Convert to local time for both display and date comparison
+        dt_local = dt.astimezone()
+        now_local = now.astimezone()
+        delta_days = (dt_local.date() - now_local.date()).days
+        # WX-10: space before %p; NO .lower() — uppercase AM/PM required
+        time_str = dt_local.strftime("%-I:%M %p")  # e.g. "3:00 PM"
+        if delta_days == 0:
+            return time_str
+        elif delta_days == 1:
+            return f"Tmrw. at {time_str}"
+        elif delta_days <= 6:
+            weekday = dt_local.strftime("%a")       # e.g. "Wed"
+            return f"{weekday} at {time_str}"
+        else:  # >= 7
+            month = dt_local.strftime("%b")         # e.g. "Jul"
+            day = dt_local.strftime("%-d")          # e.g. "3" (no leading zero)
+            return f"{month} {day} at {time_str}"
+    except Exception:
+        return None  # non-datetime or unconvertible tz → omit silently (T-08-01, T-08-03)
+
+
+def _fmt_alert_timing(start_raw, end_raw, now=None) -> str | None:
+    """Build a 'from <time>' or 'until <time>' fragment for a NWS alert.
+
+    Takes the two raw ISO-8601 strings already chosen by the caller:
+      start_raw — onset (primary) or effective (fallback), already selected
+      end_raw   — ends (primary) or expires (fallback), already selected
+    Returns the fragment text WITHOUT the leading separator (caller prepends ' · '),
+    e.g. 'from 6:00 PM' or 'until 3:00 PM', or None to omit.
+
+    Upcoming/active decision per D-03:
+      start > now  → upcoming → 'from <start>'
+                     D-03a: if end is missing/unparseable/past → None (anomaly guard)
+      start <= now → active  → 'until <end>'
+                     if end is missing/unparseable → None (D-10)
+
+    All exceptions return None — omit-not-fake (D-10, T-08-01, T-08-03).
+    """
+    try:
+        if now is None:
+            now = datetime.now().astimezone()
+
+        def _parse(s):
+            if not s:
+                return None
+            try:
+                return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone()
+            except Exception:
+                return None
+
+        now_local = now.astimezone()
+        start = _parse(start_raw)
+        end = _parse(end_raw)
+
+        if start is not None and start > now_local:
+            # Upcoming branch — D-03a anomaly guard: end must exist and be in the future
+            if end is None or end <= now_local:
+                return None
+            frag = _fmt_alert_time(start, now_local)
+            if frag is None:
+                return None
+            return f"from {frag}"
+        else:
+            # Active branch (start is None, or start <= now)
+            if end is None:
+                return None
+            frag = _fmt_alert_time(end, now_local)
+            if frag is None:
+                return None
+            return f"until {frag}"
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Safe stdin parse
 # ---------------------------------------------------------------------------
