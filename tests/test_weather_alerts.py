@@ -26,7 +26,7 @@ import shutil
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "claude-statusline.py")
@@ -1774,8 +1774,8 @@ class TestWeatherSegmentAlertTiming(unittest.TestCase):
         if not self.mod._WEATHER_OK:
             self.skipTest("_WEATHER_OK False — astral/requests not installed")
         now = datetime.now().astimezone()
-        onset = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
-        ends  = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=4)).isoformat()
+        onset = (now.replace(microsecond=0) + timedelta(hours=2)).isoformat()
+        ends  = (now.replace(microsecond=0) + timedelta(hours=4)).isoformat()
         alert = self._make_timed_alert(onset=onset, ends=ends)
         cache = self._make_active_cache([alert])
         result = self._run_segment(cache)
@@ -1794,8 +1794,8 @@ class TestWeatherSegmentAlertTiming(unittest.TestCase):
         if not self.mod._WEATHER_OK:
             self.skipTest("_WEATHER_OK False — astral/requests not installed")
         now = datetime.now().astimezone()
-        onset = (now.replace(microsecond=0) - __import__("datetime").timedelta(hours=1)).isoformat()
-        ends  = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
+        onset = (now.replace(microsecond=0) - timedelta(hours=1)).isoformat()
+        ends  = (now.replace(microsecond=0) + timedelta(hours=2)).isoformat()
         alert = self._make_timed_alert(onset=onset, ends=ends)
         cache = self._make_active_cache([alert])
         result = self._run_segment(cache)
@@ -1814,8 +1814,8 @@ class TestWeatherSegmentAlertTiming(unittest.TestCase):
         if not self.mod._WEATHER_OK:
             self.skipTest("_WEATHER_OK False — astral/requests not installed")
         now = datetime.now().astimezone()
-        effective = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
-        ends      = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=4)).isoformat()
+        effective = (now.replace(microsecond=0) + timedelta(hours=2)).isoformat()
+        ends      = (now.replace(microsecond=0) + timedelta(hours=4)).isoformat()
         # onset is deliberately omitted (None) — only effective is set
         alert = self._make_timed_alert(effective=effective, ends=ends)
         cache = self._make_active_cache([alert])
@@ -1833,8 +1833,8 @@ class TestWeatherSegmentAlertTiming(unittest.TestCase):
         if not self.mod._WEATHER_OK:
             self.skipTest("_WEATHER_OK False — astral/requests not installed")
         now = datetime.now().astimezone()
-        onset   = (now.replace(microsecond=0) - __import__("datetime").timedelta(hours=1)).isoformat()
-        expires = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=3)).isoformat()
+        onset   = (now.replace(microsecond=0) - timedelta(hours=1)).isoformat()
+        expires = (now.replace(microsecond=0) + timedelta(hours=3)).isoformat()
         # ends is deliberately omitted (None) — only expires is set via the factory kwarg
         alert = self._make_timed_alert(onset=onset, expires_override=expires)
         # Verify 'ends' is absent from properties (only 'expires' is set)
@@ -1880,9 +1880,9 @@ class TestWeatherSegmentAlertTiming(unittest.TestCase):
         if not self.mod._WEATHER_OK:
             self.skipTest("_WEATHER_OK False — astral/requests not installed")
         now = datetime.now().astimezone()
-        onset = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
+        onset = (now.replace(microsecond=0) + timedelta(hours=2)).isoformat()
         # ends is already in the past — contradictory/stale record
-        ends  = (now.replace(microsecond=0) - __import__("datetime").timedelta(hours=1)).isoformat()
+        ends  = (now.replace(microsecond=0) - timedelta(hours=1)).isoformat()
         alert = self._make_timed_alert(onset=onset, ends=ends)
         cache = self._make_active_cache([alert])
         result = self._run_segment(cache)
@@ -1902,8 +1902,8 @@ class TestWeatherSegmentAlertTiming(unittest.TestCase):
             self.skipTest("_WEATHER_OK False — astral/requests not installed")
         now = datetime.now().astimezone()
         # Primary: active Tornado Warning
-        onset_primary = (now.replace(microsecond=0) - __import__("datetime").timedelta(hours=1)).isoformat()
-        ends_primary  = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
+        onset_primary = (now.replace(microsecond=0) - timedelta(hours=1)).isoformat()
+        ends_primary  = (now.replace(microsecond=0) + timedelta(hours=2)).isoformat()
         primary = self._make_timed_alert(
             onset=onset_primary,
             ends=ends_primary,
@@ -1937,8 +1937,8 @@ class TestWeatherSegmentAlertTiming(unittest.TestCase):
         if not self.mod._WEATHER_OK:
             self.skipTest("_WEATHER_OK False — astral/requests not installed")
         now = datetime.now().astimezone()
-        onset_primary = (now.replace(microsecond=0) - __import__("datetime").timedelta(hours=1)).isoformat()
-        ends_primary  = (now.replace(microsecond=0) + __import__("datetime").timedelta(hours=2)).isoformat()
+        onset_primary = (now.replace(microsecond=0) - timedelta(hours=1)).isoformat()
+        ends_primary  = (now.replace(microsecond=0) + timedelta(hours=2)).isoformat()
         primary = self._make_timed_alert(
             onset=onset_primary,
             ends=ends_primary,
