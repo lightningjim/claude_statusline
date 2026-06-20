@@ -1633,6 +1633,33 @@ class TestAlertTimingFormatter(unittest.TestCase):
         result = self.mod._fmt_alert_timing(start_raw, end_raw, now=self._now_utc)
         self.assertIsNone(result)
 
+    def test_active_past_end_same_day_returns_none(self):
+        """Active alert whose end already passed (same day) → None, never 'until <past>'.
+
+        An alert can linger in the cache with its hazard `ends` past while the CAP
+        message `expires` is still in the future. 'until 6:00 AM' at noon is a false
+        statement, so the timing is omitted (D-10 omit-not-fake; CR-01 regression)."""
+        start_raw = "2026-06-20T03:00:00+00:00"   # 3 AM — before now
+        end_raw = "2026-06-20T06:00:00+00:00"     # 6 AM — also before now (12:00 UTC)
+        result = self.mod._fmt_alert_timing(start_raw, end_raw, now=self._now_utc)
+        self.assertIsNone(result)
+
+    def test_active_past_end_prior_day_returns_none(self):
+        """Active alert whose end passed on a prior calendar day → None.
+
+        Guards against a past weekday rendering as a future one (e.g. 'Mon at ...')
+        — the negative delta_days guard in _fmt_alert_time backs this up (CR-01)."""
+        start_raw = "2026-06-18T03:00:00+00:00"   # 2 days ago
+        end_raw = "2026-06-19T06:00:00+00:00"     # 1 day ago
+        result = self.mod._fmt_alert_timing(start_raw, end_raw, now=self._now_utc)
+        self.assertIsNone(result)
+
+    def test_fmt_alert_time_past_date_returns_none(self):
+        """_fmt_alert_time on a past date → None (no truthful relative-day form)."""
+        from datetime import timedelta
+        past = self._now_utc - timedelta(days=2)
+        self.assertIsNone(self.mod._fmt_alert_time(past, self._now_utc))
+
     # ------------------------------------------------------------------
     # _fmt_alert_timing: both inputs None / malformed
     # ------------------------------------------------------------------

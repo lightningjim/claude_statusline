@@ -2576,6 +2576,11 @@ def _fmt_alert_time(dt, now) -> str | None:
         dt_local = dt.astimezone()
         now_local = now.astimezone()
         delta_days = (dt_local.date() - now_local.date()).days
+        # A past date has no truthful relative-day form (a past weekday would read
+        # as a future one) — omit rather than mislead (D-10, defense-in-depth for
+        # the active-branch past-end guard in _fmt_alert_timing).
+        if delta_days < 0:
+            return None
         # WX-10: space before %p; NO .lower() — uppercase AM/PM required
         time_str = dt_local.strftime("%-I:%M %p")  # e.g. "3:00 PM"
         if delta_days == 0:
@@ -2635,8 +2640,12 @@ def _fmt_alert_timing(start_raw, end_raw, now=None) -> str | None:
                 return None
             return f"from {frag}"
         else:
-            # Active branch (start is None, or start <= now)
-            if end is None:
+            # Active branch (start is None, or start <= now). An alert can sit in
+            # the cache with its hazard `ends`/`expires` already past (ends differs
+            # from the CAP message expiry); 'until <past time>' would be a false
+            # statement, so omit the timing when end is missing or not in the
+            # future (D-10 omit-not-fake; mirrors the upcoming-branch guard).
+            if end is None or end <= now_local:
                 return None
             frag = _fmt_alert_time(end, now_local)
             if frag is None:
