@@ -4088,6 +4088,7 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
         _severity_override = None
         _label_override    = None
         _kind_override     = None
+        _inc_id            = None  # Phase 9: incident id for OSC 8 link (D-03/D-07)
 
         baked_kind = sec.get("kind", "incident")
 
@@ -4124,6 +4125,7 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
                     return None
                 # Explaining incident survives → render the baked resolved/degraded values
                 # unchanged (kind/severity already correct from derivation).
+                _inc_id = explaining_inc.get("id")  # Phase 9: bind for OSC 8 URL (D-03)
             # else: no baked explaining id.  A "degraded" verdict legitimately has
             # incident_id == None (a genuinely UNEXPLAINED outage with no tracked
             # incident — must STAY red, D-05).  Fall through to the baked path: there is
@@ -4148,6 +4150,8 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
                 # (instant mute, mirrors Phase 6 quiet-when-healthy D-01).
                 return None
 
+            _inc_id = surviving_inc.get("id")  # Phase 9: bind for OSC 8 URL (D-03/D-07)
+
             if baked_kind == "incident":
                 # Override severity/label/kind from the surviving incident's live fields.
                 _severity_override = _CLAUDE_IMPACT_SEVERITY.get(
@@ -4165,7 +4169,8 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
         kind     = _kind_override     if _kind_override     is not None else sec.get("kind", "incident")
 
         # Step 5: resolve icon_set and glyph (D-04 distinct glyphs for incident vs maintenance)
-        icon_set = _cfg.get("display", {}).get("icon_set", "nerd")
+        icon_set      = _cfg.get("display", {}).get("icon_set", "nerd")
+        _links_enabled = _osc8_enabled(_cfg)  # Phase 9: resolve toggle once per render (D-01)
         # WR-01 / D-04: key the maintenance glyph off the maintenance SIGNAL, not only
         # `kind`. A tracked component in `under_maintenance` with no scheduled_maintenances
         # entry falls through _derive_claude_status Rule 3 with severity=="maintenance" but
@@ -4214,7 +4219,14 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
             detail = f"{glyph} resolved: {safe_label}"
         else:
             detail = f"{glyph} {safe_label}"
-        return f"{color}{detail}{RESET}"
+        # Phase 9 D-07: wrap the WHOLE returned segment in OSC 8 to the specific incident
+        # page. Validate _inc_id via allowlist (^[0-9a-z]+$); reject hyphens/ESC/uppercase
+        # (T-09-05).  Per D-03a, NEVER substitute the homepage — url stays None on any
+        # bad/missing/hyphenated id so osc8() returns the colored text unchanged (LINK-03).
+        _validated_id = _valid_incident_id(_inc_id)
+        _status_url   = (f"https://status.claude.com/incidents/{_validated_id}"
+                         if _validated_id else None)
+        return osc8(f"{color}{detail}{RESET}", _status_url, enabled=_links_enabled)
 
     except Exception:
         return None  # D-10 never-crash — render path must not blow up
