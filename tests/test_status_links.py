@@ -270,5 +270,86 @@ class TestStatusLinkDisabled(unittest.TestCase):
                          f"Must not emit incidents URL followed by ESC; got: {result!r}")
 
 
+# ---------------------------------------------------------------------------
+# Fixture-driven tests: status_incident_valid_id.json → fetch → segment
+# ---------------------------------------------------------------------------
+
+class TestStatusLinkEnabledViaFixture(unittest.TestCase):
+    """Use CLAUDE_STATUSLINE_FAKE_STATUS to feed status_incident_valid_id.json through
+    fetch_claude_status, then assert _claude_status_segment emits an OSC 8 link."""
+
+    def setUp(self):
+        self.mod = _load_script_module()
+        self.tmpdir = tempfile.mkdtemp()
+        self.valid_id_fixture = os.path.join(FIXTURES_DIR, "status_incident_valid_id.json")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _fetch_and_segment(self, fixture_path: str, links: str = "on") -> str | None:
+        """Run fetch_claude_status with FAKE_STATUS → fixture, then call _claude_status_segment."""
+        cache_path = os.path.join(self.tmpdir, "cache.json")
+        cfg = {
+            "cache": {"status_ttl": 300, "status_max_stale": 900},
+            "display": {"show_claude_status": True, "icon_set": "nerd", "links": links},
+        }
+        env = {"CLAUDE_STATUSLINE_FAKE_STATUS": fixture_path}
+        with patch.dict(os.environ, env, clear=False):
+            with patch.object(self.mod, "_CACHE_PATH", cache_path):
+                self.mod.fetch_claude_status(cfg)
+        with patch.object(self.mod, "_CACHE_PATH", cache_path):
+            return self.mod._claude_status_segment({}, cfg)
+
+    def test_valid_id_fixture_contains_incident_key(self):
+        """Fixture status_incident_valid_id.json has an 'incidents' key (must_haves check)."""
+        with open(self.valid_id_fixture) as f:
+            data = json.load(f)
+        self.assertIn("incidents", data,
+                      "status_incident_valid_id.json must have an 'incidents' key")
+        self.assertTrue(len(data["incidents"]) > 0,
+                        "status_incident_valid_id.json must have at least one incident")
+
+    def test_valid_id_matches_allowlist(self):
+        """The incident id in status_incident_valid_id.json matches ^[0-9a-z]+$ (no hyphen)."""
+        import re
+        with open(self.valid_id_fixture) as f:
+            data = json.load(f)
+        inc_id = data["incidents"][0]["id"]
+        self.assertIsNotNone(re.fullmatch(r"[0-9a-z]+", inc_id),
+                             f"id {inc_id!r} must match ^[0-9a-z]+$ (no hyphen)")
+
+    def test_valid_id_fixture_produces_link(self):
+        """status_incident_valid_id.json + links=on → OSC 8 link to the incident page."""
+        result = self._fetch_and_segment(self.valid_id_fixture, links="on")
+        self.assertIsNotNone(result, "Segment must not be None")
+        self.assertIn(OSC8_OPEN, result,
+                      f"OSC 8 open must appear with valid-id fixture; got: {result!r}")
+        self.assertIn(STATUS_BASE_URL + "abc123def456", result,
+                      f"Incident URL must appear; got: {result!r}")
+
+    def test_hyphenated_id_fixture_no_link(self):
+        """status_incident_tracked.json (id 'inc-001', hyphenated) + links=on → no OSC 8 (D-03a)."""
+        hyphen_fixture = os.path.join(FIXTURES_DIR, "status_incident_tracked.json")
+        result = self._fetch_and_segment(hyphen_fixture, links="on")
+        self.assertIsNotNone(result, "Segment must still render")
+        self.assertNotIn(OSC8_OPEN, result,
+                         f"Hyphenated id must not produce OSC 8 bytes; got: {result!r}")
+
+    def test_hyphenated_id_no_homepage_fallback_via_fixture(self):
+        """Hyphenated id via fixture → no homepage as link target (D-03a)."""
+        hyphen_fixture = os.path.join(FIXTURES_DIR, "status_incident_tracked.json")
+        result = self._fetch_and_segment(hyphen_fixture, links="on")
+        self.assertIsNotNone(result)
+        self.assertNotIn(OSC8_OPEN + STATUS_HOMEPAGE, result,
+                         f"Homepage must not be substituted; got: {result!r}")
+
+    def test_valid_id_fixture_links_off_no_osc8(self):
+        """status_incident_valid_id.json + links=off → no OSC 8 bytes (LINK-03)."""
+        result = self._fetch_and_segment(self.valid_id_fixture, links="off")
+        self.assertIsNotNone(result, "Segment must still render")
+        self.assertNotIn(OSC8_OPEN, result,
+                         f"No OSC 8 bytes when links=off; got: {result!r}")
+
+
 if __name__ == "__main__":
     unittest.main()
