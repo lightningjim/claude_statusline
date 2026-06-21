@@ -56,7 +56,10 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
   1. In a supporting terminal, Claude Status incident text is a clickable link opening the relevant status.claude.com page
   2. In a supporting terminal, weather alert text is a clickable link opening the NWS alert detail URL for that alert
   3. In a terminal that does not support OSC 8 (or when the config toggle is off), the same text renders as plain text with no stray escape sequences
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 09-01-PLAN.md — OSC 8 foundation: osc8() helper, links tri-state config + auto-detect, allowlist URL validators (LINK-03)
+- [ ] 09-02-PLAN.md — Weather alert site: OSC 8-wrap glyph+event+timing to NWS zone URL, UGC extraction, tally outside span (LINK-02)
+- [ ] 09-03-PLAN.md — Claude Status site: OSC 8-wrap whole segment to incident page, id binding, no-homepage fallback (LINK-01)
 
 ### Phase 10: Tech-Debt Cleanup
 **Goal**: All five items from the v1.0 audit tech-debt block are resolved; version metadata, planning artifacts, and test coverage are consistent and accurate
