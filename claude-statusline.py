@@ -83,6 +83,12 @@ RESET  = "\033[0m"
 DEFAULT_FG = "\033[39m"  # default foreground only — neutral hue that preserves BOLD/DIM
                          # (unlike RESET, which cancels intensity); see _alert_color (WR-01/D-06)
 
+# OSC 8 hyperlink constants (Phase 9, LINK-03) — spelled with octal \033 to match file idiom.
+# Sequence form: ESC ] 8 ; ; <url> ST <text> ESC ] 8 ; ; ST  (ST = ESC backslash)
+_OSC8_OPEN_PRE = "\033]8;;"       # ESC ] 8 ; ; — prepended before the URL
+_OSC8_ST       = "\033\\"         # ST terminator (ESC backslash) — ends the URL field
+_OSC8_CLOSE    = "\033]8;;\033\\" # empty-URL close — terminates the hyperlink span
+
 # Semantic weather colors (Phase 02.1, D-08) — TOP-LINE ONLY.
 # Do NOT use these on the bottom line; GREEN/YELLOW/RED there carry
 # usage-threshold semantics and must not be mixed with weather coloring.
@@ -122,6 +128,23 @@ def _bar_preset(style: object) -> tuple[str, str]:
     if not isinstance(style, str):
         return _BAR_PRESETS["shade"]
     return _BAR_PRESETS.get(style, _BAR_PRESETS["shade"])
+
+
+def osc8(text: str, url, *, enabled: bool) -> str:
+    """Wrap *text* in an OSC 8 hyperlink to *url* when *enabled* and *url* are truthy.
+
+    Pure, never raises.  On the disabled/no-url path returns *text* byte-for-byte
+    unchanged — no ``\\x1b]8`` bytes ever appear in the output (LINK-03 guarantee).
+    Callers are responsible for pre-validating the URL before passing it here; this
+    helper assumes a safe, already-validated url (validation lives in _valid_ugc /
+    _valid_incident_id so the security boundary stays at the call site, not here).
+
+    Composes safely with SGR color wraps — SGR codes inside *text* pass through
+    unchanged inside the OSC 8 span.
+    """
+    if not enabled or not url:
+        return text
+    return f"{_OSC8_OPEN_PRE}{url}{_OSC8_ST}{text}{_OSC8_CLOSE}"
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +208,11 @@ DEFAULTS: dict = {
         # True (default) renders the Claude status segment when a noteworthy event is detected.
         # Quiet when all tracked components are healthy (D-01). Set to false to suppress.
         "show_claude_status": True,
+        # Phase 09: OSC 8 hyperlink toggle (D-01).  Tri-state: "off" / "auto" / "on".
+        # "off" (default, opt-in posture) — never emit OSC 8; plain text always.
+        # "auto" — emit only when a conservative env-var allowlist detects a capable terminal.
+        # "on"  — always emit OSC 8 (user's manual override; use when "auto" misses your terminal).
+        "links": "off",
     },
     # Phase 07: Claude-status incident filter (D-06). Hand-edited TOML only —
     # the tool NEVER rewrites this table (id-dismissals live in the tool-owned
@@ -215,6 +243,110 @@ def _deep_merge(base: dict, override: dict) -> dict:
         else:
             result[key] = val
     return result
+
+
+# ---------------------------------------------------------------------------
+# OSC 8 capability resolver (Phase 9, D-01/D-02)
+# ---------------------------------------------------------------------------
+
+# Conservative allowlist of env-var markers for known-OSC-8-capable terminals.
+# Extend here when a new terminal is confirmed to support OSC 8 reliably.
+# "auto" mode returns True only when at least one marker matches; bias to False
+# on unknown terminals (D-02) to avoid emitting visible escape noise.
+_OSC8_TERM_PROGRAM_ALLOW: frozenset[str] = frozenset({
+    "iTerm.app",    # iTerm2
+    "WezTerm",      # WezTerm
+    "vscode",       # VS Code integrated terminal
+    "ghostty",      # Ghostty
+})
+
+
+def _osc8_enabled(cfg: dict) -> bool:
+    """Return True when OSC 8 hyperlinks should be emitted for this render.
+
+    Reads ``cfg["display"]["links"]`` (tri-state: "off" / "auto" / "on"):
+    - "off" (default) → False (opt-in posture)
+    - "on"            → True  (user's manual override; env not consulted)
+    - "auto"          → consult a conservative env-var allowlist; unknown → False (D-02)
+    - any other value → False (mirror _bar_preset unknown→default fallback)
+    """
+    value = cfg.get("display", {}).get("links", "off")
+    if not isinstance(value, str):
+        return False
+    if value == "off":
+        return False
+    if value == "on":
+        return True
+    if value == "auto":
+        # TERM_PROGRAM — check against allowlist of known-good values
+        term_prog = os.environ.get("TERM_PROGRAM", "")
+        if term_prog in _OSC8_TERM_PROGRAM_ALLOW:
+            return True
+        # WT_SESSION — Windows Terminal (any non-empty value means it's present)
+        if os.environ.get("WT_SESSION"):
+            return True
+        # KITTY_WINDOW_ID — kitty terminal
+        if os.environ.get("KITTY_WINDOW_ID"):
+            return True
+        # VTE_VERSION — GNOME Terminal and other VTE-based terminals
+        if os.environ.get("VTE_VERSION"):
+            return True
+        # TERMINAL_EMULATOR — JetBrains (new reworked terminal supports OSC 8)
+        term_emu = os.environ.get("TERMINAL_EMULATOR", "")
+        if "JetBrains" in term_emu:
+            return True
+        return False
+    # Unknown value → off (mirror _bar_preset's unknown→default at L128-130)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# URL-component allowlist validators (Phase 9, T-09-01)
+# ---------------------------------------------------------------------------
+# These are ALLOWLIST validators (re.fullmatch), NOT denylist strip helpers.
+# On non-match the caller receives None and falls back to plain text (D-10).
+# Allowlist approach: a rejected component (None) guarantees zero OSC 8 bytes
+# are emitted (osc8() returns text unchanged on falsy url — T-09-02).
+#
+# DO NOT reuse the _sanitize char-strip idiom here: stripping an injected ESC/ST
+# byte would silently pass a partial value. Fullmatch rejects the whole string
+# if any control byte is present, closing the terminal-injection breakout path.
+
+def _valid_ugc(value) -> str | None:
+    """Validate a NWS UGC zone/county code against the strict allowlist.
+
+    Accepts: ``^[A-Z]{2}[CZ][0-9]{3}$`` (forecast zone ``Z`` or county ``C``).
+    Returns the validated string unchanged, or None on any non-match (including
+    values carrying ESC / ST / control bytes — the ST breakout path, T-09-01).
+    """
+    if value is None:
+        return None
+    try:
+        s = str(value)
+    except Exception:
+        return None
+    if not s:
+        return None
+    return s if re.fullmatch(r"[A-Z]{2}[CZ][0-9]{3}", s) else None
+
+
+def _valid_incident_id(value) -> str | None:
+    """Validate a Statuspage incident id against the strict allowlist.
+
+    Accepts: ``^[0-9a-z]+$`` (lowercase hex/alnum slug — Statuspage's id format).
+    Returns the validated string unchanged, or None on any non-match (including
+    values carrying ESC / control bytes — the injection breakout path, T-09-01).
+    Uppercase ids are rejected to maintain the strictest possible charset.
+    """
+    if value is None:
+        return None
+    try:
+        s = str(value)
+    except Exception:
+        return None
+    if not s:
+        return None
+    return s if re.fullmatch(r"[0-9a-z]+", s) else None
 
 
 def load_config(path: str | None = None) -> dict:
