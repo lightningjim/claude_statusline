@@ -3884,6 +3884,9 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
 
         # Step 3c: Trailing detail — alert override or sun event (D2-11, D2-12, WX-04)
         trailing_detail = None
+        # Resolve OSC 8 link toggle once per render (Phase 9, D-01/D-02).
+        # Mirrors icon_set resolution above — takes effect on the next render.
+        _links_enabled = _osc8_enabled(cfg)
         # Attempt alert override: only when alerts section is within ceiling + non-empty
         try:
             if section_within_ceiling(alerts_section, max_stale=alerts_max_stale, now=now):
@@ -3924,12 +3927,42 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
                                 detail += f" · {timing_fragment}"
                         except Exception:
                             pass  # timing parse failed → omit silently (D-10)
-                        # D-08: per-class tally of remaining alerts (not flat +N)
+                        # Phase 9 D-04/D-05/D-06: OSC 8 wrap glyph+event+timing only.
+                        # Extract and validate UGC — defensive .get idiom so a missing
+                        # geocode never raises (T-09-03: allowlist via _valid_ugc).
+                        try:
+                            _geocode  = props.get("geocode") or {}
+                            _ugc_list = _geocode.get("UGC") or []
+                            _ugc      = None
+                            # D-05: prefer forecast-zone (Z), fall back to county (C)
+                            for _code in _ugc_list:
+                                if _valid_ugc(_code) and _code[2] == "Z":
+                                    _ugc = _valid_ugc(_code)
+                                    break
+                            if _ugc is None:
+                                for _code in _ugc_list:
+                                    if _valid_ugc(_code) and _code[2] == "C":
+                                        _ugc = _valid_ugc(_code)
+                                        break
+                        except Exception:
+                            _ugc = None
+                        _wx_url  = (f"https://api.weather.gov/alerts/active?zone={_ugc}"
+                                    if _ugc else None)
+                        # D-06: OSC 8 span = glyph+event+timing (the SGR color wrap goes
+                        # INSIDE the span so the terminal sees: OSC8 open → color → text
+                        # → reset → OSC8 close).  osc8() returns plain text on falsy url
+                        # or disabled — zero \\x1b]8 bytes (LINK-03 guarantee).
+                        linkable = osc8(f"{color}{detail}{RESET}", _wx_url,
+                                        enabled=_links_enabled)
+                        # D-08: per-class tally of remaining alerts (not flat +N).
+                        # Tally is concatenated to the osc8 result, NOT to detail, so it
+                        # stays OUTSIDE the OSC 8 span (D-06).
+                        tally = ""
                         if remaining_alerts:
-                            tally = _build_alert_tally(remaining_alerts, icon_set)
-                            if tally:
-                                detail += f"  {tally}"
-                        trailing_detail = f"{color}{detail}{RESET}"
+                            _tally = _build_alert_tally(remaining_alerts, icon_set)
+                            if _tally:
+                                tally = f"  {_tally}"
+                        trailing_detail = linkable + tally
         except Exception:
             pass  # alert override failed: fall through to sun event
 
