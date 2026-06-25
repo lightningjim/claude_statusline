@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: QOL and fixes
-status: completed
-stopped_at: Phase 9 context gathered
+status: executing
+stopped_at: Phase 9 complete (verified + UAT + threat-secure) — Phase 10 Tech-Debt Cleanup not started
 last_updated: "2026-06-25T17:44:51.635Z"
 last_activity: 2026-06-25 -- Phase 09 marked complete
 progress:
@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-20)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Phase 09 — clickable-links
+**Current focus:** Phase 10 — Tech-Debt Cleanup (next; not started)
 
 ## Current Position
 

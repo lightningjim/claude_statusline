@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — 12 phases (8 integer + 4 inserted decimals) — shipped 2026-06-20
-- 🚧 **v1.1 QOL and fixes** — in progress (Phases 8–10)
+- 🚧 **v1.1 QOL and fixes** — in progress (Phases 8–11)
 
 ## Phases
 
@@ -30,8 +30,9 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 ### 🚧 v1.1 QOL and fixes
 
 - [x] **Phase 8: Alert Timing** - Display alert onset and expiry times in 12hr relative-day format (completed 2026-06-20)
-- [x] **Phase 9: Clickable Links** - OSC 8 hyperlinks for status events and weather alerts with plain-text fallback (gap closure in progress — 09-04) (completed 2026-06-25)
+- [x] **Phase 9: Clickable Links** - OSC 8 hyperlinks for status events and weather alerts with plain-text fallback (completed 2026-06-25; verified + UAT + threat-secure)
 - [ ] **Phase 10: Tech-Debt Cleanup** - Clear the v1.0 audit's five-item tech-debt bundle
+- [ ] **Phase 11: Version Display** - Show current versions of the local claude executable and the GSD plugin version
 
 ## Phase Details
 
@@ -74,6 +75,12 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
   5. The WX-05 cache-TTL text and code default agree — the requirement text and `claude-statusline.py` default use the same number
 **Plans**: TBD
 
+### Phase 11: Version Display
+**Goal**: The statusline (or a related surface) reports the current version of the local `claude` executable and the installed GSD plugin version
+**Depends on**: Phase 10
+**Requirements**: TBD
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans | Status | Completed |
@@ -93,3 +100,4 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 | 8. Alert Timing | v1.1 | 2/2 | Complete    | 2026-06-20 |
 | 9. Clickable Links | v1.1 | 4/4 | Complete   | 2026-06-25 |
 | 10. Tech-Debt Cleanup | v1.1 | 0/? | Not started | - |
+| 11. Version Display | v1.1 | 0/? | Not started | - |
