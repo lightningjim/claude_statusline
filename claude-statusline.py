@@ -288,10 +288,20 @@ def _osc8_enabled(cfg: dict) -> bool:
         # KITTY_WINDOW_ID — kitty terminal
         if os.environ.get("KITTY_WINDOW_ID"):
             return True
-        # VTE_VERSION — GNOME Terminal and other VTE-based terminals
-        if os.environ.get("VTE_VERSION"):
-            return True
-        # TERMINAL_EMULATOR — JetBrains (new reworked terminal supports OSC 8)
+        # VTE_VERSION — GNOME Terminal and other VTE-based terminals.
+        # OSC 8 landed in VTE 0.50 (VTE_VERSION == 5000); gate on int >= 5000.
+        # Unparseable VTE_VERSION biases to False per D-02 (never crash the bar, T-09-05).
+        _vte = os.environ.get("VTE_VERSION", "")
+        try:
+            if int(_vte) >= 5000:
+                return True
+        except (TypeError, ValueError):
+            pass
+        # TERMINAL_EMULATOR — JetBrains (reworked terminal supports OSC 8).
+        # WR-02: legacy and reworked JediTerm both export
+        # TERMINAL_EMULATOR=JetBrains-JediTerm and cannot be distinguished via env;
+        # kept in the auto allowlist because the author's PyCharm terminal supports
+        # OSC 8 (UAT Test 3).  Users on a truly legacy terminal can set links=off.
         term_emu = os.environ.get("TERMINAL_EMULATOR", "")
         if "JetBrains" in term_emu:
             return True
