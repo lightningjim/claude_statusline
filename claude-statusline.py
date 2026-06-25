@@ -349,6 +349,111 @@ def _valid_incident_id(value) -> str | None:
     return s if re.fullmatch(r"[0-9a-z]+", s) else None
 
 
+# ---------------------------------------------------------------------------
+# SAME (Specific Area Message Encoding) FIPS → USPS postal lookup (Phase 9, T-09-04)
+# ---------------------------------------------------------------------------
+# Maps 2-digit zero-padded state/territory FIPS codes to 2-letter USPS postal codes.
+# Used by _same_to_county_ugc to derive a county UGC from geocode.SAME entries.
+# Source: US Census Bureau / ANSI FIPS 5-2 state codes + USPS postal abbreviations.
+# Territories: PR(72), GU(66), VI(78), AS(60), MP(69) — all issued by NWS for alerts.
+_FIPS_STATE_POSTAL: dict[str, str] = {
+    "01": "AL",  # Alabama
+    "02": "AK",  # Alaska
+    "04": "AZ",  # Arizona
+    "05": "AR",  # Arkansas
+    "06": "CA",  # California
+    "08": "CO",  # Colorado
+    "09": "CT",  # Connecticut
+    "10": "DE",  # Delaware
+    "11": "DC",  # District of Columbia
+    "12": "FL",  # Florida
+    "13": "GA",  # Georgia
+    "15": "HI",  # Hawaii
+    "16": "ID",  # Idaho
+    "17": "IL",  # Illinois
+    "18": "IN",  # Indiana
+    "19": "IA",  # Iowa
+    "20": "KS",  # Kansas
+    "21": "KY",  # Kentucky
+    "22": "LA",  # Louisiana
+    "23": "ME",  # Maine
+    "24": "MD",  # Maryland
+    "25": "MA",  # Massachusetts
+    "26": "MI",  # Michigan
+    "27": "MN",  # Minnesota
+    "28": "MS",  # Mississippi
+    "29": "MO",  # Missouri
+    "30": "MT",  # Montana
+    "31": "NE",  # Nebraska
+    "32": "NV",  # Nevada
+    "33": "NH",  # New Hampshire
+    "34": "NJ",  # New Jersey
+    "35": "NM",  # New Mexico
+    "36": "NY",  # New York
+    "37": "NC",  # North Carolina
+    "38": "ND",  # North Dakota
+    "39": "OH",  # Ohio
+    "40": "OK",  # Oklahoma
+    "41": "OR",  # Oregon
+    "42": "PA",  # Pennsylvania
+    "44": "RI",  # Rhode Island
+    "45": "SC",  # South Carolina
+    "46": "SD",  # South Dakota
+    "47": "TN",  # Tennessee
+    "48": "TX",  # Texas
+    "49": "UT",  # Utah
+    "50": "VT",  # Vermont
+    "51": "VA",  # Virginia
+    "53": "WA",  # Washington
+    "54": "WV",  # West Virginia
+    "55": "WI",  # Wisconsin
+    "56": "WY",  # Wyoming
+    # US territories issued by NWS
+    "60": "AS",  # American Samoa
+    "66": "GU",  # Guam
+    "69": "MP",  # Northern Mariana Islands
+    "72": "PR",  # Puerto Rico
+    "78": "VI",  # U.S. Virgin Islands
+}
+
+
+def _same_to_county_ugc(same) -> str | None:
+    """Derive a NWS county UGC from a SAME (Specific Area Message Encoding) code.
+
+    SAME format: P|SS|CCC (6 digits total):
+    - P   [0]   : partial-county marker (0 = whole county)
+    - SS  [1:3] : 2-digit state FIPS (zero-padded)
+    - CCC [3:6] : 3-digit county FIPS (zero-padded)
+
+    Derivation: look up SS in _FIPS_STATE_POSTAL → postal; build f"{postal}C{CCC}";
+    validate through _valid_ugc.  Returns None on ANY invalid input (D-10 omit-not-fake).
+
+    Security (T-09-04): SAME validated to ^[0-9]{6}$ before slicing so no slice can
+    raise; derived county code passed through _valid_ugc allowlist so an injected
+    control byte → None → zero \\x1b]8 bytes.
+
+    Never raises — contract mirrors _valid_ugc.
+    """
+    if same is None:
+        return None
+    try:
+        s = str(same)
+    except Exception:
+        return None
+    # Must be exactly 6 decimal digits (P|SS|CCC shape)
+    if not re.fullmatch(r"[0-9]{6}", s):
+        return None
+    state = s[1:3]
+    county = s[3:6]
+    postal = _FIPS_STATE_POSTAL.get(state)
+    if postal is None:
+        # Unknown state FIPS — omit, do not fake (D-10)
+        return None
+    candidate = f"{postal}C{county}"
+    # Re-validate through the existing UGC allowlist (same guard used everywhere)
+    return _valid_ugc(candidate)
+
+
 def load_config(path: str | None = None) -> dict:
     """Load TOML config at *path* (default: ~/.claude/claude-statusline/claude-statusline.toml).
 

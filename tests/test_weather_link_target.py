@@ -30,7 +30,9 @@ class TestSameToCountyUgc(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.mod = _load_script_module()
-        cls.fn = cls.mod._same_to_county_ugc
+        # Wrap in staticmethod so Python's descriptor protocol does not inject
+        # `self` as the first argument when calling via `self.fn(...)`.
+        cls.fn = staticmethod(cls.mod._same_to_county_ugc)
         cls.table = cls.mod._FIPS_STATE_POSTAL
 
     # -------------------------------------------------------------------
