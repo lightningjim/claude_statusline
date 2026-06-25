@@ -4078,8 +4078,7 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
                         # valid — warncounty is REQUIRED for the page to populate (D-10:
                         # if county cannot be derived, omit rather than emit a half URL).
                         _wx_url = (
-                            f"https://forecast.weather.gov/showsigwx.php"
-                            f"?warnzone={_ugc}&warncounty={_county}"
+                            f"https://forecast.weather.gov/showsigwx.php?warnzone={_ugc}&warncounty={_county}"
                             if (_ugc and _county) else None
                         )
                         # D-06: OSC 8 span = glyph+event+timing (the SGR color wrap goes
