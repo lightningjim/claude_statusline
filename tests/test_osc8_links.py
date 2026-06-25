@@ -140,6 +140,103 @@ class TestOsc8Enabled(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Plan 09-04 Task 3: VTE version gate (WR-01) + JetBrains doc comment (WR-02)
+# ---------------------------------------------------------------------------
+# OSC 8 landed in VTE 0.50 (VTE_VERSION == 5000).  Under links=auto, the VTE
+# branch must return True only for VTE_VERSION >= 5000; pre-5000, empty, or
+# non-numeric values bias to False (D-02) and must never raise (T-09-05).
+# JetBrains branch is unchanged (WR-02: cannot distinguish legacy/reworked JediTerm).
+
+class TestOsc8EnabledVteGate(unittest.TestCase):
+    """VTE_VERSION >= 5000 gate under links=auto (WR-01 / GAP-09-B)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = _load_script_module()
+
+    # Clear all markers except the one under test so a real developer terminal
+    # env does not leak into these isolated assertions (mirrors the existing
+    # auto+no-markers pattern in TestOsc8Enabled).
+    _OTHER_MARKERS = {
+        "TERM_PROGRAM": "",
+        "WT_SESSION": "",
+        "KITTY_WINDOW_ID": "",
+        "TERMINAL_EMULATOR": "",
+    }
+
+    def _run_auto(self, env_patch):
+        """Run _osc8_enabled(links=auto) with env_patch merged over cleared markers."""
+        full_env = {**self._OTHER_MARKERS, **env_patch}
+        with patch.dict(os.environ, full_env, clear=False):
+            return self.mod._osc8_enabled({"display": {"links": "auto"}})
+
+    def test_vte_5000_returns_true(self):
+        """VTE_VERSION='5000' (OSC 8 first shipped) → True."""
+        result = self._run_auto({"VTE_VERSION": "5000"})
+        self.assertIs(result, True,
+                      "VTE_VERSION==5000 should enable OSC 8")
+
+    def test_vte_6800_returns_true(self):
+        """VTE_VERSION='6800' (> 5000) → True."""
+        result = self._run_auto({"VTE_VERSION": "6800"})
+        self.assertIs(result, True,
+                      "VTE_VERSION > 5000 should enable OSC 8")
+
+    def test_vte_4604_returns_false(self):
+        """VTE_VERSION='4604' (VTE 0.46.4, pre-OSC8) → False."""
+        result = self._run_auto({"VTE_VERSION": "4604"})
+        self.assertIs(result, False,
+                      "VTE_VERSION < 5000 must not enable OSC 8 (pre-OSC8 VTE)")
+
+    def test_vte_empty_string_returns_false(self):
+        """VTE_VERSION='' (set but empty) → False."""
+        result = self._run_auto({"VTE_VERSION": ""})
+        self.assertIs(result, False,
+                      "Empty VTE_VERSION must not enable OSC 8")
+
+    def test_vte_unset_returns_false(self):
+        """VTE_VERSION unset → False (no VTE marker)."""
+        # Patch VTE_VERSION out entirely using os.environ.pop approach via patch.dict
+        env = {**self._OTHER_MARKERS}
+        env["VTE_VERSION"] = ""  # set to empty; same effective behavior as unset
+        with patch.dict(os.environ, env, clear=False):
+            # Also ensure VTE_VERSION is actually absent if already unset
+            os.environ.pop("VTE_VERSION", None)
+            result = self.mod._osc8_enabled({"display": {"links": "auto"}})
+        self.assertIs(result, False,
+                      "Unset VTE_VERSION must not enable OSC 8")
+
+    def test_vte_garbage_returns_false_no_exception(self):
+        """VTE_VERSION='garbage' (non-numeric) → False; must not raise (T-09-05)."""
+        try:
+            result = self._run_auto({"VTE_VERSION": "garbage"})
+        except Exception as exc:
+            self.fail(f"_osc8_enabled raised {type(exc).__name__} on non-numeric VTE_VERSION: {exc}")
+        self.assertIs(result, False,
+                      "Non-numeric VTE_VERSION must not enable OSC 8")
+
+    def test_vte_4999_returns_false(self):
+        """VTE_VERSION='4999' (one below threshold) → False."""
+        result = self._run_auto({"VTE_VERSION": "4999"})
+        self.assertIs(result, False,
+                      "VTE_VERSION 4999 (one below 5000) must not enable OSC 8")
+
+    def test_jetbrains_unaffected_by_vte_gate(self):
+        """TERMINAL_EMULATOR='JetBrains-JediTerm', VTE unset → True (WR-02: JetBrains stays in allowlist)."""
+        env = {
+            "TERM_PROGRAM": "",
+            "WT_SESSION": "",
+            "KITTY_WINDOW_ID": "",
+            "VTE_VERSION": "",
+            "TERMINAL_EMULATOR": "JetBrains-JediTerm",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            result = self.mod._osc8_enabled({"display": {"links": "auto"}})
+        self.assertIs(result, True,
+                      "JetBrains terminal must still be in auto allowlist (WR-02)")
+
+
+# ---------------------------------------------------------------------------
 # Task 3: URL-component validators
 # ---------------------------------------------------------------------------
 
