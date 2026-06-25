@@ -30,7 +30,7 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 ### 🚧 v1.1 QOL and fixes
 
 - [x] **Phase 8: Alert Timing** - Display alert onset and expiry times in 12hr relative-day format (completed 2026-06-20)
-- [ ] **Phase 9: Clickable Links** - OSC 8 hyperlinks for status events and weather alerts with plain-text fallback (gap closure in progress — 09-04)
+- [x] **Phase 9: Clickable Links** - OSC 8 hyperlinks for status events and weather alerts with plain-text fallback (gap closure in progress — 09-04) (completed 2026-06-25)
 - [ ] **Phase 10: Tech-Debt Cleanup** - Clear the v1.0 audit's five-item tech-debt bundle
 
 ## Phase Details
@@ -60,7 +60,7 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] 09-01-PLAN.md — OSC 8 foundation: osc8() helper, links tri-state config + auto-detect, allowlist URL validators (LINK-03)
 - [x] 09-02-PLAN.md — Weather alert site: OSC 8-wrap glyph+event+timing to NWS zone URL, UGC extraction, tally outside span (LINK-02)
 - [x] 09-03-PLAN.md — Claude Status site: OSC 8-wrap whole segment to incident page, id binding, no-homepage fallback (LINK-01)
-- [ ] 09-04-PLAN.md — Gap closure: re-target weather link to human-readable showsigwx page (warnzone+warncounty from SAME, omit-not-fake) + VTE>=5000 auto gate + WR-02 doc (LINK-02)
+- [x] 09-04-PLAN.md — Gap closure: re-target weather link to human-readable showsigwx page (warnzone+warncounty from SAME, omit-not-fake) + VTE>=5000 auto gate + WR-02 doc (LINK-02)
 
 ### Phase 10: Tech-Debt Cleanup
 **Goal**: All five items from the v1.0 audit tech-debt block are resolved; version metadata, planning artifacts, and test coverage are consistent and accurate
@@ -91,5 +91,5 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 | 7. Filter/dismiss incidents | v1.0 | 4/4 | Complete | 2026-06-17 |
 | 07.1. Resolved vs unresolved | v1.0 | 3/3 | Complete | 2026-06-18 |
 | 8. Alert Timing | v1.1 | 2/2 | Complete    | 2026-06-20 |
-| 9. Clickable Links | v1.1 | 3/4 | Gap closure | - |
+| 9. Clickable Links | v1.1 | 4/4 | Complete   | 2026-06-25 |
 | 10. Tech-Debt Cleanup | v1.1 | 0/? | Not started | - |
