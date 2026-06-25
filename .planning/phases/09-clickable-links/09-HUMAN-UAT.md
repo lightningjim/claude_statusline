@@ -1,14 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 09-clickable-links
 source: [09-VERIFICATION.md]
 started: 2026-06-21T01:31:51Z
-updated: 2026-06-25T17:05:00Z
+updated: 2026-06-25T17:10:00Z
 ---
 
 ## Current Test
 
-[gap closure 09-04 applied — re-verification round: Test 2 (LINK-02) needs a human click in a supporting terminal to confirm the new showsigwx target opens a populated, readable NWS WWA page. GAP-09-B (WR-01) resolved via automated tests.]
+[testing complete]
 
 ## Tests
 
@@ -18,7 +18,8 @@ result: skipped — no active Claude Status incident available to click during t
 
 ### 2. LINK-02 — Weather alert is clickable
 expected: In a supporting terminal, the alert segment opens the NWS alert detail URL; the tally (`+N`) is not part of the clickable region.
-result: RE-TEST PENDING (fix applied in 09-04). The original ISSUE (link opened raw CAP JSON at `api.weather.gov/alerts/active?zone=<UGC>`) is fixed: the link now targets `https://forecast.weather.gov/showsigwx.php?warnzone={zoneUGC}&warncounty={countyUGC}`, with `warncounty` derived from `geocode.SAME`. Automated tests confirm the URL string + omit-not-fake on missing SAME. HUMAN STEP: in a supporting terminal during an active alert, click the weather segment and confirm it opens a populated, human-readable WWA-by-location page (not JSON, not an empty page). Tally-outside-span unchanged.
+result: skipped (re-test). Original ISSUE (link opened raw CAP JSON) is fixed in 09-04: link now targets `https://forecast.weather.gov/showsigwx.php?warnzone={zoneUGC}&warncounty={countyUGC}`, warncounty derived from `geocode.SAME`. Automated tests confirm the URL string + omit-not-fake on missing SAME.
+reason: No active weather alert available to click during testing. Low residual risk: (a) the showsigwx page behavior was already verified live during GAP-09-A diagnosis (2-alert LA County zone populated correctly); (b) the OSC 8 click mechanism passed live in Test 3 (LINK-03) in the PyCharm terminal; (c) URL construction + omit-not-fake fully covered by automated tests. User assessment: "links were working before this so most likely [fine]."
 
 ### 3. LINK-03 — Plain-text fallback, no escape noise
 expected: In a non-supporting terminal (xterm) or with `links="off"`, both segments render as plain colored text — no `]8;;`, no stray ESC, no broken unicode.
@@ -37,11 +38,12 @@ result: skipped — WON'T FIX. The user's PyCharm terminal supports OSC 8 (Test 
 total: 5
 passed: 1
 issues: 0
-pending: 1
-skipped: 1
+pending: 0
+skipped: 3
 blocked: 0
+resolved_automated: 1
 
-(Re-verification round after 09-04: GAP-09-B resolved automated; GAP-09-A fix applied, 1 human click re-test pending on Test 2.)
+(Re-verification round after 09-04 complete: GAP-09-A fix applied — LINK-02 re-test skipped with reason, no active alert + low residual risk; GAP-09-B (WR-01) resolved via automated tests; WR-02 won't-fix. No open issues.)
 
 ## Gaps
 
