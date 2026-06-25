@@ -4033,12 +4033,14 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
                         except Exception:
                             pass  # timing parse failed → omit silently (D-10)
                         # Phase 9 D-04/D-05/D-06: OSC 8 wrap glyph+event+timing only.
-                        # Extract and validate UGC — defensive .get idiom so a missing
-                        # geocode never raises (T-09-03: allowlist via _valid_ugc).
+                        # Extract and validate UGC (warnzone) and derive warncounty from
+                        # geocode.SAME — defensive .get idiom so a missing geocode never
+                        # raises (T-09-03: allowlist via _valid_ugc; T-09-04: SAME through
+                        # _same_to_county_ugc which re-validates via _valid_ugc).
                         try:
-                            _geocode  = props.get("geocode") or {}
-                            _ugc_list = _geocode.get("UGC") or []
-                            _ugc      = None
+                            _geocode   = props.get("geocode") or {}
+                            _ugc_list  = _geocode.get("UGC") or []
+                            _ugc       = None
                             # D-05: prefer forecast-zone (Z), fall back to county (C)
                             for _code in _ugc_list:
                                 if _valid_ugc(_code) and _code[2] == "Z":
@@ -4049,10 +4051,27 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
                                     if _valid_ugc(_code) and _code[2] == "C":
                                         _ugc = _valid_ugc(_code)
                                         break
+                            # Derive warncounty from geocode.SAME (FIPS) — required for
+                            # showsigwx to list active alerts (GAP-09-A / LINK-02).
+                            # NWS zone alerts carry no county code in geocode.UGC, so we
+                            # must derive it from SAME.  Take the first derivable result.
+                            _same_list = _geocode.get("SAME") or []
+                            _county    = None
+                            for _same in _same_list:
+                                _county = _same_to_county_ugc(_same)
+                                if _county is not None:
+                                    break
                         except Exception:
-                            _ugc = None
-                        _wx_url  = (f"https://api.weather.gov/alerts/active?zone={_ugc}"
-                                    if _ugc else None)
+                            _ugc    = None
+                            _county = None
+                        # Build showsigwx URL only when BOTH warnzone and warncounty are
+                        # valid — warncounty is REQUIRED for the page to populate (D-10:
+                        # if county cannot be derived, omit rather than emit a half URL).
+                        _wx_url = (
+                            f"https://forecast.weather.gov/showsigwx.php"
+                            f"?warnzone={_ugc}&warncounty={_county}"
+                            if (_ugc and _county) else None
+                        )
                         # D-06: OSC 8 span = glyph+event+timing (the SGR color wrap goes
                         # INSIDE the span so the terminal sees: OSC8 open → color → text
                         # → reset → OSC8 close).  osc8() returns plain text on falsy url
