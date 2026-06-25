@@ -288,10 +288,20 @@ def _osc8_enabled(cfg: dict) -> bool:
         # KITTY_WINDOW_ID — kitty terminal
         if os.environ.get("KITTY_WINDOW_ID"):
             return True
-        # VTE_VERSION — GNOME Terminal and other VTE-based terminals
-        if os.environ.get("VTE_VERSION"):
-            return True
-        # TERMINAL_EMULATOR — JetBrains (new reworked terminal supports OSC 8)
+        # VTE_VERSION — GNOME Terminal and other VTE-based terminals.
+        # OSC 8 landed in VTE 0.50 (VTE_VERSION == 5000); gate on int >= 5000.
+        # Unparseable VTE_VERSION biases to False per D-02 (never crash the bar, T-09-05).
+        _vte = os.environ.get("VTE_VERSION", "")
+        try:
+            if int(_vte) >= 5000:
+                return True
+        except (TypeError, ValueError):
+            pass
+        # TERMINAL_EMULATOR — JetBrains (reworked terminal supports OSC 8).
+        # WR-02: legacy and reworked JediTerm both export
+        # TERMINAL_EMULATOR=JetBrains-JediTerm and cannot be distinguished via env;
+        # kept in the auto allowlist because the author's PyCharm terminal supports
+        # OSC 8 (UAT Test 3).  Users on a truly legacy terminal can set links=off.
         term_emu = os.environ.get("TERMINAL_EMULATOR", "")
         if "JetBrains" in term_emu:
             return True
@@ -347,6 +357,111 @@ def _valid_incident_id(value) -> str | None:
     if not s:
         return None
     return s if re.fullmatch(r"[0-9a-z]+", s) else None
+
+
+# ---------------------------------------------------------------------------
+# SAME (Specific Area Message Encoding) FIPS → USPS postal lookup (Phase 9, T-09-04)
+# ---------------------------------------------------------------------------
+# Maps 2-digit zero-padded state/territory FIPS codes to 2-letter USPS postal codes.
+# Used by _same_to_county_ugc to derive a county UGC from geocode.SAME entries.
+# Source: US Census Bureau / ANSI FIPS 5-2 state codes + USPS postal abbreviations.
+# Territories: PR(72), GU(66), VI(78), AS(60), MP(69) — all issued by NWS for alerts.
+_FIPS_STATE_POSTAL: dict[str, str] = {
+    "01": "AL",  # Alabama
+    "02": "AK",  # Alaska
+    "04": "AZ",  # Arizona
+    "05": "AR",  # Arkansas
+    "06": "CA",  # California
+    "08": "CO",  # Colorado
+    "09": "CT",  # Connecticut
+    "10": "DE",  # Delaware
+    "11": "DC",  # District of Columbia
+    "12": "FL",  # Florida
+    "13": "GA",  # Georgia
+    "15": "HI",  # Hawaii
+    "16": "ID",  # Idaho
+    "17": "IL",  # Illinois
+    "18": "IN",  # Indiana
+    "19": "IA",  # Iowa
+    "20": "KS",  # Kansas
+    "21": "KY",  # Kentucky
+    "22": "LA",  # Louisiana
+    "23": "ME",  # Maine
+    "24": "MD",  # Maryland
+    "25": "MA",  # Massachusetts
+    "26": "MI",  # Michigan
+    "27": "MN",  # Minnesota
+    "28": "MS",  # Mississippi
+    "29": "MO",  # Missouri
+    "30": "MT",  # Montana
+    "31": "NE",  # Nebraska
+    "32": "NV",  # Nevada
+    "33": "NH",  # New Hampshire
+    "34": "NJ",  # New Jersey
+    "35": "NM",  # New Mexico
+    "36": "NY",  # New York
+    "37": "NC",  # North Carolina
+    "38": "ND",  # North Dakota
+    "39": "OH",  # Ohio
+    "40": "OK",  # Oklahoma
+    "41": "OR",  # Oregon
+    "42": "PA",  # Pennsylvania
+    "44": "RI",  # Rhode Island
+    "45": "SC",  # South Carolina
+    "46": "SD",  # South Dakota
+    "47": "TN",  # Tennessee
+    "48": "TX",  # Texas
+    "49": "UT",  # Utah
+    "50": "VT",  # Vermont
+    "51": "VA",  # Virginia
+    "53": "WA",  # Washington
+    "54": "WV",  # West Virginia
+    "55": "WI",  # Wisconsin
+    "56": "WY",  # Wyoming
+    # US territories issued by NWS
+    "60": "AS",  # American Samoa
+    "66": "GU",  # Guam
+    "69": "MP",  # Northern Mariana Islands
+    "72": "PR",  # Puerto Rico
+    "78": "VI",  # U.S. Virgin Islands
+}
+
+
+def _same_to_county_ugc(same) -> str | None:
+    """Derive a NWS county UGC from a SAME (Specific Area Message Encoding) code.
+
+    SAME format: P|SS|CCC (6 digits total):
+    - P   [0]   : partial-county marker (0 = whole county)
+    - SS  [1:3] : 2-digit state FIPS (zero-padded)
+    - CCC [3:6] : 3-digit county FIPS (zero-padded)
+
+    Derivation: look up SS in _FIPS_STATE_POSTAL → postal; build f"{postal}C{CCC}";
+    validate through _valid_ugc.  Returns None on ANY invalid input (D-10 omit-not-fake).
+
+    Security (T-09-04): SAME validated to ^[0-9]{6}$ before slicing so no slice can
+    raise; derived county code passed through _valid_ugc allowlist so an injected
+    control byte → None → zero \\x1b]8 bytes.
+
+    Never raises — contract mirrors _valid_ugc.
+    """
+    if same is None:
+        return None
+    try:
+        s = str(same)
+    except Exception:
+        return None
+    # Must be exactly 6 decimal digits (P|SS|CCC shape)
+    if not re.fullmatch(r"[0-9]{6}", s):
+        return None
+    state = s[1:3]
+    county = s[3:6]
+    postal = _FIPS_STATE_POSTAL.get(state)
+    if postal is None:
+        # Unknown state FIPS — omit, do not fake (D-10)
+        return None
+    candidate = f"{postal}C{county}"
+    # Re-validate through the existing UGC allowlist (same guard used everywhere)
+    return _valid_ugc(candidate)
 
 
 def load_config(path: str | None = None) -> dict:
@@ -3928,12 +4043,14 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
                         except Exception:
                             pass  # timing parse failed → omit silently (D-10)
                         # Phase 9 D-04/D-05/D-06: OSC 8 wrap glyph+event+timing only.
-                        # Extract and validate UGC — defensive .get idiom so a missing
-                        # geocode never raises (T-09-03: allowlist via _valid_ugc).
+                        # Extract and validate UGC (warnzone) and derive warncounty from
+                        # geocode.SAME — defensive .get idiom so a missing geocode never
+                        # raises (T-09-03: allowlist via _valid_ugc; T-09-04: SAME through
+                        # _same_to_county_ugc which re-validates via _valid_ugc).
                         try:
-                            _geocode  = props.get("geocode") or {}
-                            _ugc_list = _geocode.get("UGC") or []
-                            _ugc      = None
+                            _geocode   = props.get("geocode") or {}
+                            _ugc_list  = _geocode.get("UGC") or []
+                            _ugc       = None
                             # D-05: prefer forecast-zone (Z), fall back to county (C)
                             for _code in _ugc_list:
                                 if _valid_ugc(_code) and _code[2] == "Z":
@@ -3944,10 +4061,26 @@ def _weather_segment(data: dict | None, cfg: dict | None) -> str | None:
                                     if _valid_ugc(_code) and _code[2] == "C":
                                         _ugc = _valid_ugc(_code)
                                         break
+                            # Derive warncounty from geocode.SAME (FIPS) — required for
+                            # showsigwx to list active alerts (GAP-09-A / LINK-02).
+                            # NWS zone alerts carry no county code in geocode.UGC, so we
+                            # must derive it from SAME.  Take the first derivable result.
+                            _same_list = _geocode.get("SAME") or []
+                            _county    = None
+                            for _same in _same_list:
+                                _county = _same_to_county_ugc(_same)
+                                if _county is not None:
+                                    break
                         except Exception:
-                            _ugc = None
-                        _wx_url  = (f"https://api.weather.gov/alerts/active?zone={_ugc}"
-                                    if _ugc else None)
+                            _ugc    = None
+                            _county = None
+                        # Build showsigwx URL only when BOTH warnzone and warncounty are
+                        # valid — warncounty is REQUIRED for the page to populate (D-10:
+                        # if county cannot be derived, omit rather than emit a half URL).
+                        _wx_url = (
+                            f"https://forecast.weather.gov/showsigwx.php?warnzone={_ugc}&warncounty={_county}"
+                            if (_ugc and _county) else None
+                        )
                         # D-06: OSC 8 span = glyph+event+timing (the SGR color wrap goes
                         # INSIDE the span so the terminal sees: OSC8 open → color → text
                         # → reset → OSC8 close).  osc8() returns plain text on falsy url
