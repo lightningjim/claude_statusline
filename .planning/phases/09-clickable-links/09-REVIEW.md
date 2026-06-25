@@ -1,165 +1,156 @@
 ---
 phase: 09-clickable-links
-reviewed: 2026-06-21T01:26:01Z
-depth: standard
-files_reviewed: 5
+reviewed: 2026-06-25T00:00:00Z
+depth: deep
+files_reviewed: 3
 files_reviewed_list:
   - claude-statusline.py
-  - tests/test_osc8_links.py
+  - tests/test_weather_link_target.py
   - tests/test_weather_links.py
-  - tests/test_status_links.py
-  - tests/fixtures/status_incident_valid_id.json
 findings:
   critical: 0
-  warning: 2
+  warning: 1
   info: 2
-  total: 4
+  total: 3
 status: issues_found
+scope_note: "This review covers plan 09-04 gap-closure only (commits 1ea9d81..912d417).
+  The prior wave review (2026-06-21) is superseded for those files; its WR-01
+  (VTE gate) was resolved by 09-04 and WR-02 (JetBrains) was documented in code."
 ---
 
-# Phase 9: Code Review Report
+# Phase 09-04 Gap-Closure: Code Review Report
 
-**Reviewed:** 2026-06-21T01:26:01Z
-**Depth:** standard (ULTRACODE: all dimensions + adversarial refutation pass)
-**Files Reviewed:** 5
-**Status:** issues_found
+**Reviewed:** 2026-06-25
+**Scope:** Commits 1ea9d81..912d417 (plan 09-04 gap closure)
+**Depth:** deep
+**Files Reviewed:** 3
+**Status:** issues_found — 0 critical, 1 warning, 2 info
 
 ## Summary
 
-Phase 9 adds OSC 8 terminal-hyperlink support: the `osc8()` emitter, the
-`_osc8_enabled()` tri-state resolver, two allowlist validators (`_valid_ugc`,
-`_valid_incident_id`), and two render-site integrations (weather-alert link in
-`_weather_segment`, incident link in `_claude_status_segment`).
+Plan 09-04 adds four tightly scoped changes: (1) `_FIPS_STATE_POSTAL` — a 56-entry
+FIPS-to-postal lookup table; (2) `_same_to_county_ugc` — a pure helper that derives
+a county UGC from a NWS SAME code; (3) re-targeted alert URL
+(`forecast.weather.gov/showsigwx.php?warnzone=…&warncounty=…`); (4) the
+`int(VTE_VERSION) >= 5000` gate in `_osc8_enabled` plus a WR-02 explanatory
+comment.
 
-The core security boundary is **sound**. The escape-sequence-injection vector —
-the primary risk for OSC 8 — is closed correctly:
+**The production code is correct.** The prior-wave WR-01 (VTE gate over-detected)
+is cleanly resolved. The D-10 omit-not-fake contract is honored at every failure
+point: missing SAME, invalid SAME (non-6-digit or non-numeric), unknown state FIPS,
+or missing/invalid UGC each independently suppress the OSC 8 link with no partial
+URL emitted. The injection surface (network SAME → county UGC → URL parameter) is
+fully locked: `re.fullmatch(r"[0-9]{6}", s)` before slicing, `_valid_ugc` allowlist
+before URL interpolation. The `int(_vte)` conversion is correctly guarded against
+both `TypeError` and `ValueError`. Table spot-checks confirm correct FIPS→postal
+mappings. No crashes, no fakes, no injection vectors in the new code.
 
-- Both URL components are validated with `re.fullmatch` **allowlists**
-  (`[A-Z]{2}[CZ][0-9]{3}` and `[0-9a-z]+`), not denylist strip helpers. Any
-  string carrying `ESC`/`ST`/control bytes fails the whole match and yields
-  `None`, so `osc8()` returns plain text and emits **zero** `\x1b]8` bytes.
-- The text flowing into each OSC 8 span is independently ESC-stripped
-  (`safe_event`, `safe_label`), and the surrounding URL is a hardcoded template,
-  so no payload can break out of the hyperlink span.
-- The D-10 / D-03a "omit-not-fake" rule is honored at both sites: invalid /
-  missing / hyphenated / uppercase ids produce `url=None` → plain text, with
-  **no** homepage substitution. Tests cover this explicitly and all 58 pass.
-
-I attempted to refute each candidate finding before reporting. Findings about
-the validators, the `osc8()` byte guarantee, the `_code[2]` index safety, the
-double-`_valid_ugc` call producing wrong behavior, and ST-via-text breakout were
-all **dropped** after refutation — they are correct as written. What remains are
-two robustness gaps in the `links="auto"` env-detection heuristic that contradict
-the module's own stated D-02 "bias to False on unknown terminals" posture, plus
-two minor quality items.
-
-## Warnings
-
-### WR-01: `links="auto"` enables OSC 8 on any VTE version, including pre-0.50 VTE that cannot render it
-
-**File:** `claude-statusline.py:291-293`
-**Issue:** The `auto` resolver treats *any* non-empty `VTE_VERSION` as
-OSC-8-capable:
-```python
-if os.environ.get("VTE_VERSION"):
-    return True
-```
-VTE only gained OSC 8 hyperlink support in **VTE 0.50** (2017). `VTE_VERSION` is
-a packed integer (e.g. `5000` for 0.50, `4604` for 0.46.4). A user on an older
-VTE-based terminal (older GNOME Terminal, Terminator, Tilix, etc.) with
-`links="auto"` will receive raw `\x1b]8;;…` escape bytes that the terminal renders
-as visible garbage in the status bar — exactly the "escape noise on unknown
-terminals" outcome the docstring (L254-256) and D-02 say to bias against. The
-check is a presence test, not a capability test, so it over-detects.
-
-**Fix:** Gate on the version threshold (OSC 8 landed in VTE 0.50 → `VTE_VERSION >= 5000`):
-```python
-# VTE_VERSION — GNOME Terminal / VTE-based. OSC 8 added in VTE 0.50 (== 5000).
-_vte = os.environ.get("VTE_VERSION", "")
-try:
-    if int(_vte) >= 5000:
-        return True
-except (TypeError, ValueError):
-    pass  # unparseable → bias to False (D-02)
-```
-
-### WR-02: `links="auto"` enables OSC 8 for *all* JetBrains terminals, but the legacy JetBrains terminal does not support OSC 8
-
-**File:** `claude-statusline.py:294-297`
-**Issue:**
-```python
-term_emu = os.environ.get("TERMINAL_EMULATOR", "")
-if "JetBrains" in term_emu:
-    return True
-```
-The inline comment asserts "JetBrains (new reworked terminal supports OSC 8)",
-but `TERMINAL_EMULATOR=JetBrains-JediTerm` is exported by **both** the legacy
-JediTerm terminal and the newer reworked terminal — the env var does not
-distinguish them. So `auto` over-detects and emits escape noise inside the
-**legacy** JetBrains terminal (still the default in many IDE versions). This is
-also adjacent to the author's recorded Phase-8 lesson that JetBrains terminal
-behavior is font/terminal-variant-sensitive and easy to mis-attribute. Given the
-project's truth-telling / D-02 conservative posture, enabling a known-unreliable
-terminal under `auto` is the wrong bias.
-
-**Fix:** Either drop JetBrains from the `auto` allowlist entirely (users on the
-new terminal can set `links="on"` — the documented manual-override escape hatch),
-or gate on a marker that actually distinguishes the new terminal if one exists.
-If kept, the comment must stop claiming the env var implies the capable variant.
-Minimal conservative change:
-```python
-# JetBrains: TERMINAL_EMULATOR does not distinguish the legacy JediTerm (no OSC 8)
-# from the reworked terminal. Bias to False per D-02; users on the new terminal
-# opt in with links="on".
-# (removed from auto detection)
-```
-
-## Info
-
-### IN-01: `_valid_ugc()` is invoked twice per candidate code in the weather UGC loop
-
-**File:** `claude-statusline.py:3939-3940, 3944-3945`
-**Issue:** Each loop iteration runs the regex twice for the same value — once in
-the guard and once to capture the result:
-```python
-if _valid_ugc(_code) and _code[2] == "Z":
-    _ugc = _valid_ugc(_code)
-```
-This is correct (the validated string equals `_code` on success) but redundant,
-and the duplicated call obscures intent. Not a bug.
-**Fix:** Validate once and reuse:
-```python
-for _code in _ugc_list:
-    _v = _valid_ugc(_code)
-    if _v and _v[2] == "Z":
-        _ugc = _v
-        break
-if _ugc is None:
-    for _code in _ugc_list:
-        _v = _valid_ugc(_code)
-        if _v and _v[2] == "C":
-            _ugc = _v
-            break
-```
-(Indexing the validated string `_v[2]` instead of the raw `_code[2]` is also
-marginally safer, though `_code[2]` cannot raise here since a passing
-`_valid_ugc` guarantees a 6-char string.)
-
-### IN-02: ANSI-sanitizer logic is duplicated in three places (DRY)
-
-**File:** `claude-statusline.py:664-668, 3911-3914, 4206-4209`
-**Issue:** The identical "strip ESC + non-printable, keep spaces" comprehension
-appears verbatim in `_print_status_incidents._sanitize`, the weather alert
-`safe_event` block, and the status `safe_label` block. The comments even flag the
-copies as "VERBATIM from …". Each copy is a place a future security fix
-(e.g. also stripping other C0/C1 control bytes or DEL) could be forgotten,
-weakening the escape-injection boundary in one site but not another.
-**Fix:** Extract a single module-level helper, e.g.
-`_strip_ansi(s, maxlen)`, and call it from all three sites so the sanitization
-boundary has exactly one definition.
+One warning-level test quality issue found. Two info-level documentation nits.
 
 ---
 
-_Reviewed: 2026-06-21T01:26:01Z_
+## Warnings
+
+### WR-01: `test_vte_unset_returns_false` mixes `patch.dict` and `os.environ.pop` in a way that is both redundant and misleading
+
+**File:** `tests/test_osc8_links.py:197–207`
+
+**Issue:** The test patches `VTE_VERSION=""` into `os.environ` via `patch.dict`, then
+immediately calls `os.environ.pop("VTE_VERSION", None)` inside the same `with` block:
+
+```python
+env["VTE_VERSION"] = ""  # set to empty; same effective behavior as unset
+with patch.dict(os.environ, env, clear=False):
+    # Also ensure VTE_VERSION is actually absent if already unset
+    os.environ.pop("VTE_VERSION", None)
+    result = self.mod._osc8_enabled(...)
+```
+
+The `pop` is completely redundant. `os.environ.get("VTE_VERSION", "")` returns `""`
+whether the key is absent or set to `""`, and `int("")` raises `ValueError` in both
+cases. The test passes correctly, but the mixed approach implies to future maintainers
+that "VTE_VERSION absent" and `"VTE_VERSION=''"` produce different code paths — they
+do not for this function. The adjacent `test_vte_empty_string_returns_false`
+(line 191) already covers the `""` case via `_run_auto`; `test_vte_unset_returns_false`
+should use the same idiom for consistency.
+
+**Fix:** Use `_run_auto` with a dict that omits VTE_VERSION entirely (the `_OTHER_MARKERS`
+class var clears all other env triggers; omitting VTE_VERSION from `env_patch` leaves it
+absent in the patched environment):
+
+```python
+def test_vte_unset_returns_false(self):
+    """VTE_VERSION unset → False (no VTE marker)."""
+    # _OTHER_MARKERS clears TERM_PROGRAM/WT_SESSION/KITTY_WINDOW_ID/TERMINAL_EMULATOR.
+    # VTE_VERSION is absent from env_patch; os.environ.get("VTE_VERSION", "") → ""
+    # → int("") raises ValueError → False.  Functionally identical to VTE_VERSION="".
+    result = self._run_auto({})
+    self.assertIs(result, False, "Unset VTE_VERSION must not enable OSC 8")
+```
+
+---
+
+## Info
+
+### IN-01: `_FIPS_STATE_POSTAL` omits three FIPS codes for NWS WFO Guam-served Pacific territories; comment may imply complete coverage
+
+**File:** `claude-statusline.py:368`
+
+**Issue:** The block comment reads:
+> `Territories: PR(72), GU(66), VI(78), AS(60), MP(69) — all issued by NWS for alerts.`
+
+NWS WFO Guam (PGUM) also issues advisories for the Federated States of Micronesia
+(FIPS 64), Marshall Islands (FIPS 68), and Palau (FIPS 70). Those three FIPS codes
+are absent from the table. If NWS alert JSON for those areas carries `geocode.SAME`
+entries with state-FIPS fields `64`, `68`, or `70`, `_same_to_county_ugc` returns
+`None` and no link is built — the correct D-10 omit behavior. No crash, no fake URL.
+
+The code behavior is right; the comment slightly overstates territory coverage for a
+meteorologist who knows PGUM's area of responsibility.
+
+**Fix:** Tighten the comment to accurately scope what is and is not covered:
+
+```python
+# Territories with NWS Forecast Offices: PR(72), GU(66), VI(78), AS(60), MP(69).
+# NWS WFO Guam also serves FSM(64), Marshall Islands(68), Palau(70); those FIPS
+# codes are absent — alerts from those areas get no link per D-10 (omit-not-fake).
+```
+
+Alternatively, add the three entries (`"64": "FM"`, `"68": "MH"`, `"70": "PW"`) if
+NWS actually uses those FIPS codes in geocode.SAME — worth a spot-check against a
+live PGUM alert.
+
+---
+
+### IN-02: `_make_alert_with_ugc` docstring misstates the `same_list` default condition
+
+**File:** `tests/test_weather_links.py:48–52`
+
+**Issue:** The docstring says:
+
+> `` `same_list` defaults to `["040109"]` when `ugc_list` contains `OKZ034`
+> (the primary test fixture) ``
+
+The code applies `["040109"]` as the default for **any** call where
+`same_list is None`, regardless of `ugc_list` content. Callers passing
+`["OKC109"]`, `["XX9999"]`, or any other UGC list also receive this default when
+they omit `same_list`. All current tests produce correct results, but the docstring
+creates a false impression of conditional logic that could mislead when adding
+future test cases.
+
+**Fix:**
+
+```python
+"""Build a cache dict with an active alert carrying geocode.UGC and optionally SAME.
+
+`same_list` defaults to ["040109"] (Oklahoma County FIPS → OKC109) for any call
+that omits the argument.  Pass same_list=[] explicitly to exercise the no-SAME
+omit-not-fake path.
+"""
+```
+
+---
+
+_Reviewed: 2026-06-25_
 _Reviewer: Claude (gsd-code-reviewer)_
-_Depth: standard (ULTRACODE)_
+_Depth: deep (diff bcadbcce..HEAD, plan 09-04 scope)_
