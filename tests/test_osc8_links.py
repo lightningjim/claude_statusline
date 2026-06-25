@@ -196,15 +196,11 @@ class TestOsc8EnabledVteGate(unittest.TestCase):
 
     def test_vte_unset_returns_false(self):
         """VTE_VERSION unset → False (no VTE marker)."""
-        # Patch VTE_VERSION out entirely using os.environ.pop approach via patch.dict
-        env = {**self._OTHER_MARKERS}
-        env["VTE_VERSION"] = ""  # set to empty; same effective behavior as unset
-        with patch.dict(os.environ, env, clear=False):
-            # Also ensure VTE_VERSION is actually absent if already unset
-            os.environ.pop("VTE_VERSION", None)
-            result = self.mod._osc8_enabled({"display": {"links": "auto"}})
-        self.assertIs(result, False,
-                      "Unset VTE_VERSION must not enable OSC 8")
+        # _OTHER_MARKERS clears TERM_PROGRAM/WT_SESSION/KITTY_WINDOW_ID/TERMINAL_EMULATOR.
+        # VTE_VERSION is absent from env_patch; os.environ.get("VTE_VERSION", "") → ""
+        # → int("") raises ValueError → False.  Functionally identical to VTE_VERSION="".
+        result = self._run_auto({})
+        self.assertIs(result, False, "Unset VTE_VERSION must not enable OSC 8")
 
     def test_vte_garbage_returns_false_no_exception(self):
         """VTE_VERSION='garbage' (non-numeric) → False; must not raise (T-09-05)."""
