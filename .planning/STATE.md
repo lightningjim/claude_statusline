@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: QOL and fixes
-status: verifying
+status: completed
 stopped_at: Phase 9 context gathered
-last_updated: "2026-06-25T17:27:09.373Z"
-last_activity: 2026-06-25 -- Phase 09 execution started
+last_updated: "2026-06-25T17:44:51.635Z"
+last_activity: 2026-06-25 -- Phase 09 marked complete
 progress:
-  total_phases: 3
-  completed_phases: 1
+  total_phases: 4
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
-  percent: 33
+  completed_plans: 6
+  percent: 50
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-20)
 
 ## Current Position
 
-Phase: 09 (clickable-links) — EXECUTING
+Phase: 09 — COMPLETE
 Plan: 1 of 4
-Status: verifying
-Last activity: 2026-06-25 -- Phase 09 execution started
+Status: Phase 09 complete
+Last activity: 2026-06-25 -- Phase 09 marked complete
 
 ## Performance Metrics
 
@@ -137,6 +137,7 @@ Recent decisions affecting current work:
 - Phase 07.1 inserted after Phase 7: Distinguish resolved from unresolved Claude status incidents — keep showing important resolved-but-not-cleared incidents marked as resolved (URGENT)
 - Phase 8 (clickable links) added to v1.0 then pulled back out: deferred into the v1.1 "QOL and fixes" milestone scope rather than closing v1.0 with an unplanned trailing phase
 - v1.1 roadmap defined 2026-06-20: Phase 8 (Alert Timing), Phase 9 (Clickable Links), Phase 10 (Tech-Debt Cleanup)
+- Phase 11 added: Show current versions of the local claude executable as well as the GSD plugin version
 
 ### Pending Todos
 
