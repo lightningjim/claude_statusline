@@ -365,7 +365,9 @@ def _valid_incident_id(value) -> str | None:
 # Maps 2-digit zero-padded state/territory FIPS codes to 2-letter USPS postal codes.
 # Used by _same_to_county_ugc to derive a county UGC from geocode.SAME entries.
 # Source: US Census Bureau / ANSI FIPS 5-2 state codes + USPS postal abbreviations.
-# Territories: PR(72), GU(66), VI(78), AS(60), MP(69) — all issued by NWS for alerts.
+# Territories with NWS Forecast Offices: PR(72), GU(66), VI(78), AS(60), MP(69).
+# NWS WFO Guam also serves FSM(64), Marshall Islands(68), Palau(70); those FIPS
+# codes are absent — alerts from those areas get no link per D-10 (omit-not-fake).
 _FIPS_STATE_POSTAL: dict[str, str] = {
     "01": "AL",  # Alabama
     "02": "AK",  # Alaska
