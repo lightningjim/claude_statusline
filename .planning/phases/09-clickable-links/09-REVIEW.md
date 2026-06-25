@@ -12,7 +12,8 @@ findings:
   warning: 1
   info: 2
   total: 3
-status: issues_found
+status: resolved
+resolved_via: "09-REVIEW-FIX.md (commits ce6484f WR-01, f364313 IN-01, 3f5e21e IN-02) — all 3 findings applied 2026-06-25"
 scope_note: "This review covers plan 09-04 gap-closure only (commits 1ea9d81..912d417).
   The prior wave review (2026-06-21) is superseded for those files; its WR-01
   (VTE gate) was resolved by 09-04 and WR-02 (JetBrains) was documented in code."
