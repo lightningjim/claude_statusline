@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """
-Tests for Plan 09-02: OSC 8 weather alert links.
+Tests for Plan 09-02 (updated in 09-04): OSC 8 weather alert links.
 
-Task 1 (TestWeatherLinkEnabled): With links enabled and a valid UGC code the
-rendered detail wraps the glyph+event+timing in an OSC 8 hyperlink pointing
-to https://api.weather.gov/alerts/active?zone={UGC}.  The trailing tally stays
-outside the span.
+Task 1 (TestWeatherLinkEnabled): With links enabled and a valid UGC code + SAME the
+rendered detail wraps the glyph+event+timing in an OSC 8 hyperlink pointing to
+https://forecast.weather.gov/showsigwx.php?warnzone={zone}&warncounty={county}.
+The trailing tally stays outside the span.
 
 Task 2 (TestWeatherLinkDisabled, TestWeatherLinkNoUGC, TestWeatherLinkTallyOutside):
-LINK-03 guarantee — no \\x1b]8 bytes when links=off or when no valid UGC exists.
+LINK-03 guarantee — no \\x1b]8 bytes when links=off or when no valid UGC/SAME exists.
 Tally-outside-span boundary test (D-06).
+
+Plan 09-04 updates:
+- _make_alert_with_ugc extended with same_list kwarg (warncounty derivation)
+- All URL assertions updated: api.weather.gov/alerts/active → showsigwx.php target
+- test_no_same_no_link: omit-not-fake when valid Z UGC but no geocode.SAME
 """
 
 import importlib.util
@@ -38,10 +43,22 @@ def _load_script_module():
 
 
 def _make_alert_with_ugc(ugc_list, event="Tornado Warning", severity="Extreme",
-                          extra_alerts=0, age_seconds=60):
-    """Build a cache dict with an active alert carrying geocode.UGC."""
+                          extra_alerts=0, age_seconds=60,
+                          same_list=None):
+    """Build a cache dict with an active alert carrying geocode.UGC and optionally SAME.
+
+    `same_list` defaults to ["040109"] when `ugc_list` contains OKZ034 (the primary
+    test fixture) so callers that don't specify a SAME still get a derivable county.
+    Pass same_list=[] explicitly to test the no-SAME omit-not-fake path.
+    """
+    if same_list is None:
+        # Default: SAME for Oklahoma County (OKC109), matching OKZ034 zone fixture.
+        same_list = ["040109"]
     now = time.time()
     future_expires = "2099-12-31T23:59:59Z"
+    geocode: dict = {"UGC": ugc_list}
+    if same_list:
+        geocode["SAME"] = same_list
     props = {
         "id": "alert-001",
         "event": event,
@@ -50,10 +67,12 @@ def _make_alert_with_ugc(ugc_list, event="Tornado Warning", severity="Extreme",
         "references": [],
         "sent": "2026-05-28T20:00:00Z",
         "expires": future_expires,
-        "geocode": {
-            "UGC": ugc_list,
-        },
+        "geocode": geocode,
     }
+    # Extra alert geocode mirrors the primary's UGC and SAME
+    extra_geocode: dict = {"UGC": ugc_list}
+    if same_list:
+        extra_geocode["SAME"] = same_list
     active = [{"id": "alert-001", "properties": props}]
     for i in range(extra_alerts):
         active.append({
@@ -66,7 +85,7 @@ def _make_alert_with_ugc(ugc_list, event="Tornado Warning", severity="Extreme",
                 "references": [],
                 "sent": "2026-05-28T19:00:00Z",
                 "expires": future_expires,
-                "geocode": {"UGC": ugc_list},
+                "geocode": extra_geocode,
             }
         })
     return {
@@ -132,50 +151,64 @@ def _run_segment(mod, cache_dict, cfg_override=None):
 
 
 # ---------------------------------------------------------------------------
-# Task 1: links enabled + valid UGC → OSC 8 link present
+# Task 1: links enabled + valid UGC + SAME → OSC 8 link present (showsigwx target)
 # ---------------------------------------------------------------------------
 
 class TestWeatherLinkEnabled(unittest.TestCase):
-    """With links=on and a valid forecast-zone UGC the alert detail is wrapped in OSC 8."""
+    """With links=on and a valid Z UGC + SAME, the alert detail is wrapped in OSC 8
+    pointing to forecast.weather.gov/showsigwx.php (human-readable NWS WWA page)."""
 
     def setUp(self):
         self.mod = _load_script_module()
 
-    def _run_links_on(self, ugc_list, extra_alerts=0):
-        cache = _make_alert_with_ugc(ugc_list, extra_alerts=extra_alerts)
+    def _run_links_on(self, ugc_list, extra_alerts=0, same_list=None):
+        cache = _make_alert_with_ugc(ugc_list, extra_alerts=extra_alerts,
+                                     same_list=same_list)
         return _run_segment(self.mod, cache, cfg_override={"display": {"links": "on"}})
 
     def test_zone_ugc_link_present(self):
-        """With links=on and geocode.UGC=['OKZ034'] the rendered segment contains the zone URL."""
+        """With links=on, geocode.UGC=['OKZ034'], SAME=['040109'] → showsigwx URL."""
         result = self._run_links_on(["OKZ034"])
         self.assertIsNotNone(result, "Segment must not be None")
         self.assertIn(
-            "alerts/active?zone=OKZ034", result,
-            f"Expected NWS zone URL in rendered segment; got: {result!r}"
+            "showsigwx.php?warnzone=OKZ034&warncounty=OKC109", result,
+            f"Expected showsigwx URL in rendered segment; got: {result!r}"
         )
         self.assertIn(
-            OSC8_OPEN + "https://api.weather.gov/alerts/active?zone=OKZ034", result,
+            OSC8_OPEN + "https://forecast.weather.gov/showsigwx.php?warnzone=OKZ034&warncounty=OKC109",
+            result,
             f"Expected OSC 8 open+URL in rendered segment; got: {result!r}"
         )
 
+    def test_old_api_target_absent(self):
+        """The old api.weather.gov/alerts/active URL must NOT appear in any rendered output."""
+        result = self._run_links_on(["OKZ034"])
+        self.assertIsNotNone(result)
+        self.assertNotIn(
+            "api.weather.gov/alerts/active", result,
+            f"Old API target must not appear; got: {result!r}"
+        )
+
     def test_county_fallback_ugc_link_present(self):
-        """With only a county UGC code (OKC109, no Z code), the county code is used as fallback."""
+        """With only a county UGC (OKC109, no Z code) + SAME ['040109'], showsigwx uses county as warnzone."""
+        # County UGC is the fallback warnzone when no Z code present;
+        # warncounty still derived from SAME.
         result = self._run_links_on(["OKC109"])
         self.assertIsNotNone(result, "Segment must not be None")
         self.assertIn(
-            "alerts/active?zone=OKC109", result,
-            f"Expected county UGC URL in rendered segment; got: {result!r}"
+            "showsigwx.php?warnzone=OKC109&warncounty=OKC109", result,
+            f"Expected showsigwx URL with county as warnzone; got: {result!r}"
         )
 
     def test_zone_preferred_over_county(self):
-        """When UGC list has both Z and C codes, the Z (zone) code is used."""
+        """When UGC list has both Z and C codes, the Z (zone) code is used as warnzone."""
         result = self._run_links_on(["OKC109", "OKZ034"])
         self.assertIsNotNone(result, "Segment must not be None")
-        # OKZ034 (zone) should be preferred over OKC109 (county)
-        self.assertIn("zone=OKZ034", result,
+        # OKZ034 (zone) should be preferred over OKC109 (county) as warnzone
+        self.assertIn("warnzone=OKZ034", result,
                       f"Zone code should be preferred; got: {result!r}")
-        self.assertNotIn("zone=OKC109", result,
-                         f"County code should not be used when zone is present; got: {result!r}")
+        self.assertNotIn("warnzone=OKC109", result,
+                         f"County code should not be warnzone when zone is present; got: {result!r}")
 
     def test_osc8_bytes_present_when_enabled(self):
         """OSC 8 escape bytes appear in output when links=on."""
@@ -193,6 +226,33 @@ class TestWeatherLinkEnabled(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertNotIn(OSC8_OPEN, result,
                          f"No OSC 8 bytes should appear with invalid UGC; got: {result!r}")
+
+    def test_no_same_no_link(self):
+        """Valid Z UGC but NO geocode.SAME → zero \\x1b]8 bytes (omit-not-fake, D-10).
+
+        warncounty is REQUIRED for showsigwx to list alerts; if it cannot be derived
+        from SAME, build no link rather than a half/zone-only URL.
+        """
+        result = self._run_links_on(["OKZ034"], same_list=[])
+        self.assertIsNotNone(result, "Segment must not be None")
+        self.assertNotIn(OSC8_OPEN, result,
+                         f"No OSC 8 bytes when SAME missing (omit-not-fake); got: {result!r}")
+        self.assertNotIn("\x1b]8", result,
+                         f"No OSC 8 escape bytes when SAME missing; got: {result!r}")
+
+    def test_invalid_same_no_link(self):
+        """Malformed SAME (not 6 digits) → zero \\x1b]8 bytes (D-10)."""
+        result = self._run_links_on(["OKZ034"], same_list=["BAD"])
+        self.assertIsNotNone(result)
+        self.assertNotIn(OSC8_OPEN, result,
+                         f"No OSC 8 bytes with invalid SAME; got: {result!r}")
+
+    def test_unknown_state_same_no_link(self):
+        """SAME with unknown state FIPS (99) → zero \\x1b]8 bytes (D-10)."""
+        result = self._run_links_on(["OKZ034"], same_list=["099037"])
+        self.assertIsNotNone(result)
+        self.assertNotIn(OSC8_OPEN, result,
+                         f"No OSC 8 bytes with unknown state FIPS; got: {result!r}")
 
     def test_tally_outside_link_span(self):
         """When a tally exists, it appears AFTER the OSC 8 close sequence (D-06)."""
@@ -221,7 +281,8 @@ class TestWeatherLinkDisabled(unittest.TestCase):
 
     def test_links_off_no_osc8_bytes(self):
         """With links=off, rendered segment has no OSC 8 escape bytes (LINK-03)."""
-        cache = _make_alert_with_ugc(["OKZ034"])
+        # Provide SAME so we know the link *could* be built if links were on
+        cache = _make_alert_with_ugc(["OKZ034"], same_list=["040109"])
         result = _run_segment(self.mod, cache,
                               cfg_override={"display": {"links": "off"}})
         self.assertIsNotNone(result)
@@ -232,7 +293,8 @@ class TestWeatherLinkDisabled(unittest.TestCase):
 
     def test_links_off_byte_identical_to_plain(self):
         """Output when links=off must be byte-identical to output with no display.links key."""
-        cache = _make_alert_with_ugc(["OKZ034"])
+        # Provide SAME so the only difference between off/plain is the links setting
+        cache = _make_alert_with_ugc(["OKZ034"], same_list=["040109"])
         result_off = _run_segment(self.mod, cache,
                                   cfg_override={"display": {"links": "off"}})
         # No links key at all (defaults to off)
@@ -279,7 +341,7 @@ class TestWeatherLinkDisabled(unittest.TestCase):
 
     def test_tally_appears_after_osc8_close(self):
         """With links=on + extra alerts, the tally index is after the OSC 8 close index."""
-        cache = _make_alert_with_ugc(["OKZ034"], extra_alerts=2)
+        cache = _make_alert_with_ugc(["OKZ034"], extra_alerts=2, same_list=["040109"])
         result = _run_segment(self.mod, cache,
                               cfg_override={"display": {"links": "on"}})
         self.assertIsNotNone(result)
