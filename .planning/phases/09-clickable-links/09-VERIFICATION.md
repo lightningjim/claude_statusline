@@ -1,7 +1,9 @@
 ---
 phase: 09-clickable-links
 verified: 2026-06-25T00:00:00Z
-status: human_needed
+status: passed
+human_resolution: skip-accepted
+status_history: [human_needed (2026-06-25), passed (2026-06-25, human item skip-accepted via /gsd:verify-work)]
 score: 6/6 must-haves verified
 has_blocking_gaps: false
 overrides_applied: 0
@@ -14,6 +16,15 @@ re_verification:
     - "WR-02 (doc-only): JetBrains branch in _osc8_enabled now carries an explanatory comment distinguishing legacy vs reworked JediTerm indistinguishability"
   gaps_remaining: []
   regressions: []
+human_verification_resolution:
+  resolved_via: "/gsd:verify-work 09 (2026-06-25)"
+  outcome: skipped-with-reason — risk accepted by user
+  rationale:
+    - "No active NWS weather alert available to click during testing."
+    - "showsigwx page rendering already verified live during GAP-09-A diagnosis (CAZ373 + CAC037 → populated WWA page)."
+    - "OSC 8 click mechanism confirmed live in original UAT Test 3 (LINK-03) in the PyCharm terminal."
+    - "URL construction (warnzone + SAME-derived warncounty) and omit-not-fake fully covered by automated tests (70 passing)."
+    - "User assessment: 'links were working before this so most likely [fine]'."
 human_verification:
   - test: "With an active NWS weather alert in a supporting terminal (links='on' or links='auto' + known terminal), click the alert text (glyph + event + timing)."
     expected: "The NWS 'WWA Summary by Location' page at https://forecast.weather.gov/showsigwx.php?warnzone={zone}&warncounty={county} opens in a browser and lists the active alert(s) for that location. The page must be human-readable — not an error page, 404, or empty alert list."
@@ -24,7 +35,7 @@ human_verification:
 
 **Phase Goal:** Status events and weather alerts are clickable hyperlinks in terminals that support OSC 8, with no visible escape-sequence noise in terminals that do not.
 **Verified:** 2026-06-25T00:00:00Z
-**Status:** human_needed
+**Status:** passed (human item skip-accepted — see Human Verification Resolution below)
 **Re-verification:** Yes — after Plan 09-04 gap closure (GAP-09-A, GAP-09-B, WR-02)
 
 ## Gap Closure Summary
@@ -140,7 +151,14 @@ No `TBD`, `FIXME`, or `XXX` markers in files modified by plan 09-04. No new debt
 
 The two pre-existing IN-* findings from the code review are info-only and not introduced by this plan.
 
-### Human Verification Required
+### Human Verification — RESOLVED (skip-accepted 2026-06-25 via /gsd:verify-work)
+
+The item below was presented to the user during `/gsd:verify-work 09`. The user **skipped** it
+(no active NWS alert available to click) and **accepted the residual risk**, on the basis that:
+(1) the showsigwx page was already verified live during GAP-09-A diagnosis (CAZ373 + CAC037 →
+populated WWA page); (2) the OSC 8 click mechanism passed live in original UAT Test 3 (LINK-03);
+(3) URL construction + omit-not-fake are fully covered by 70 passing automated tests. It is recorded
+here for audit completeness, not as an open gate.
 
 #### 1. LINK-02 Live Browser Rendering — showsigwx.php Populates with Alerts
 
@@ -154,7 +172,7 @@ The two pre-existing IN-* findings from the code review are info-only and not in
 
 No blocking gaps. All six 09-04 must-have truths are machine-verified. All three phase-level requirements (LINK-01, LINK-02, LINK-03) are satisfied in code.
 
-The sole remaining item is the LINK-02 live-browser rendering check above, which is inherently a human test — automated tests cannot confirm that a live NWS web endpoint returns a human-readable, populated page.
+The lone human item (LINK-02 live-browser rendering) was an inherently human test. It was presented during `/gsd:verify-work 09` and **skip-accepted** by the user (no active alert; live page + click mechanism separately confirmed; automated coverage complete). No open gates remain.
 
 ---
 
