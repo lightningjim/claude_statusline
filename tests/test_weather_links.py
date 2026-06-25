@@ -47,9 +47,9 @@ def _make_alert_with_ugc(ugc_list, event="Tornado Warning", severity="Extreme",
                           same_list=None):
     """Build a cache dict with an active alert carrying geocode.UGC and optionally SAME.
 
-    `same_list` defaults to ["040109"] when `ugc_list` contains OKZ034 (the primary
-    test fixture) so callers that don't specify a SAME still get a derivable county.
-    Pass same_list=[] explicitly to test the no-SAME omit-not-fake path.
+    `same_list` defaults to ["040109"] (Oklahoma County FIPS → OKC109) for any call
+    that omits the argument.  Pass same_list=[] explicitly to exercise the no-SAME
+    omit-not-fake path.
     """
     if same_list is None:
         # Default: SAME for Oklahoma County (OKC109), matching OKZ034 zone fixture.
