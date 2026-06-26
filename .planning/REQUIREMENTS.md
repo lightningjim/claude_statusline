@@ -19,19 +19,19 @@ Extends the v1.0 weather/alert segment (WX-01..06). Continues the WX numbering.
 
 ### Clickable Links
 
-- [ ] **LINK-01**: Claude Status events on the usage line render as OSC 8 hyperlinks to the relevant status.claude.com page/incident.
-- [ ] **LINK-02**: Weather alerts render as OSC 8 hyperlinks to the NWS alert detail URL.
-- [ ] **LINK-03**: Hyperlinks degrade to plain text where the terminal does not support OSC 8 (capability gate / config toggle), never emitting raw escape sequences as visible noise.
+- [x] **LINK-01**: Claude Status events on the usage line render as OSC 8 hyperlinks to the relevant status.claude.com page/incident.
+- [x] **LINK-02**: Weather alerts render as OSC 8 hyperlinks to the NWS alert detail URL.
+- [x] **LINK-03**: Hyperlinks degrade to plain text where the terminal does not support OSC 8 (capability gate / config toggle), never emitting raw escape sequences as visible noise.
 
 ### Tech-Debt Cleanup
 
 Aggregates the v1.0 milestone-audit `tech_debt` block (`.planning/milestones/v1.0-MILESTONE-AUDIT.md`).
 
-- [ ] **DEBT-01**: `pyproject.toml` version is bumped to match `_APP_VERSION` (0.2.0) in `claude-statusline.py`.
-- [ ] **DEBT-02**: SUMMARY `requirements-completed` frontmatter is backfilled for the 15/19 requirements missing it, or the field is formally retired as redundant with VERIFICATION/traceability.
-- [ ] **DEBT-03**: The stale `REQUIREMENTS.md` footer is refreshed and the traceability table reconciled (this milestone's file supersedes the v1.0 artifact).
-- [ ] **DEBT-04**: The astral/requests weather tests are runnable (or explicitly gated) under system `python3`, so WX-01..06 isn't only covered via the venv interpreter.
-- [ ] **DEBT-05**: The WX-05 cache-TTL text/code drift is resolved — requirement text ("~15min") and the code default (10 min, `claude-statusline.py`) are aligned so they agree.
+- [x] **DEBT-01**: `pyproject.toml` version is bumped to match `_APP_VERSION` (0.2.0) in `claude-statusline.py`.
+- [x] **DEBT-02**: SUMMARY `requirements-completed` frontmatter is backfilled for the 15/19 requirements missing it, or the field is formally retired as redundant with VERIFICATION/traceability.
+- [x] **DEBT-03**: The stale `REQUIREMENTS.md` footer is refreshed and the traceability table reconciled (this milestone's file supersedes the v1.0 artifact).
+- [x] **DEBT-04**: The astral/requests weather tests are runnable (or explicitly gated) under system `python3`, so WX-01..06 isn't only covered via the venv interpreter.
+- [x] **DEBT-05**: The WX-05 cache-TTL text/code drift is resolved — requirement text ("~15min") and the code default (10 min, `claude-statusline.py`) are aligned so they agree.
 
 ## Future Requirements
 
@@ -68,14 +68,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WX-08 | Phase 8 | Complete |
 | WX-09 | Phase 8 | Complete |
 | WX-10 | Phase 8 | Complete |
-| LINK-01 | Phase 9 | Pending |
-| LINK-02 | Phase 9 | Pending |
-| LINK-03 | Phase 9 | Pending |
-| DEBT-01 | Phase 10 | Pending |
-| DEBT-02 | Phase 10 | Pending |
-| DEBT-03 | Phase 10 | Pending |
-| DEBT-04 | Phase 10 | Pending |
-| DEBT-05 | Phase 10 | Pending |
+| LINK-01 | Phase 9 | Complete |
+| LINK-02 | Phase 9 | Complete |
+| LINK-03 | Phase 9 | Complete |
+| DEBT-01 | Phase 10 | Complete |
+| DEBT-02 | Phase 10 | Complete |
+| DEBT-03 | Phase 10 | Complete |
+| DEBT-04 | Phase 10 | Complete |
+| DEBT-05 | Phase 10 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 12 total
@@ -84,4 +84,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-06-20*
-*Last updated: 2026-06-20 after v1.1 roadmap creation*
+*Last updated: 2026-06-25 after Phase 10 tech-debt cleanup (LINK-01..03 + DEBT-01..05 reconciled to shipped)*
