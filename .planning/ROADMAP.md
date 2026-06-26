@@ -73,7 +73,8 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
   3. The REQUIREMENTS.md traceability table and footer are current for this milestone and reconciled with what shipped
   4. The 60 astral/requests weather tests are runnable (pass or are explicitly skipped with a reason) under system `python3`, not only under the venv interpreter
   5. The WX-05 cache-TTL text and code default agree — the requirement text and `claude-statusline.py` default use the same number
-**Plans**: TBD
+**Plans**: 1 plan
+- [ ] 10-01-PLAN.md — Clear all five v1.0 tech-debt items (version sync, WX-05 TTL text, REQUIREMENTS reconcile, SUMMARY-field retirement, system-python weather tests)
 
 ### Phase 11: Version Display
 **Goal**: The statusline (or a related surface) reports the current version of the local `claude` executable and the installed GSD plugin version
