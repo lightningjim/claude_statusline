@@ -36,11 +36,14 @@ Single-file `claude-statusline.py` + a stdlib-only test suite (727 passing, 60 v
 
 **Enhancements shipped beyond the v1 requirement set** (CONTEXT-driven, no v1 REQ-IDs): Nerd Font icon set with live moon phases (Ph 02.1) · Watch/Warning/Advisory classification (Ph 02.2) · context-bar fill presets (Ph 3) · git segment (Ph 4) · GSD-status segment (Ph 5) · Claude service-health indicator + incident filter/dismiss + resolved-vs-unresolved (Ph 6/7/07.1).
 
+### Validated (v1.1)
+
+- ✓ Alert timing display — issued-but-not-yet-active (`from <onset>`) vs active (`until <ends>`), `effective`/`expires` fallbacks, 12hr am/pm with same-day / `Tmrw. at` / `Wed at` formatting — Phase 8 (WX-07..10)
+- ✓ Clickable links (OSC 8) for Claude Status events and weather alerts, degrading to plain text where unsupported — Phase 9 (LINK-01..03)
+- ✓ v1.0 tech-debt cleanup — pyproject/`_APP_VERSION` version sync, REQUIREMENTS traceability/footer reconciliation, system-python weather-test coverage, WX-05 TTL text↔code alignment (10 min), and `requirements-completed` backfill formally retired-with-note — Phase 10 (DEBT-01..05)
+
 ### Active (v1.1 "QOL and fixes")
 
-- [ ] Clickable links (OSC 8) for Claude Status events and weather alerts, degrading to plain text where unsupported
-- [ ] Alert timing display — distinguish issued-but-not-yet-active alerts (`from <onset>`) from active alerts (`until <ends>`), with `effective`/`expires` fallbacks and 12hr am/pm same-day / `Tmrw. at` / `Wed at` time formatting
-- [ ] Tech-debt cleanup phase: pyproject/`_APP_VERSION` sync, SUMMARY `requirements-completed` backfill, REQUIREMENTS footer, system-python weather-test coverage, WX-05 TTL text/code drift (full list in `milestones/v1.0-MILESTONE-AUDIT.md`)
 - [ ] Further QOL improvements discovered through daily use (insert-phase as they surface)
 
 ### Out of Scope
@@ -112,4 +115,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-20 after starting milestone v1.1 QOL and fixes*
+*Last updated: 2026-06-25 after Phase 10 (v1.0 tech-debt cleanup, DEBT-01..05)*
