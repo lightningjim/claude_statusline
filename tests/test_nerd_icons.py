@@ -276,6 +276,9 @@ class TestNerdFontGlyphConstants(unittest.TestCase):
         "_NF_HOURGLASS",
         "_NF_CALENDAR",
         "_WI_FALLBACK",
+        # Phase 11: version-display glyph constants (VER-04, D-08)
+        "_NF_VERSION_CLAUDE",
+        "_NF_VERSION_GSD",
     ]
 
     def setUp(self):
@@ -1410,6 +1413,9 @@ class TestAllNerdGlyphConstantsInInstalledFont(unittest.TestCase):
         "_WI_ALERT_WATCH",
         "_WI_ALERT_ADVISORY",
         "_WI_ALERT_STATEMENT",
+        # Phase 11: version-display glyph constants (VER-04, D-08)
+        "_NF_VERSION_CLAUDE",
+        "_NF_VERSION_GSD",
     ]
 
     def setUp(self):
