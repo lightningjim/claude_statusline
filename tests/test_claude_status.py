@@ -2303,6 +2303,7 @@ class TestRenderBottomLineStatusIntegration(unittest.TestCase):
             "thresholds": {"warn": 70, "crit": 90},
             "display": {
                 "show_claude_status": False,  # also disable status
+                "show_versions": False,        # Phase 11: also disable versions fragment (D-10)
                 "icon_set": "nerd",
                 "bar_style": "shade",
             },
