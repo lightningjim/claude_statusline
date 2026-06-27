@@ -4445,6 +4445,112 @@ def _claude_status_segment(data: object, cfg: object) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Version-display fragment — Phase 11 Plan 01 (VER-01..VER-05, D-01..D-11)
+# ---------------------------------------------------------------------------
+
+def _sanitize_version(value: object) -> str | None:
+    """Return *value* if it is a safe version-like string, else None (omit-not-fake).
+
+    Rejects anything that is not a str, is empty, exceeds 64 characters, or
+    contains characters outside the allowed set ``[0-9A-Za-z._+-]``.  Any ESC,
+    control character, ANSI sequence, or unusual punctuation is rejected by
+    omitting the entire piece — never strip-and-keep, which would fake a
+    different version (T-11-01).
+
+    Args:
+        value: The raw version candidate from stdin or the ledger.
+
+    Returns:
+        The original string unchanged when valid; None otherwise.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    if len(value) > 64:
+        return None
+    # Allowlist: digits, ASCII letters, dot, underscore, plus, hyphen.
+    # Any other byte (including ESC U+001B, NUL, LF, CR, …) → None.
+    import re as _re
+    if not _re.fullmatch(r"[0-9A-Za-z._+\-]+", value):
+        return None
+    return value
+
+
+def _versions_fragment(data: object, cfg: object) -> str | None:
+    """Return a dimmed trailing fragment showing Claude and GSD versions, or None.
+
+    Sources:
+      - Claude version: ``data.get("version")`` (stdin field, D-03/D-04, VER-01)
+      - GSD version:    ``_read_installed_gsd_version()`` (ledger array, D-05/D-07, VER-02)
+
+    Layout (D-02, VER-03):
+      ``DIM <claude-piece> <gsd-piece> RESET``
+      where each piece is ``<glyph> <version>`` and the two pieces are
+      joined with a single space.
+
+    Toggle (VER-05, D-10):
+      ``cfg["display"]["show_versions"]`` (default True) gates the whole
+      fragment; returns None when false.
+
+    Glyphs (VER-04, D-08, D-11):
+      When icon_set == "nerd": ``_NF_VERSION_CLAUDE`` / ``_NF_VERSION_GSD``.
+      Otherwise: short text labels (``claude`` / ``gsd``) with NO NF codepoints.
+
+    Omit-not-fake (D-04/D-07, VER-01/VER-02):
+      Each piece is independently optional; if both are absent, returns None.
+      Never substitutes a placeholder version.
+
+    Security (T-11-01):
+      Both version strings are passed through ``_sanitize_version`` before
+      rendering; any ESC / control / ANSI char → the piece is omitted entirely.
+
+    Returns:
+        A DIM-wrapped string or None; whole body in try/except → None (never-crash).
+    """
+    try:
+        # Toggle guard (VER-05, D-10) — mirrors show_gsd / show_claude_status pattern
+        _cfg = cfg if isinstance(cfg, dict) else {}
+        if not _cfg.get("display", {}).get("show_versions", True):
+            return None
+
+        # Resolve icon_set (D-11) — reuse the pattern from render_bottom_line
+        _icon_set = _cfg.get("display", {}).get("icon_set", "nerd")
+
+        # --- Claude version piece (VER-01, D-03/D-04) ---
+        raw_claude = data.get("version") if isinstance(data, dict) else None
+        safe_claude = _sanitize_version(raw_claude)
+        if safe_claude is not None:
+            if _icon_set == "nerd":
+                claude_piece = f"{_NF_VERSION_CLAUDE} {safe_claude}"
+            else:
+                claude_piece = f"claude {safe_claude}"
+        else:
+            claude_piece = None
+
+        # --- GSD version piece (VER-02, D-05/D-07) ---
+        raw_gsd = _read_installed_gsd_version()
+        safe_gsd = _sanitize_version(raw_gsd)
+        if safe_gsd is not None:
+            if _icon_set == "nerd":
+                gsd_piece = f"{_NF_VERSION_GSD} {safe_gsd}"
+            else:
+                gsd_piece = f"gsd {safe_gsd}"
+        else:
+            gsd_piece = None
+
+        # Collect present pieces (D-02/D-09, VER-03)
+        pieces = [p for p in [claude_piece, gsd_piece] if p is not None]
+        if not pieces:
+            return None  # both absent → omit the whole fragment
+
+        # Join with single space (D-02) and wrap in DIM/RESET (D-09)
+        body = " ".join(pieces)
+        return f"{DIM}{body}{RESET}"
+
+    except Exception:
+        return None  # never-crash (RUN-01/RUN-02)
+
+
+# ---------------------------------------------------------------------------
 # Line renderers (accept config dict forwarded from main)
 # ---------------------------------------------------------------------------
 
@@ -4547,7 +4653,12 @@ def render_bottom_line(data: dict, cfg: dict) -> str | None:
             pass  # never-crash: spawn failure must not block render
         status_seg = _claude_status_segment(data, cfg)
 
-        parts = [s for s in [ctx_seg, five_hour_seg, weekly_seg, status_seg] if s is not None]
+        # Phase 11: version-display fragment, appended as the LAST block (D-01, VER-03).
+        # Toggle and icon_set handling live entirely inside _versions_fragment;
+        # this call site is unconditional (builder returns None when gated off).
+        versions_seg = _versions_fragment(data, cfg)
+
+        parts = [s for s in [ctx_seg, five_hour_seg, weekly_seg, status_seg, versions_seg] if s is not None]
         if not parts:
             return None
         return "   ".join(parts)
