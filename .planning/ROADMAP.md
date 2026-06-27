@@ -86,7 +86,7 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
   3. Every bad/absent-data path omits the affected piece or the whole fragment — missing/empty/non-string stdin version, absent/unreadable/malformed ledger, ANSI-laced version string — never faked, never crashing the bar (VER-01, VER-02)
   4. `show_versions` (default True) toggles the whole fragment; `icon_set` selects Nerd Font glyphs vs short text labels (VER-04, VER-05)
 **Plans**: 2 plans
-- [ ] 11-01-PLAN.md — Ledger reader + NF version glyphs + show_versions default, version sanitizer + _versions_fragment builder + render_bottom_line wiring, full-suite regression (autonomous)
+- [x] 11-01-PLAN.md — Ledger reader + NF version glyphs + show_versions default, version sanitizer + _versions_fragment builder + render_bottom_line wiring, full-suite regression (autonomous)
 - [ ] 11-02-PLAN.md — Human-verify checkpoint: visually confirm the two NF glyphs render correctly + the dimmed trailing fragment layout
 
 ## Progress
@@ -108,4 +108,4 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 | 8. Alert Timing | v1.1 | 2/2 | Complete    | 2026-06-20 |
 | 9. Clickable Links | v1.1 | 4/4 | Complete   | 2026-06-25 |
 | 10. Tech-Debt Cleanup | v1.1 | 1/1 | Complete    | 2026-06-26 |
-| 11. Version Display | v1.1 | 0/2 | Not started | - |
+| 11. Version Display | v1.1 | 1/2 | In Progress|  |
