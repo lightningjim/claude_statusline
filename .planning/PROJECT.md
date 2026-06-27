@@ -41,6 +41,7 @@ Single-file `claude-statusline.py` + a stdlib-only test suite (727 passing, 60 v
 - ✓ Alert timing display — issued-but-not-yet-active (`from <onset>`) vs active (`until <ends>`), `effective`/`expires` fallbacks, 12hr am/pm with same-day / `Tmrw. at` / `Wed at` formatting — Phase 8 (WX-07..10)
 - ✓ Clickable links (OSC 8) for Claude Status events and weather alerts, degrading to plain text where unsupported — Phase 9 (LINK-01..03)
 - ✓ v1.0 tech-debt cleanup — pyproject/`_APP_VERSION` version sync, REQUIREMENTS traceability/footer reconciliation, system-python weather-test coverage, WX-05 TTL text↔code alignment (10 min), and `requirements-completed` backfill formally retired-with-note — Phase 10 (DEBT-01..05)
+- ✓ Version display — dimmed trailing bottom-line fragment showing the running Claude Code version (stdin `version`, no subprocess) and the active GSD plugin version (`installed_plugins.json` ledger), Nerd Font glyphs with text fallback, `show_versions` toggle (default on), omit-not-fake on every bad-data path — Phase 11 (VER-01..05)
 
 ### Active (v1.1 "QOL and fixes")
 
@@ -115,4 +116,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-25 after Phase 10 (v1.0 tech-debt cleanup, DEBT-01..05)*
+*Last updated: 2026-06-27 after Phase 11 (version display, VER-01..05) — final v1.1 phase complete*
