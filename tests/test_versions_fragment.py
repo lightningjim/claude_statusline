@@ -31,13 +31,6 @@ SCRIPT = os.path.join(
     "claude-statusline.py",
 )
 
-# ---------------------------------------------------------------------------
-# Minimal no-config HOME for end-to-end subprocess runs
-# (same pattern as test_bottom_line.py / test_gsd_segment.py)
-# ---------------------------------------------------------------------------
-_NO_CONFIG_HOME = tempfile.mkdtemp(prefix="gsd-statusline-test-ver-noconfig-home-")
-
-
 def _load_script_module():
     """Import claude-statusline.py as a module (does not run main)."""
     spec = importlib.util.spec_from_file_location("claude_statusline", SCRIPT)
