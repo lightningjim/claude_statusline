@@ -77,10 +77,17 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] 10-01-PLAN.md — Clear all five v1.0 tech-debt items (version sync, WX-05 TTL text, REQUIREMENTS reconcile, SUMMARY-field retirement, system-python weather tests)
 
 ### Phase 11: Version Display
-**Goal**: The statusline (or a related surface) reports the current version of the local `claude` executable and the installed GSD plugin version
+**Goal**: The statusline reports the running Claude executable version (from the stdin `version` field) and the active GSD plugin version (from the installed-plugins ledger), as a dimmed trailing fragment on the bottom line
 **Depends on**: Phase 10
-**Requirements**: TBD
-**Plans**: TBD
+**Requirements**: VER-01, VER-02, VER-03, VER-04, VER-05 (phase-local IDs derived from CONTEXT decisions D-01..D-11; this phase predates formal v1.1 REQ-IDs)
+**Success Criteria** (what must be TRUE):
+  1. With stdin `version` present and the ledger readable, the bottom line ends with a dimmed fragment showing both the Claude version and the GSD version (VER-01, VER-02, VER-03)
+  2. The GSD version is sourced from `~/.claude/plugins/installed_plugins.json` -> `plugins["gsd@gsd-plugin"][0]["version"]` (never from cache dirs or package.json), and is always shown when present, not gated on `.planning/` (VER-02)
+  3. Every bad/absent-data path omits the affected piece or the whole fragment — missing/empty/non-string stdin version, absent/unreadable/malformed ledger, ANSI-laced version string — never faked, never crashing the bar (VER-01, VER-02)
+  4. `show_versions` (default True) toggles the whole fragment; `icon_set` selects Nerd Font glyphs vs short text labels (VER-04, VER-05)
+**Plans**: 2 plans
+- [ ] 11-01-PLAN.md — Ledger reader + NF version glyphs + show_versions default, version sanitizer + _versions_fragment builder + render_bottom_line wiring, full-suite regression (autonomous)
+- [ ] 11-02-PLAN.md — Human-verify checkpoint: visually confirm the two NF glyphs render correctly + the dimmed trailing fragment layout
 
 ## Progress
 
@@ -101,4 +108,4 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 | 8. Alert Timing | v1.1 | 2/2 | Complete    | 2026-06-20 |
 | 9. Clickable Links | v1.1 | 4/4 | Complete   | 2026-06-25 |
 | 10. Tech-Debt Cleanup | v1.1 | 1/1 | Complete    | 2026-06-26 |
-| 11. Version Display | v1.1 | 0/? | Not started | - |
+| 11. Version Display | v1.1 | 0/2 | Not started | - |
