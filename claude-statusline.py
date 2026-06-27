@@ -208,6 +208,11 @@ DEFAULTS: dict = {
         # True (default) renders the Claude status segment when a noteworthy event is detected.
         # Quiet when all tracked components are healthy (D-01). Set to false to suppress.
         "show_claude_status": True,
+        # Phase 11: version-display fragment toggle (D-10, VER-05).
+        # True (default) appends a dimmed fragment showing the Claude version (from stdin
+        # `version`) and the GSD plugin version (from installed_plugins.json) on the bottom
+        # line after the Claude-status segment.  Set to false to suppress the whole fragment.
+        "show_versions": True,
         # Phase 09: OSC 8 hyperlink toggle (D-01).  Tri-state: "off" / "auto" / "on".
         # "off" (default, opt-in posture) — never emit OSC 8; plain text always.
         # "auto" — emit only when a conservative env-var allowlist detects a capable terminal.
@@ -1008,6 +1013,27 @@ _NF_CLAUDE_INCIDENT = ""   # nf-fa-exclamation_circle  U+F06A  (severity: pro
 
 # Maintenance glyph (wrench -- scheduled or in-progress maintenance window)
 _NF_CLAUDE_MAINT    = ""   # nf-fa-wrench               U+F0AD  (neutral: planned work)
+
+# ---------------------------------------------------------------------------
+# Version-display glyph constants (Phase 11, VER-04, D-08)
+#
+# Two codepoints — Claude version and GSD plugin version — following the same
+# literal-codepoint-per-constant + intent-comment pattern as _NF_GSD_* and
+# _NF_CLAUDE_* above. Codepoints from the nf-fa-* (U+F0xx) range, validated
+# against the installed JetBrains Nerd Font cmap (test_nerd_icons.py guard).
+#
+# Semantic rationale:
+#   Claude version -> fa-cloud        (U+F0C2): cloud / AI — the running Claude session
+#   GSD version    -> fa-puzzle_piece (U+F12E): plugin / extension piece — the GSD tool
+#
+# Both MUST be single codepoints (len == 1) per the test_nerd_icons.py cmap guard.
+# ---------------------------------------------------------------------------
+
+# Claude version glyph (cloud -- the running Claude Code session's version)
+_NF_VERSION_CLAUDE  = ""   # nf-fa-cloud          U+F0C2  (Claude/AI: cloud)
+
+# GSD version glyph (puzzle piece -- the installed GSD plugin version)
+_NF_VERSION_GSD     = ""   # nf-fa-puzzle_piece   U+F12E  (GSD plugin: puzzle-piece)
 
 # ---------------------------------------------------------------------------
 # Alert-class glyph constants (Phase 02.2, D-04)
@@ -3065,6 +3091,57 @@ def _read_gsd_state(planning_dir: str) -> dict | None:
         }
     except Exception:
         return None   # file missing, JSON/YAML parse error, OS error — omit silently
+
+
+def _read_installed_gsd_version() -> str | None:
+    """Return the active GSD plugin version string from the installed-plugins ledger.
+
+    Reads ``~/.claude/plugins/installed_plugins.json`` and extracts
+    ``data["plugins"]["gsd@gsd-plugin"][0]["version"]``.
+
+    Returns None on any missing file, unreadable content, malformed JSON,
+    unexpected shape, or absent entry (omit-not-fake, D-05/D-06/D-07, VER-02).
+    Never raises (RUN-01/RUN-02 never-crash contract).
+
+    Security (T-11-02, T-11-03):
+    - Byte-capped read (_GSD_MAX_BYTES) bounds memory/CPU on a huge ledger.
+    - Step-by-step isinstance guards before any indexing: data is dict,
+      data["plugins"] is dict, the gsd entry is a non-empty list, element[0]
+      is dict, its "version" is a non-empty str.
+    - Whole body in try/except Exception -> None.
+
+    Source constraint (D-05): reads only the installed_plugins.json ledger —
+    NOT plugins/cache/gsd-plugin/gsd/*/ dirs or the plugin package.json
+    (stale dirs accumulate; package.json reports an unrelated internal version).
+    """
+    try:
+        ledger_path = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+        with open(ledger_path, encoding="utf-8") as fh:
+            data = json.loads(fh.read(_GSD_MAX_BYTES))
+
+        # Shape guard: data must be a dict with a "plugins" dict
+        if not isinstance(data, dict):
+            return None
+        plugins = data.get("plugins")
+        if not isinstance(plugins, dict):
+            return None
+
+        # The gsd entry must be a non-empty list (verified against live ledger D-05)
+        entry = plugins.get("gsd@gsd-plugin")
+        if not isinstance(entry, list) or len(entry) == 0:
+            return None
+
+        # The first element must be a dict with a non-empty string "version"
+        first = entry[0]
+        if not isinstance(first, dict):
+            return None
+        version = first.get("version")
+        if not isinstance(version, str) or not version:
+            return None
+
+        return version
+    except Exception:
+        return None   # file missing, JSON parse error, OS error — omit silently
 
 
 def _parse_gsd_frontmatter(text: str) -> dict | None:
