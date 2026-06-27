@@ -4,12 +4,12 @@ milestone: v1.1
 milestone_name: QOL and fixes
 status: planning
 stopped_at: Phase 11 context gathered
-last_updated: "2026-06-27T19:01:37.901Z"
-last_activity: 2026-06-26
+last_updated: "2026-06-27T19:21:14.240Z"
+last_activity: 2026-06-27 -- Phase 11 planning complete
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 7
+  total_plans: 9
   completed_plans: 7
   percent: 75
 ---
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-20)
 Phase: 11
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-06-26
+Last activity: 2026-06-27 -- Phase 11 planning complete
 
 ## Performance Metrics
 
