@@ -108,4 +108,4 @@ Full phase details archived: `.planning/milestones/v1.0-ROADMAP.md`
 | 8. Alert Timing | v1.1 | 2/2 | Complete    | 2026-06-20 |
 | 9. Clickable Links | v1.1 | 4/4 | Complete   | 2026-06-25 |
 | 10. Tech-Debt Cleanup | v1.1 | 1/1 | Complete    | 2026-06-26 |
-| 11. Version Display | v1.1 | 2/2 | Complete   | 2026-06-27 |
+| 11. Version Display | v1.1 | 2/2 | Complete    | 2026-06-27 |
