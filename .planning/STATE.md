@@ -2,33 +2,33 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: QOL and fixes
-status: milestone_complete
-stopped_at: Milestone complete (Phase 11 was final phase)
-last_updated: 2026-06-27T22:10:40.374Z
-last_activity: 2026-06-27 -- Phase 11 execution started
+status: Awaiting next milestone
+stopped_at: Milestone v1.1 complete
+last_updated: "2026-06-28T12:07:35.949Z"
+last_activity: 2026-06-28 — Milestone v1.1 completed and archived
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
   completed_plans: 9
-  percent: 75
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-20)
+See: .planning/PROJECT.md (updated 2026-06-28)
 
 **Core value:** At a glance, the bottom of the terminal tells the truth about the current session — context and rate-limit headroom (and when limits reset) — without slowing Claude Code down.
-**Current focus:** Milestone complete
+**Current focus:** Planning next milestone (v1.0 + v1.1 shipped)
 
 ## Current Position
 
-Phase: 11
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-27
+Phase: Milestone v1.1 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-28 — Milestone v1.1 completed and archived
 
 ## Performance Metrics
 
@@ -167,10 +167,10 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-06-27T19:37:59.090Z
-Stopped at: Phase 11 context gathered
-Resume file: .planning/phases/11-show-current-versions-of-the-local-claude-executable-as-well/11-CONTEXT.md
+Last session: 2026-06-28 — v1.1 milestone completed and archived
+Stopped at: Milestone v1.1 complete
+Resume file: —
 
 ## Operator Next Steps
 
-- Start Phase 8 with `/gsd:plan-phase 8`
+- Start the next milestone with /gsd-new-milestone

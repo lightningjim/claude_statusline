@@ -2,26 +2,23 @@
 
 ## What This Is
 
-A Python statusline command for Claude Code. It reads the session JSON that Claude Code pipes to stdin and prints a two-line, color-coded status bar showing the active project, git branch/worktree, GSD planning status, model (with a thinking indicator), local weather + alerts, context-window usage, rolling rate-limit usage, and a quiet-when-healthy Claude service-health indicator. It replaces an earlier bash implementation (`.examples/statusline-command.sh`) with cleaner data handling and better formatting. Built for the author's personal use.
+A Python statusline command for Claude Code. It reads the session JSON that Claude Code pipes to stdin and prints a two-line, color-coded status bar showing the active project, git branch/worktree, GSD planning status, model (with a thinking indicator), local weather + alerts (with onset/expiry timing and OSC 8 clickable links), context-window usage, rolling rate-limit usage, a quiet-when-healthy Claude service-health indicator, and a dimmed Claude/GSD version fragment. It replaces an earlier bash implementation (`.examples/statusline-command.sh`) with cleaner data handling and better formatting. Built for the author's personal use.
 
 ## Core Value
 
 At a glance, the bottom of the terminal tells the truth about the current session — how much context and rate-limit headroom remains (and when limits reset) — without slowing Claude Code down.
 
-## Current Milestone: v1.1 QOL and fixes
+## Next Milestone
 
-**Goal:** Harden and polish the shipped statusline through daily use — fix issues surfaced in real usage and clear carried-over tech debt.
-
-**Target features:**
-- OSC 8 clickable links for Claude Status events and weather alerts, degrading to plain text where unsupported
-- Alert timing display — distinguish issued-but-not-yet-active from active alerts (`from <start>` vs `until <end>`), 12hr am/pm with same-day / `Tmrw. at` / `Wed at` formatting
-- v1.0 tech-debt cleanup — the 5-item audit bundle (version sync, `requirements-completed` backfill, REQUIREMENTS footer/traceability, system-python weather tests, WX-05 TTL drift)
+**Planning next milestone.** v1.0 and v1.1 are shipped. Further QOL improvements are captured via `/gsd:insert-phase` as they surface in daily use; deferred enhancements (ENH-01 session cost, ENH-02 effort/fast-mode indicator, ENH-03 multi-location weather) are tracked for a future milestone. Start the next cycle with `/gsd:new-milestone`.
 
 ## Current State
 
-**Shipped:** v1.0 MVP — 2026-06-20 (12 phases, 28 plans; milestone audit PASSED, 19/19 requirements). See `.planning/MILESTONES.md` and `.planning/milestones/v1.0-*`.
+**Shipped:**
+- **v1.1 QOL and fixes** — 2026-06-28 (4 phases 8–11, 9 plans; milestone audit PASSED, 12/12 requirements + Phase 11 VER-01..05). Alert timing, OSC 8 clickable links, v1.0 tech-debt cleanup, and the Claude/GSD version fragment. See `.planning/milestones/v1.1-*`.
+- **v1.0 MVP** — 2026-06-20 (12 phases, 28 plans; milestone audit PASSED, 19/19 requirements). See `.planning/milestones/v1.0-*`.
 
-Single-file `claude-statusline.py` + a stdlib-only test suite (727 passing, 60 venv-gated skips). Installed at `~/.claude/claude-statusline/` (script + `.venv` + TOML config); `main()` re-execs into the venv so `requests`/`astral` resolve at runtime.
+Single-file `claude-statusline.py` (~4,700 lines) + a stdlib-only test suite. Installed at `~/.claude/claude-statusline/` (script + `.venv` + TOML config); `main()` re-execs into the venv so `requests`/`astral` resolve at runtime.
 
 ## Requirements
 
@@ -43,8 +40,11 @@ Single-file `claude-statusline.py` + a stdlib-only test suite (727 passing, 60 v
 - ✓ v1.0 tech-debt cleanup — pyproject/`_APP_VERSION` version sync, REQUIREMENTS traceability/footer reconciliation, system-python weather-test coverage, WX-05 TTL text↔code alignment (10 min), and `requirements-completed` backfill formally retired-with-note — Phase 10 (DEBT-01..05)
 - ✓ Version display — dimmed trailing bottom-line fragment showing the running Claude Code version (stdin `version`, no subprocess) and the active GSD plugin version (`installed_plugins.json` ledger), Nerd Font glyphs with text fallback, `show_versions` toggle (default on), omit-not-fake on every bad-data path — Phase 11 (VER-01..05)
 
-### Active (v1.1 "QOL and fixes")
+### Active (next milestone — not yet scoped)
 
+- [ ] ENH-01: Show session cost on the bar (deferred from v1.0 init)
+- [ ] ENH-02: Show effort / fast-mode indicator (deferred from v1.0 init)
+- [ ] ENH-03: Multi-location / auto-geolocation weather (deferred from v1.0 init)
 - [ ] Further QOL improvements discovered through daily use (insert-phase as they surface)
 
 ### Out of Scope
@@ -97,6 +97,10 @@ Single-file `claude-statusline.py` + a stdlib-only test suite (727 passing, 60 v
 | Read-only git segment via `display.show_git` (branch/dirty/ahead-behind + linked-worktree marker) | Timeout-guarded, runs every render (no cache), neutral label + colored state, scoped to `current_dir`; omits silently off-repo | ✅ Phase 4 |
 | Read-only GSD-status segment via `display.show_gsd` (active plan + task progress + lifecycle glyph) | Reads `.planning/` under `project_dir`; HANDOFF-first/roadmap-fallback with staleness window; milestone-complete confirmed from STATE `progress` (not a fall-through); untrusted labels sanitized; never blocks/crashes; omits silently off-GSD | ✅ Phase 5 |
 | Default `bar_style` stays `shade`; full-run tests must isolate `$HOME` | Two "default bar" tests were failing because `run_script` spawns the real script, which reads the developer's live config (`bar_style="gradient"`) — a test-isolation leak, not a code drift. Default kept at `shade` (Phase-3 D-09 preserved, production code untouched); the tests now run under an empty `_NO_CONFIG_HOME` so they assert the true no-config fallback. Any full-run test asserting baseline render must override `$HOME` | ✅ Phase 03.1 |
+| Alert timing uses absolute 12hr clock times with relative-day prefixes, not countdowns | Absolute times (`until 3:00 PM`, `Tmrw. at …`) read unambiguously and match forecaster convention; relative countdowns ("in 2h") were considered and rejected | ✅ Phase 8 |
+| OSC 8 links auto-gate on `VTE_VERSION>=5000`; tri-state `links` config | Conservative capability detection avoids escape-sequence noise on legacy JediTerm/JediTerm-like terminals; explicit on/off/auto via config; allowlist URL validators on every wrapped link | ✅ Phase 9 |
+| Weather link targets the human-readable NWS showsigwx page (warnzone+warncounty from SAME), not the raw alert JSON URL | The showsigwx page is what a human wants to read; county/zone codes derived from the alert's SAME/UGC via a FIPS-state table, omit-not-fake when absent | ✅ Phase 9 |
+| GSD plugin version sourced from `installed_plugins.json` ledger, never cache dirs; version fragment is omit-not-fake on every bad path | The ledger is the single source of truth for the active plugin version; cache dirs/package.json can be stale. Every absent/malformed/ANSI-laced input omits rather than fakes or crashes the bar (D-10) | ✅ Phase 11 |
 
 ## Evolution
 
@@ -116,4 +120,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-27 after Phase 11 (version display, VER-01..05) — final v1.1 phase complete*
+*Last updated: 2026-06-28 after v1.1 "QOL and fixes" milestone (Phases 8–11) shipped*
